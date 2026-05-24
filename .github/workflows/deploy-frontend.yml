@@ -116,12 +116,12 @@ jobs:
           docker rm -f "${CANDIDATE_NAME}" >/dev/null 2>&1 || true
           docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
 
-          docker run -d --name "${CANDIDATE_NAME}" --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18080:80 "${IMAGE_REF}"
+          docker run -d --name "${CANDIDATE_NAME}" --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18081:80 "${IMAGE_REF}"
           sleep 3
           for path in / /projects /evidence; do
-            curl -fsS "http://127.0.0.1:18080${path}" >/dev/null
+            curl -fsS "http://127.0.0.1:18081${path}" >/dev/null
           done
-          curl -fsS "http://127.0.0.1:18080/evidence-api/health" >/dev/null
+          curl -fsS "http://127.0.0.1:18081/evidence-api/health" >/dev/null
           docker rm -f "${CANDIDATE_NAME}" >/dev/null
 
           rollback() {
@@ -140,12 +140,12 @@ jobs:
           fi
 
           trap rollback ERR
-          docker run -d --name "${CONTAINER_NAME}" --restart unless-stopped --add-host=host.docker.internal:host-gateway -p 80:80 "${IMAGE_REF}"
+          docker run -d --name "${CONTAINER_NAME}" --restart unless-stopped --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18080:80 "${IMAGE_REF}"
           sleep 3
           for path in / /projects /evidence; do
-            curl -fsS "http://127.0.0.1${path}" >/dev/null
+            curl -fsS "http://127.0.0.1:18080${path}" >/dev/null
           done
-          curl -fsS "http://127.0.0.1/evidence-api/health" >/dev/null
+          curl -fsS "http://127.0.0.1:18080/evidence-api/health" >/dev/null
           trap - ERR
 
           docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
