@@ -1,5 +1,5 @@
 import { ExternalLink, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
@@ -11,11 +11,15 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
+const PAGE_SIZE = 50;
+
 export default function DocumentsPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
-  const [query, setQuery] = useState('');
+  const [queryDraft, setQueryDraft] = useState('');
+  const [appliedQuery, setAppliedQuery] = useState('');
+  const [offset, setOffset] = useState(0);
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -28,7 +32,11 @@ export default function DocumentsPage() {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.getDocuments(caseId, { limit: 50, offset: 0 }, { token });
+      const result = await evidenceApi.getDocuments(
+        caseId,
+        { limit: PAGE_SIZE, offset, q: appliedQuery },
+        { token },
+      );
       recordFingerprint(result, 'Documents list');
       setState({
         loading: false,
@@ -43,7 +51,7 @@ export default function DocumentsPage() {
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
-  }, [caseId, getAccessToken, recordFingerprint]);
+  }, [appliedQuery, caseId, getAccessToken, offset, recordFingerprint]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -53,31 +61,28 @@ export default function DocumentsPage() {
     return () => window.clearTimeout(timerId);
   }, [loadDocuments]);
 
-  const filteredDocuments = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return state.documents;
-    }
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    setOffset(0);
+    setAppliedQuery(queryDraft.trim());
+  };
 
-    return state.documents.filter((document) =>
-      [
-        document.original_filename,
-        document.source_provider,
-        document.source_of_truth_mode,
-        document.status,
-        document.extraction_method,
-        document.content_hash,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle)),
-    );
-  }, [query, state.documents]);
+  const clearSearch = () => {
+    setQueryDraft('');
+    setAppliedQuery('');
+    setOffset(0);
+  };
+
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const totalPages = Math.max(1, Math.ceil((state.total || 0) / PAGE_SIZE));
+  const canGoPrevious = offset > 0;
+  const canGoNext = offset + PAGE_SIZE < state.total;
 
   return (
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} document records returned for this case.`}
+        description={`${state.total} document records${appliedQuery ? ` matching "${appliedQuery}"` : ''}.`}
         actions={
           <button
             type="button"
@@ -92,24 +97,41 @@ export default function DocumentsPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <label className="relative block max-w-xl flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} aria-hidden="true" />
-          <span className="sr-only">Search documents</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search documents"
-            className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none ring-0 placeholder:text-gray-400 focus:border-sky-500 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:focus:border-sky-400"
-          />
-        </label>
+        <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
+          <label className="relative block flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} aria-hidden="true" />
+            <span className="sr-only">Search documents</span>
+            <input
+              type="search"
+              value={queryDraft}
+              onChange={(event) => setQueryDraft(event.target.value)}
+              placeholder="Search all documents"
+              className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none ring-0 placeholder:text-gray-400 focus:border-sky-500 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:focus:border-sky-400"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            Search
+          </button>
+          {appliedQuery ? (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              Clear
+            </button>
+          ) : null}
+        </form>
         {state.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
         ) : null}
       </div>
 
       <DataTable
-        rows={filteredDocuments}
+        rows={state.documents}
         rowKey={(document) => document.file_id}
         emptyTitle={state.loading ? 'Loading documents' : 'No documents matched'}
         columns={[
@@ -135,6 +157,30 @@ export default function DocumentsPage() {
           { key: 'content_hash', header: 'Hash', render: (document) => truncateMiddle(document.content_hash, 24) },
         ]}
       />
+
+      <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          Page {currentPage} of {totalPages}
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setOffset((current) => Math.max(0, current - PAGE_SIZE))}
+            disabled={!canGoPrevious || state.loading}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            onClick={() => setOffset((current) => current + PAGE_SIZE)}
+            disabled={!canGoNext || state.loading}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
