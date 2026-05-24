@@ -19,6 +19,7 @@ env:
   VITE_AWS_REGION: ${{ vars.VITE_AWS_REGION || 'us-east-2' }}
   VITE_COGNITO_USER_POOL_ID: ${{ vars.VITE_COGNITO_USER_POOL_ID || '' }}
   VITE_COGNITO_USER_POOL_CLIENT_ID: ${{ vars.VITE_COGNITO_USER_POOL_CLIENT_ID || '' }}
+  EC2_DEPLOY_HOST: ${{ vars.EC2_HOST || 'forestlee.us' }}
 
 jobs:
   build-test-deploy:
@@ -66,7 +67,7 @@ jobs:
 
       - name: Configure SSH
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_HOST: ${{ env.EC2_DEPLOY_HOST }}
           EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
         run: |
           if [ -z "${EC2_HOST}" ]; then
@@ -85,7 +86,7 @@ jobs:
 
       - name: Copy image to EC2
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_HOST: ${{ env.EC2_DEPLOY_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
         run: |
           ARCHIVE="${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
@@ -94,7 +95,7 @@ jobs:
 
       - name: Deploy on EC2
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_HOST: ${{ env.EC2_DEPLOY_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
         run: |
           ssh -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" \
