@@ -15,9 +15,12 @@ export default function LoginPage() {
     isAuthenticated,
     isConfigured,
     loading,
+    confirmNewPassword,
     signIn,
   } = useEvidenceAuth();
   const [form, setForm] = useState({ email: '', password: '' });
+  const [newPassword, setNewPassword] = useState('');
+  const [challengeStep, setChallengeStep] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -35,7 +38,26 @@ export default function LoginPage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await signIn(form);
+      const result = await signIn(form);
+      const nextStep = result?.nextStep?.signInStep;
+      if (nextStep && nextStep !== 'DONE') {
+        setChallengeStep(nextStep);
+      }
+    } catch (nextError) {
+      setSubmitError(nextError);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleNewPasswordSubmit(event) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await confirmNewPassword({ newPassword });
+      setChallengeStep(null);
+      setNewPassword('');
     } catch (nextError) {
       setSubmitError(nextError);
     } finally {
@@ -79,6 +101,32 @@ export default function LoginPage() {
                 VITE_COGNITO_USER_POOL_CLIENT_ID
               </div>
             </div>
+          ) : challengeStep === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED' ? (
+            <form className="space-y-4" onSubmit={handleNewPasswordSubmit}>
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                This account requires a new permanent password before continuing.
+              </p>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">New password</span>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={submitting || loading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+              >
+                <LogIn size={16} aria-hidden="true" />
+                {submitting || loading ? 'Updating password' : 'Set password and sign in'}
+              </button>
+            </form>
           ) : (
             <form className="space-y-4" onSubmit={handleSubmit}>
               <label className="block">

@@ -116,6 +116,20 @@ function casePath(caseId, suffix = '') {
 export const evidenceApi = {
   getHealth: (options) => request('/health', options),
   getMe: (options) => request('/api/v1/me', options),
+  getAdminUsers: (options) => request('/api/v1/admin/users', options),
+  createAdminUser: (payload, options) =>
+    request('/api/v1/admin/users', { ...options, method: 'POST', body: payload }),
+  grantCaseMembership: (userId, payload, options) =>
+    request(`/api/v1/admin/users/${encodeURIComponent(userId)}/case-memberships`, {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
+  revokeCaseMembership: (userId, caseId, options) =>
+    request(`/api/v1/admin/users/${encodeURIComponent(userId)}/case-memberships/${encodeURIComponent(caseId)}/revoke`, {
+      ...options,
+      method: 'POST',
+    }),
   getCases: (options) => request('/api/v1/cases', options),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
@@ -134,6 +148,7 @@ export const evidenceApi = {
       ...options,
       method: 'POST',
     }),
+  getCaseMemberships: (caseId, options) => request(casePath(caseId, '/memberships'), options),
   getRawParity: (caseId, options) => request(casePath(caseId, '/raw-parity'), options),
   getCaseHealth: (caseId, options) => request(casePath(caseId, '/health'), options),
   getStorageHealth: (caseId, options) =>

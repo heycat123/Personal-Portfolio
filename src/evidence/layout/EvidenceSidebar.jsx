@@ -9,6 +9,7 @@ import {
   Network,
   Search,
   Settings,
+  ShieldCheck,
   Upload,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { label: 'Entities', path: 'entities', icon: Network },
   { label: 'Tests', path: 'tests', icon: ClipboardCheck },
   { label: 'Settings', path: 'settings', icon: Settings },
+  { label: 'Admin', path: 'admin', icon: ShieldCheck },
 ];
 
 export default function EvidenceSidebar() {

@@ -1,6 +1,7 @@
 import { Amplify } from 'aws-amplify';
 import {
   fetchAuthSession,
+  confirmSignIn as amplifyConfirmSignIn,
   getCurrentUser,
   signIn as amplifySignIn,
   signOut as amplifySignOut,
@@ -60,7 +61,7 @@ export async function getCognitoUser() {
 
 export async function getCognitoAccessToken() {
   const session = await fetchAuthSession();
-  return session.tokens?.accessToken?.toString() || null;
+  return session.tokens?.idToken?.toString() || session.tokens?.accessToken?.toString() || null;
 }
 
 export async function signInWithCognito({ email, password }) {
@@ -72,4 +73,8 @@ export async function signInWithCognito({ email, password }) {
 
 export async function signOutOfCognito() {
   return amplifySignOut();
+}
+
+export async function confirmCognitoNewPassword({ newPassword }) {
+  return amplifyConfirmSignIn({ challengeResponse: newPassword });
 }

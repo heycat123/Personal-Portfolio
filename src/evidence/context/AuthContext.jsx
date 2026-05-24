@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  confirmCognitoNewPassword,
   configureAmplifyAuth,
   getCognitoAccessToken,
   getCognitoUser,
@@ -95,6 +96,26 @@ export function AuthProvider({ children }) {
         setState((current) => ({
           ...current,
           loading: false,
+          error: null,
+        }));
+        return result;
+      }
+      await refreshUser();
+      return result;
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error }));
+      throw error;
+    }
+  }, [refreshUser]);
+
+  const confirmNewPassword = useCallback(async ({ newPassword }) => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const result = await confirmCognitoNewPassword({ newPassword });
+      if (result?.nextStep?.signInStep && result.nextStep.signInStep !== 'DONE') {
+        setState((current) => ({
+          ...current,
+          loading: false,
           error: new Error(`Additional sign-in step required: ${result.nextStep.signInStep}`),
         }));
         return result;
@@ -126,10 +147,11 @@ export function AuthProvider({ children }) {
       ...state,
       refreshUser,
       signIn,
+      confirmNewPassword,
       signOut,
       getAccessToken,
     }),
-    [getAccessToken, refreshUser, signIn, signOut, state],
+    [confirmNewPassword, getAccessToken, refreshUser, signIn, signOut, state],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
