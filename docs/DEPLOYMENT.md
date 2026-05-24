@@ -1,5 +1,7 @@
 # Frontend Deployment Guide
 
+For the broader CI/CD pipeline explanation, including dependency installation behavior and Docker packaging optimization, see `docs/CI_CD_PIPELINE.md`.
+
 ## Purpose
 
 This document captures the deployment flow for the React/Vite frontend on EC2 and answers:  
