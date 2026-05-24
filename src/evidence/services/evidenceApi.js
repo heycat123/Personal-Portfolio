@@ -143,6 +143,39 @@ export const evidenceApi = {
   getSourceConnectors: (caseId, options) => request(casePath(caseId, '/source-connectors'), options),
   authorizeGoogleDrive: (caseId, payload, options) =>
     request(casePath(caseId, '/source-connectors/google-drive/authorize'), { ...options, method: 'POST', body: payload }),
+  browseGoogleDrive: (caseId, sourceConnectionId, params = {}, options = {}) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/browse`),
+      { ...options, query: params },
+    ),
+  searchGoogleDrive: (caseId, sourceConnectionId, params = {}, options = {}) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/search`),
+      { ...options, query: params },
+    ),
+  importGoogleDriveFile: (caseId, sourceConnectionId, payload, options) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/import-file`),
+      { ...options, method: 'POST', body: payload },
+    ),
+  getSourceWatchItems: (caseId, sourceConnectionId, options) =>
+    request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/watch-items`), options),
+  addSourceWatchItem: (caseId, sourceConnectionId, payload, options) =>
+    request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/watch-items`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
+  resolveGoogleDriveWatchItems: (caseId, sourceConnectionId, payload = {}, options) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/resolve-watch-items`),
+      { ...options, method: 'POST', body: payload },
+    ),
+  deactivateSourceWatchItem: (caseId, sourceConnectionId, sourceWatchItemId, options) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/watch-items/${encodeURIComponent(sourceWatchItemId)}/deactivate`),
+      { ...options, method: 'POST' },
+    ),
   disconnectSourceConnector: (caseId, sourceConnectionId, options) =>
     request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/disconnect`), {
       ...options,
