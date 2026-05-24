@@ -122,6 +122,10 @@ export const evidenceApi = {
     request(casePath(caseId, '/documents'), { ...options, query: params }),
   getDocument: (caseId, fileId, options) =>
     request(casePath(caseId, `/documents/${encodeURIComponent(fileId)}`), options),
+  presignDocumentUpload: (caseId, payload, options) =>
+    request(casePath(caseId, '/documents/presign-upload'), { ...options, method: 'POST', body: payload }),
+  registerDocumentUpload: (caseId, payload, options) =>
+    request(casePath(caseId, '/documents/register-upload'), { ...options, method: 'POST', body: payload }),
   getRawParity: (caseId, options) => request(casePath(caseId, '/raw-parity'), options),
   getCaseHealth: (caseId, options) => request(casePath(caseId, '/health'), options),
   getStorageHealth: (caseId, options) =>
