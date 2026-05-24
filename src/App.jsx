@@ -1,47 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import Header from './Header.jsx';
 import Portfolio from './Portfolio.jsx';
 import Projects from './Projects.jsx';
 import HomCentralWidget from './components/ClusterVisualizer/HomCentralWidget.jsx';
+import EvidenceApp from './evidence/EvidenceApp.jsx';
 
-export default function App() {
+function HomCentralRoute() {
     const [flowStage, setFlowStage] = useState(0);
     const [pods, setPods] = useState([]);
     const [activeShard, setActiveShard] = useState(null);
 
-    // 🧠 1. INITIALIZE THEME: Absolute default is DARK
-    const [darkTheme, setDarkTheme] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('theme');
-            // Check if there is a saved preference, otherwise default to true (dark)
-            if (saved !== null) return saved === 'dark';
-        }
-        return true;
-    });
-
-    // 🧠 2. SYNC THE DOM & EMIT TELEMETRY
     useEffect(() => {
-        const root = document.documentElement; // Targets the <html> node
-
-        // 🚨 TELEMETRY: This prints to your browser console every time you click the button
-        console.log("Theme Engine Fired! Target state:", darkTheme ? "DARK" : "LIGHT");
-
-        if (darkTheme) {
-            root.classList.add('dark');
-            root.classList.remove('light');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            root.classList.add('light');
-            root.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
-        }
-    }, [darkTheme]);
-
-    // K8s Fetching Logic
-    useEffect(() => {
-        // 🏗️ Define the base URL once at the top or inside the component
         const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
         const fetchPods = async () => {
             try {
@@ -64,30 +35,53 @@ export default function App() {
     }, []);
 
     return (
-        <Router>
-            {/* Notice how clean this is now! No more wrapper divs for the theme. */}
-            <div className="min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#c9d1d9]">
+        <div className="max-w-6xl mx-auto p-6 pt-12">
+            <HomCentralWidget
+                flowStage={flowStage}
+                setFlowStage={setFlowStage}
+                pods={pods}
+                activeShard={activeShard}
+                setActiveShard={setActiveShard}
+            />
+        </div>
+    );
+}
 
+export default function App() {
+    const [darkTheme, setDarkTheme] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('theme');
+            if (saved !== null) return saved === 'dark';
+        }
+        return true;
+    });
+
+    useEffect(() => {
+        const root = document.documentElement;
+
+        if (darkTheme) {
+            root.classList.add('dark');
+            root.classList.remove('light');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            root.classList.add('light');
+            root.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+        }
+    }, [darkTheme]);
+
+    return (
+        <Router>
+            <div className="min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#c9d1d9]">
                 <Header darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
 
                 <main className="pt-16">
                     <Routes>
                         <Route path="/" element={<Portfolio />} />
                         <Route path="/projects" element={<Projects />} />
-                        <Route
-                            path="/homcentral"
-                            element={
-                                <div className="max-w-6xl mx-auto p-6 pt-12">
-                                    <HomCentralWidget
-                                        flowStage={flowStage}
-                                        setFlowStage={setFlowStage}
-                                        pods={pods}
-                                        activeShard={activeShard}
-                                        setActiveShard={setActiveShard}
-                                    />
-                                </div>
-                            }
-                        />
+                        <Route path="/homcentral" element={<HomCentralRoute />} />
+                        <Route path="/Evidence/*" element={<EvidenceApp />} />
+                        <Route path="/evidence/*" element={<EvidenceApp />} />
                     </Routes>
                 </main>
             </div>

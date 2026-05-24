@@ -1,0 +1,176 @@
+import { ArrowLeft, FileText } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import DataTable from '../components/DataTable';
+import ErrorPanel from '../components/ErrorPanel';
+import MetricTile from '../components/MetricTile';
+import PageHeader from '../components/PageHeader';
+import RequestFingerprint from '../components/RequestFingerprint';
+import StatusBadge from '../components/StatusBadge';
+import { useApiStatus } from '../context/ApiStatusContext';
+import { useEvidenceAuth } from '../context/AuthContext';
+import { evidenceApi } from '../services/evidenceApi';
+import { formatDateTime } from '../utils/formatters';
+
+function parseLowTextPages(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [value];
+    }
+  }
+  return [value];
+}
+
+export default function DocumentDetailPage() {
+  const { caseId, fileId } = useParams();
+  const { getAccessToken } = useEvidenceAuth();
+  const { recordFingerprint } = useApiStatus();
+  const [state, setState] = useState({
+    loading: true,
+    error: null,
+    document: null,
+    fingerprint: null,
+  });
+
+  const loadDocument = useCallback(async () => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getDocument(caseId, fileId, { token });
+      recordFingerprint(result, 'Document detail');
+      setState({
+        loading: false,
+        error: null,
+        document: result.data,
+        fingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      });
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error }));
+    }
+  }, [caseId, fileId, getAccessToken, recordFingerprint]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      loadDocument();
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [loadDocument]);
+
+  const document = state.document;
+  const lowTextPages = useMemo(() => parseLowTextPages(document?.low_text_pages_json), [document]);
+
+  return (
+    <div>
+      <PageHeader
+        title={document?.original_filename || 'Document Detail'}
+        description={document?.file_id || fileId}
+        actions={
+          <Link
+            to={`/evidence/cases/${caseId}/documents`}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+            Documents
+          </Link>
+        }
+      />
+
+      {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocument} /></div> : null}
+
+      {state.fingerprint?.id ? (
+        <div className="mb-5">
+          <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
+        </div>
+      ) : null}
+
+      {document ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricTile icon={FileText} label="Pages" value={document.page_count || 0} detail="Reported extraction page count" />
+            <MetricTile label="Status" value={<StatusBadge status={document.status} />} detail="Evidence file status" />
+            <MetricTile label="Source" value={document.source_provider || 'unknown'} detail={document.source_of_truth_mode || 'unknown mode'} />
+            <MetricTile label="Extraction" value={document.extraction_method || 'pending'} detail={document.media_type || 'unknown media'} />
+          </div>
+
+          <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Metadata</h3>
+              <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+                {[
+                  ['File ID', document.file_id],
+                  ['Version ID', document.current_file_version_id],
+                  ['Content Hash', document.content_hash],
+                  ['Original Path', document.original_filepath],
+                  ['Created', formatDateTime(document.created_at)],
+                  ['Updated', formatDateTime(document.updated_at)],
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0">
+                    <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</dt>
+                    <dd className="mt-1 break-words text-gray-900 dark:text-gray-100">{value || 'Not recorded'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Coverage Flags</h3>
+              <div className="mt-4 space-y-3 text-sm">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Low Text Pages</p>
+                  <p className="mt-1 text-gray-900 dark:text-gray-100">
+                    {lowTextPages.length ? lowTextPages.map((item) => String(item)).join(', ') : 'None reported'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Graph Status</p>
+                  <StatusBadge status="unknown" label="Pending API route" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Vector Status</p>
+                  <StatusBadge status="unknown" label="Pending API route" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Page Extraction Rows</h3>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{document.pages?.length || 0} rows</span>
+            </div>
+            <DataTable
+              rows={document.pages || []}
+              rowKey={(page) => `${page.page_number}-${page.text_source}`}
+              emptyTitle="No page extraction rows returned"
+              columns={[
+                { key: 'page_number', header: 'Page', render: (page) => page.page_number },
+                { key: 'text_source', header: 'Text Source', render: (page) => page.text_source || 'unknown' },
+                { key: 'page_text_chars', header: 'Characters', render: (page) => page.page_text_chars ?? 0 },
+                { key: 'updated_at', header: 'Updated', render: (page) => formatDateTime(page.updated_at) },
+              ]}
+            />
+          </div>
+        </>
+      ) : null}
+
+      {!document && state.loading ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+          Loading document.
+        </div>
+      ) : null}
+    </div>
+  );
+}
