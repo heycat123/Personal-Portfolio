@@ -15,6 +15,7 @@ env:
   CONTAINER_NAME: hom-central-ui
   VITE_API_URL: ${{ vars.VITE_API_URL || 'http://18.222.93.147:3000' }}
   VITE_EVIDENCE_API_BASE_URL: ${{ vars.VITE_EVIDENCE_API_BASE_URL || '/evidence-api' }}
+  VITE_EVIDENCE_AUTH_MODE: ${{ vars.VITE_EVIDENCE_AUTH_MODE || 'local' }}
 
 jobs:
   build-test-deploy:
@@ -43,6 +44,7 @@ jobs:
         env:
           VITE_API_URL: ${{ env.VITE_API_URL }}
           VITE_EVIDENCE_API_BASE_URL: ${{ env.VITE_EVIDENCE_API_BASE_URL }}
+          VITE_EVIDENCE_AUTH_MODE: ${{ env.VITE_EVIDENCE_AUTH_MODE }}
 
       - name: Build Docker image
         run: |
@@ -108,11 +110,12 @@ jobs:
           docker rm -f "${CANDIDATE_NAME}" >/dev/null 2>&1 || true
           docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
 
-          docker run -d --name "${CANDIDATE_NAME}" -p 127.0.0.1:18080:80 "${IMAGE_REF}"
+          docker run -d --name "${CANDIDATE_NAME}" --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18080:80 "${IMAGE_REF}"
           sleep 3
           for path in / /projects /evidence; do
             curl -fsS "http://127.0.0.1:18080${path}" >/dev/null
           done
+          curl -fsS "http://127.0.0.1:18080/evidence-api/health" >/dev/null
           docker rm -f "${CANDIDATE_NAME}" >/dev/null
 
           rollback() {
@@ -131,11 +134,12 @@ jobs:
           fi
 
           trap rollback ERR
-          docker run -d --name "${CONTAINER_NAME}" --restart unless-stopped -p 80:80 "${IMAGE_REF}"
+          docker run -d --name "${CONTAINER_NAME}" --restart unless-stopped --add-host=host.docker.internal:host-gateway -p 80:80 "${IMAGE_REF}"
           sleep 3
           for path in / /projects /evidence; do
             curl -fsS "http://127.0.0.1${path}" >/dev/null
           done
+          curl -fsS "http://127.0.0.1/evidence-api/health" >/dev/null
           trap - ERR
 
           docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true

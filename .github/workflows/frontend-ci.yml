@@ -11,6 +11,7 @@ env:
   IMAGE_NAME: hom-central-frontend-ci
   VITE_API_URL: ${{ vars.VITE_API_URL || 'http://18.222.93.147:3000' }}
   VITE_EVIDENCE_API_BASE_URL: ${{ vars.VITE_EVIDENCE_API_BASE_URL || '/evidence-api' }}
+  VITE_EVIDENCE_AUTH_MODE: ${{ vars.VITE_EVIDENCE_AUTH_MODE || 'local' }}
 
 jobs:
   verify:
@@ -39,6 +40,7 @@ jobs:
         env:
           VITE_API_URL: ${{ env.VITE_API_URL }}
           VITE_EVIDENCE_API_BASE_URL: ${{ env.VITE_EVIDENCE_API_BASE_URL }}
+          VITE_EVIDENCE_AUTH_MODE: ${{ env.VITE_EVIDENCE_AUTH_MODE }}
 
       - name: Build Docker image
         run: |

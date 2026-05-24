@@ -66,6 +66,8 @@ Without a valid JWT, protected endpoints will return auth failures even when dep
 Use environment-aware API URLs:
 - Local API: `VITE_EVIDENCE_API_BASE_URL=http://127.0.0.1:8000`
 - Production/staging: `VITE_EVIDENCE_API_BASE_URL=/evidence-api`
+- Temporary Phase 7.3 MVP auth: `VITE_EVIDENCE_AUTH_MODE=local`
+- Future Cognito auth: `VITE_EVIDENCE_AUTH_MODE=cognito`
 
 If deploy-time API variables are not set, defaults in the workflow/docs are used.
 
@@ -95,11 +97,13 @@ The deploy workflow uses a candidate-first process:
    - `GET /`
    - `GET /projects`
    - `GET /evidence`
+   - `GET /evidence-api/health`
 5. If candidate passes: stop old container, swap in new `hom-central-ui` on `80:80`
 6. Smoke test live URLs:
    - `GET /`
    - `GET /projects`
    - `GET /evidence`
+   - `GET /evidence-api/health`
 7. On live failure: rollback to previous container
 
 ## 5) Required repository settings
@@ -117,6 +121,7 @@ Set in GitHub Variables (optional override):
 ```text
 VITE_API_URL=http://18.222.93.147:3000
 VITE_EVIDENCE_API_BASE_URL=/evidence-api
+VITE_EVIDENCE_AUTH_MODE=local
 ```
 
 Do not commit `.pem` files.
@@ -138,6 +143,28 @@ try_files $uri $uri/ /index.html;
 ```
 
 This is required so hard refresh on `/projects` and `/evidence` does not 404.
+
+Nginx also proxies browser Evidence API calls through the same origin:
+
+```nginx
+location /evidence-api/ {
+    proxy_pass http://host.docker.internal:8000/;
+}
+```
+
+The deploy workflow starts the frontend container with:
+
+```bash
+--add-host=host.docker.internal:host-gateway
+```
+
+That lets the Nginx container reach the Evidence API published on the EC2 Docker host at port `8000`.
+
+`VITE_EVIDENCE_AUTH_MODE=local` is only a temporary MVP setting while Cognito/JWT enforcement is unfinished. Once Cognito is configured, set the GitHub variable to:
+
+```text
+VITE_EVIDENCE_AUTH_MODE=cognito
+```
 
 ## 7) Fast incident checks
 

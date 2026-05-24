@@ -169,6 +169,7 @@ Candidate smoke checks:
 /
 /projects
 /evidence
+/evidence-api/health
 ```
 
 If those pass, the workflow replaces the live container:
@@ -181,6 +182,8 @@ port: 80:80
 After the swap, it smoke tests the live site.
 
 If the live check fails, it attempts to restore the previous container.
+
+The frontend container is started with `--add-host=host.docker.internal:host-gateway` so Nginx can proxy `/evidence-api/*` to the Evidence API running on the EC2 Docker host at port `8000`.
 
 ## Safe future optimizations
 
