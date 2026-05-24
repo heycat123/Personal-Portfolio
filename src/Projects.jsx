@@ -1,5 +1,5 @@
 import React from 'react';
-import { Server, Database, Settings, Activity, Code } from 'lucide-react';
+import { Server, Database, Settings, Activity, Code, Scale } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Projects() {
@@ -62,6 +62,20 @@ export default function Projects() {
                         <span className="text-[10px] uppercase font-bold text-gray-500 dark:text-[#8b949e] bg-gray-100 dark:bg-[#21262d] px-2 py-1 rounded transition-colors">Python (Pandas)</span>
                     </div>
                 </div>
+
+                {/* Project 4: Legal Evidence Classification */}
+                <Link to="/evidence" className="group block bg-white dark:bg-[#161b22] border border-gray-200 dark:border-[#30363d] rounded-xl p-6 hover:border-[#f0883e] dark:hover:border-[#f0883e] transition-all duration-300 flex flex-col h-full">
+                    <div className="flex gap-3 mb-4">
+                        <Scale className="text-[#f0883e]" size={24} />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 transition-colors">Legal Evidence Classification</h3>
+                    <p className="text-gray-600 dark:text-[#8b949e] text-sm mb-6 flex-grow transition-colors">
+                        AI-assisted evidence ingestion and legal case workflow app with document upload, validation, and job tracking.
+                    </p>
+                    <div className="text-xs font-mono text-[#f0883e] bg-gray-50 dark:bg-[#0d1117] border border-gray-200 dark:border-[#30363d] py-2 px-3 rounded text-center group-hover:bg-[#f0883e] group-hover:text-white dark:group-hover:text-[#0d1117] transition-colors">
+                        Open Evidence Workspace â†’
+                    </div>
+                </Link>
             </div>
         </div>
     </div>

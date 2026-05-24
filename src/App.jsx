@@ -80,6 +80,7 @@ export default function App() {
                         <Route path="/" element={<Portfolio />} />
                         <Route path="/projects" element={<Projects />} />
                         <Route path="/homcentral" element={<HomCentralRoute />} />
+                        <Route path="/Evidence/*" element={<EvidenceApp />} />
                         <Route path="/evidence/*" element={<EvidenceApp />} />
                     </Routes>
                 </main>
