@@ -43,7 +43,6 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
-            --build-arg VITE_API_URL="${VITE_API_URL}" \
-            --build-arg VITE_EVIDENCE_API_BASE_URL="${VITE_EVIDENCE_API_BASE_URL}" \
+            --file Dockerfile.runtime \
             --tag "${IMAGE_NAME}:${GITHUB_SHA}" \
             .
