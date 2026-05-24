@@ -13,7 +13,7 @@ export default function ControlPanel({ setLogs }) {
             await deployService(tech);
             // We don't update the pod state here! We wait for the WebSocket
             // in Dashboard.jsx to tell us it actually happened.
-        } catch (error) {
+        } catch {
             setLogs(prev => [...prev, `[ERROR] Failed to deploy ${tech}.`]);
         } finally {
             setIsDeploying(false);
@@ -24,7 +24,7 @@ export default function ControlPanel({ setLogs }) {
         setLogs(prev => [...prev, `[USER] Initiating cluster purge...`]);
         try {
             await purgeCluster();
-        } catch (error) {
+        } catch {
             setLogs(prev => [...prev, `[ERROR] Failed to purge cluster.`]);
         }
     };

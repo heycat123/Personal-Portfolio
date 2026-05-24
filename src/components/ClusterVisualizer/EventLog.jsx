@@ -1,5 +1,5 @@
 // src/components/ClusterVisualizer/EventLog.jsx
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 
 export default function EventLog({ logs }) {
     const logEndRef = useRef(null);

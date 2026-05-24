@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Terminal, Mail, FileText, Download } from 'lucide-react';
 import { FaLinkedin, FaGithub } from 'react-icons/fa';
 import { SiIndeed } from 'react-icons/si';
 import { Link } from 'react-router-dom';
 
+const TITLES = ["Systems Engineer.", "Full Stack Developer.", "Automation Architect.", "B.S. Computer Science."];
+
 export default function Portfolio() {
-    const titles = ["Systems Engineer.", "Full Stack Developer.", "Automation Architect.", "B.S. Computer Science."];
     const [typedText, setTypedText] = useState("");
     const [titleIndex, setTitleIndex] = useState(0);
     const [charIndex, setCharIndex] = useState(0);
@@ -14,7 +15,7 @@ export default function Portfolio() {
 
     useEffect(() => {
         const handleType = () => {
-            const currentTitle = titles[titleIndex];
+            const currentTitle = TITLES[titleIndex];
             if (isDeleting) {
                 setTypedText(currentTitle.substring(0, charIndex - 1));
                 setCharIndex(prev => prev - 1);
@@ -29,12 +30,12 @@ export default function Portfolio() {
                 setTimeout(() => setIsDeleting(true), 2000);
             } else if (isDeleting && charIndex === 0) {
                 setIsDeleting(false);
-                setTitleIndex((prev) => (prev + 1) % titles.length);
+                setTitleIndex((prev) => (prev + 1) % TITLES.length);
             }
         };
         const timer = setTimeout(handleType, typingSpeed);
         return () => clearTimeout(timer);
-    }, [charIndex, isDeleting, titleIndex]);
+    }, [charIndex, isDeleting, titleIndex, typingSpeed]);
 
     return (
         <div className="font-sans pb-20 antialiased selection:bg-[#58a6ff] selection:text-white transition-colors duration-300">

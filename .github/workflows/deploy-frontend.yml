@@ -1,0 +1,145 @@
+name: Deploy frontend
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-production
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: hom-central-frontend
+  CONTAINER_NAME: hom-central-ui
+  VITE_API_URL: ${{ vars.VITE_API_URL || 'http://18.222.93.147:3000' }}
+  VITE_EVIDENCE_API_BASE_URL: ${{ vars.VITE_EVIDENCE_API_BASE_URL || '/evidence-api' }}
+
+jobs:
+  build-test-deploy:
+    name: Build, test, and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build static app
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ env.VITE_API_URL }}
+          VITE_EVIDENCE_API_BASE_URL: ${{ env.VITE_EVIDENCE_API_BASE_URL }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg VITE_API_URL="${VITE_API_URL}" \
+            --build-arg VITE_EVIDENCE_API_BASE_URL="${VITE_EVIDENCE_API_BASE_URL}" \
+            --tag "${IMAGE_NAME}:${GITHUB_SHA}" \
+            --tag "${IMAGE_NAME}:latest" \
+            .
+
+      - name: Export Docker image
+        run: |
+          docker save "${IMAGE_NAME}:${GITHUB_SHA}" | gzip > "${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
+
+      - name: Configure SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Missing required secret EC2_HOST."
+            exit 1
+          fi
+          if [ -z "${EC2_SSH_PRIVATE_KEY}" ]; then
+            echo "::error::Missing required secret EC2_SSH_PRIVATE_KEY."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${EC2_SSH_PRIVATE_KEY}" > ~/.ssh/ec2_deploy_key
+          chmod 600 ~/.ssh/ec2_deploy_key
+          ssh-keyscan -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Copy image to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+        run: |
+          ARCHIVE="${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
+          ssh -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" "mkdir -p ~/frontend-releases"
+          scp -i ~/.ssh/ec2_deploy_key "${ARCHIVE}" "${EC2_USER}@${EC2_HOST}:~/frontend-releases/${ARCHIVE}"
+
+      - name: Deploy on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
+        run: |
+          ssh -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" \
+            IMAGE_NAME="${IMAGE_NAME}" \
+            IMAGE_TAG="${GITHUB_SHA}" \
+            CONTAINER_NAME="${CONTAINER_NAME}" \
+            'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          RELEASE_DIR="$HOME/frontend-releases"
+          ARCHIVE="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
+          IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
+          CANDIDATE_NAME="${CONTAINER_NAME}-candidate"
+          PREVIOUS_NAME="${CONTAINER_NAME}-previous"
+
+          cd "${RELEASE_DIR}"
+          docker load -i "${ARCHIVE}"
+
+          docker rm -f "${CANDIDATE_NAME}" >/dev/null 2>&1 || true
+          docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
+
+          docker run -d --name "${CANDIDATE_NAME}" -p 127.0.0.1:18080:80 "${IMAGE_REF}"
+          sleep 3
+          for path in / /projects /evidence; do
+            curl -fsS "http://127.0.0.1:18080${path}" >/dev/null
+          done
+          docker rm -f "${CANDIDATE_NAME}" >/dev/null
+
+          rollback() {
+            echo "Deployment failed. Rolling back frontend container."
+            docker logs --tail 100 "${CONTAINER_NAME}" || true
+            docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+            if docker ps -a --format '{{.Names}}' | grep -Fxq "${PREVIOUS_NAME}"; then
+              docker rename "${PREVIOUS_NAME}" "${CONTAINER_NAME}" || true
+              docker start "${CONTAINER_NAME}" || true
+            fi
+          }
+
+          if docker ps -a --format '{{.Names}}' | grep -Fxq "${CONTAINER_NAME}"; then
+            docker rename "${CONTAINER_NAME}" "${PREVIOUS_NAME}"
+            docker stop "${PREVIOUS_NAME}" >/dev/null
+          fi
+
+          trap rollback ERR
+          docker run -d --name "${CONTAINER_NAME}" --restart unless-stopped -p 80:80 "${IMAGE_REF}"
+          sleep 3
+          for path in / /projects /evidence; do
+            curl -fsS "http://127.0.0.1${path}" >/dev/null
+          done
+          trap - ERR
+
+          docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
+          rm -f "${ARCHIVE}"
+          docker image prune -f --filter "label=app=hom-central-frontend" --filter "until=168h" >/dev/null
+          REMOTE_SCRIPT

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import SystemFlow from './SystemFlow.jsx';
 import ClusterGrid from './ClusterGrid.jsx';
@@ -13,9 +13,9 @@ export default function HomCentralWidget({ flowStage, setFlowStage, pods, active
     const [useCache, setUseCache] = useState(true);
     const [fetchMetrics, setFetchMetrics] = useState({ source: 'pending', time: 0 });
 
-    const API_BASE = import.meta.env.VITE_API_URL;
+    const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
-    const fetchAllTickets = async () => {
+    const fetchAllTickets = useCallback(async () => {
         try {
             // 🚀 UPDATED: Append the useCache toggle to the URL
             const response = await fetch(`${API_BASE}/api/tickets?useCache=${useCache}`, {
@@ -36,7 +36,7 @@ export default function HomCentralWidget({ flowStage, setFlowStage, pods, active
         } catch (err) {
             console.error("Fetch error:", err.message);
         }
-    };
+    }, [API_BASE, useCache]);
 
     useEffect(() => {
         fetchAllTickets();
@@ -53,7 +53,7 @@ export default function HomCentralWidget({ flowStage, setFlowStage, pods, active
         });
 
         return () => socket.disconnect();
-    }, [useCache]); // 👈 Added useCache to dependency array so it fetches using the latest state
+    }, [API_BASE, fetchAllTickets]);
 
     const submitMaintenanceTicket = async () => {
         const targetShard = propertyId.startsWith('5') ? 'B' : 'A';
@@ -119,6 +119,19 @@ export default function HomCentralWidget({ flowStage, setFlowStage, pods, active
     return (
         <div style={{ backgroundColor: '#161b22', borderRadius: '8px', padding: '25px', color: '#c9d1d9', border: '1px solid #30363d' }}>
             <h2 style={{ color: '#58a6ff', marginTop: 0, marginBottom: '20px' }}>Maintenance Dispatch Center</h2>
+            {ticketStatus && (
+                <div style={{
+                    marginBottom: '16px',
+                    padding: '10px 12px',
+                    backgroundColor: '#0d1117',
+                    border: '1px solid #30363d',
+                    borderRadius: '6px',
+                    color: '#c9d1d9',
+                    fontSize: '0.9rem'
+                }}>
+                    {ticketStatus}
+                </div>
+            )}
 
             <SystemFlow currentStage={flowStage} />
 
