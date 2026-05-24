@@ -13,7 +13,7 @@ export default function HomCentralWidget({ flowStage, setFlowStage, pods, active
     const [useCache, setUseCache] = useState(true);
     const [fetchMetrics, setFetchMetrics] = useState({ source: 'pending', time: 0 });
 
-    const API_BASE = "http://localhost:3000";
+    const API_BASE = import.meta.env.VITE_API_URL;
 
     const fetchAllTickets = async () => {
         try {

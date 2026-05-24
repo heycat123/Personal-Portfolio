@@ -41,9 +41,11 @@ export default function App() {
 
     // K8s Fetching Logic
     useEffect(() => {
+        // 🏗️ Define the base URL once at the top or inside the component
+        const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
         const fetchPods = async () => {
             try {
-                const response = await fetch('http://localhost:3000/api/k8s/pods', {
+                const response = await fetch(`${API_BASE}/api/k8s/pods`, {
                     headers: { 'x-api-key': 'hom-central-secret-777' }
                 });
                 if (response.ok) {
@@ -56,7 +58,7 @@ export default function App() {
         };
 
         fetchPods();
-        const socket = io('http://localhost:3000', { transports: ['websocket'] });
+        const socket = io(API_BASE, { transports: ['websocket'] });
         socket.on('K8S_CLUSTER_UPDATE', () => fetchPods());
         return () => socket.disconnect();
     }, []);

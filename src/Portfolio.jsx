@@ -47,7 +47,7 @@ export default function Portfolio() {
                     <div className="relative group shrink-0">
                         <div className="absolute inset-0 bg-gradient-to-r from-[#58a6ff] to-[#3fb950] rounded-full blur-xl opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
                         <img
-                            src="../public/forest.jpg"
+                            src="/forest.jpg"
                             alt="Profile Photo"
                             className="object-top relative w-40 h-40 md:w-48 md:h-48 rounded-full border-4 border-gray-200 dark:border-[#30363d] group-hover:border-[#58a6ff] object-cover filter grayscale hover:grayscale-0 transition-all duration-300 ease-in-out shadow-2xl"
                             onError={(e) => {
