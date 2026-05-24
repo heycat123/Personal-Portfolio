@@ -126,6 +126,14 @@ export const evidenceApi = {
     request(casePath(caseId, '/documents/presign-upload'), { ...options, method: 'POST', body: payload }),
   registerDocumentUpload: (caseId, payload, options) =>
     request(casePath(caseId, '/documents/register-upload'), { ...options, method: 'POST', body: payload }),
+  getSourceConnectors: (caseId, options) => request(casePath(caseId, '/source-connectors'), options),
+  authorizeGoogleDrive: (caseId, payload, options) =>
+    request(casePath(caseId, '/source-connectors/google-drive/authorize'), { ...options, method: 'POST', body: payload }),
+  disconnectSourceConnector: (caseId, sourceConnectionId, options) =>
+    request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/disconnect`), {
+      ...options,
+      method: 'POST',
+    }),
   getRawParity: (caseId, options) => request(casePath(caseId, '/raw-parity'), options),
   getCaseHealth: (caseId, options) => request(casePath(caseId, '/health'), options),
   getStorageHealth: (caseId, options) =>
