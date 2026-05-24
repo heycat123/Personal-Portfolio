@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import EmptyState from './components/EmptyState';
 import PageHeader from './components/PageHeader';
+import { useEvidenceAuth } from './context/AuthContext';
 import { useCaseContext } from './context/CaseContext';
 import EvidenceLayout from './layout/EvidenceLayout';
 import DashboardPage from './pages/DashboardPage';
@@ -12,6 +13,7 @@ import HealthPage from './pages/HealthPage';
 import IntakePage from './pages/IntakePage';
 import JobDetailPage from './pages/JobDetailPage';
 import JobsPage from './pages/JobsPage';
+import LoginPage from './pages/LoginPage';
 import QueryPage from './pages/QueryPage';
 import SettingsPage from './pages/SettingsPage';
 import SystemQueryPage from './pages/SystemQueryPage';
@@ -20,6 +22,25 @@ import TestsPage from './pages/TestsPage';
 function EvidenceIndex() {
   const { defaultCaseId } = useCaseContext();
   return <Navigate to={`cases/${defaultCaseId}/dashboard`} replace />;
+}
+
+function ProtectedEvidenceRoute() {
+  const location = useLocation();
+  const { loading, isAuthenticated } = useEvidenceAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 px-6 py-8 text-gray-900 dark:bg-[#0b1117] dark:text-gray-100">
+        <PageHeader title="Checking Access" description="Validating the current evidence session." />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/evidence/login" replace state={{ from: location }} />;
+  }
+
+  return <Outlet />;
 }
 
 function UnknownCasePage() {
@@ -61,24 +82,27 @@ function NotFoundPage() {
 export default function EvidenceRoutes() {
   return (
     <Routes>
-      <Route element={<EvidenceLayout />}>
-        <Route index element={<EvidenceIndex />} />
-        <Route path="cases/:caseId" element={<CaseScope />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="documents" element={<DocumentsPage />} />
-          <Route path="documents/:fileId" element={<DocumentDetailPage />} />
-          <Route path="intake" element={<IntakePage />} />
-          <Route path="jobs" element={<JobsPage />} />
-          <Route path="jobs/:jobId" element={<JobDetailPage />} />
-          <Route path="query" element={<QueryPage />} />
-          <Route path="system-query" element={<SystemQueryPage />} />
-          <Route path="health" element={<HealthPage />} />
-          <Route path="entities" element={<EntitiesPage />} />
-          <Route path="tests" element={<TestsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
+      <Route path="login" element={<LoginPage />} />
+      <Route element={<ProtectedEvidenceRoute />}>
+        <Route element={<EvidenceLayout />}>
+          <Route index element={<EvidenceIndex />} />
+          <Route path="cases/:caseId" element={<CaseScope />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="documents" element={<DocumentsPage />} />
+            <Route path="documents/:fileId" element={<DocumentDetailPage />} />
+            <Route path="intake" element={<IntakePage />} />
+            <Route path="jobs" element={<JobsPage />} />
+            <Route path="jobs/:jobId" element={<JobDetailPage />} />
+            <Route path="query" element={<QueryPage />} />
+            <Route path="system-query" element={<SystemQueryPage />} />
+            <Route path="health" element={<HealthPage />} />
+            <Route path="entities" element={<EntitiesPage />} />
+            <Route path="tests" element={<TestsPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
-        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );

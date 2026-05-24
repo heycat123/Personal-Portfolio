@@ -1,4 +1,4 @@
-import { RefreshCw, Shield } from 'lucide-react';
+import { LogOut, RefreshCw, Shield } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
@@ -8,7 +8,7 @@ import { formatDateTime } from '../utils/formatters';
 
 export default function EvidenceTopbar() {
   const { status, latestFingerprint, checkApiHealth } = useApiStatus();
-  const { user, authMode } = useEvidenceAuth();
+  const { user, authMode, signOut } = useEvidenceAuth();
   const { activeCase } = useCaseContext();
 
   return (
@@ -43,9 +43,18 @@ export default function EvidenceTopbar() {
           </button>
           <div className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300">
             <Shield size={16} aria-hidden="true" />
-            <span>{user.displayName}</span>
+            <span>{user?.displayName || 'Evidence User'}</span>
             <span className="text-xs text-gray-500">({authMode})</span>
           </div>
+          <button
+            type="button"
+            onClick={signOut}
+            title="Sign out"
+            aria-label="Sign out"
+            className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <LogOut size={16} aria-hidden="true" />
+          </button>
         </div>
       </div>
 

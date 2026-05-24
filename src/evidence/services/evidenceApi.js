@@ -115,6 +115,8 @@ function casePath(caseId, suffix = '') {
 
 export const evidenceApi = {
   getHealth: (options) => request('/health', options),
+  getMe: (options) => request('/api/v1/me', options),
+  getCases: (options) => request('/api/v1/cases', options),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
