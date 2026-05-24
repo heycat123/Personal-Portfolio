@@ -134,4 +134,8 @@ export const evidenceApi = {
     request(casePath(caseId, `/jobs/${encodeURIComponent(jobId)}`), options),
   createJob: (caseId, payload, options) =>
     request(casePath(caseId, '/jobs'), { ...options, method: 'POST', body: payload }),
+  cancelJob: (caseId, jobId, options) =>
+    request(casePath(caseId, `/jobs/${encodeURIComponent(jobId)}/cancel`), { ...options, method: 'POST' }),
+  retryJob: (caseId, jobId, options) =>
+    request(casePath(caseId, `/jobs/${encodeURIComponent(jobId)}/retry`), { ...options, method: 'POST' }),
 };

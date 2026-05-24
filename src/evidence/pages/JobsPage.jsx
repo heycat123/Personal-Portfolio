@@ -1,4 +1,4 @@
-import { Play, RefreshCw } from 'lucide-react';
+import { Ban, Play, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -20,8 +20,10 @@ export default function JobsPage() {
   const [state, setState] = useState({
     loading: true,
     creatingJobType: null,
+    actionJobId: null,
     error: null,
     createError: null,
+    actionError: null,
     jobs: [],
     total: 0,
     fingerprint: null,
@@ -51,7 +53,7 @@ export default function JobsPage() {
   }, [caseId, getAccessToken, recordFingerprint]);
 
   const createSafeJob = useCallback(async (jobType) => {
-    setState((current) => ({ ...current, creatingJobType: jobType, createError: null }));
+    setState((current) => ({ ...current, creatingJobType: jobType, createError: null, actionError: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.createJob(
@@ -77,6 +79,34 @@ export default function JobsPage() {
       await loadJobs();
     } catch (error) {
       setState((current) => ({ ...current, creatingJobType: null, createError: error }));
+    }
+  }, [caseId, getAccessToken, loadJobs, recordFingerprint]);
+
+  const cancelJob = useCallback(async (jobId) => {
+    setState((current) => ({ ...current, actionJobId: jobId, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.cancelJob(caseId, jobId, { token });
+      recordFingerprint(result, 'Cancel job');
+      await loadJobs();
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setState((current) => ({ ...current, actionJobId: null }));
+    }
+  }, [caseId, getAccessToken, loadJobs, recordFingerprint]);
+
+  const retryJob = useCallback(async (jobId) => {
+    setState((current) => ({ ...current, actionJobId: jobId, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.retryJob(caseId, jobId, { token });
+      recordFingerprint(result, 'Retry job');
+      await loadJobs();
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setState((current) => ({ ...current, actionJobId: null }));
     }
   }, [caseId, getAccessToken, loadJobs, recordFingerprint]);
 
@@ -121,6 +151,7 @@ export default function JobsPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadJobs} /></div> : null}
       {state.createError ? <div className="mb-5"><ErrorPanel title="Job creation failed" error={state.createError} /></div> : null}
+      {state.actionError ? <div className="mb-5"><ErrorPanel title="Job action failed" error={state.actionError} /></div> : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
         {state.fingerprint?.id ? (
@@ -160,6 +191,39 @@ export default function JobsPage() {
             key: 'request_fingerprint_id',
             header: 'Fingerprint',
             render: (job) => truncateMiddle(job.request_fingerprint_id, 24),
+          },
+          {
+            key: 'actions',
+            header: 'Actions',
+            render: (job) => {
+              const busy = state.actionJobId === job.job_id;
+              const canCancel = job.status === 'queued';
+              const canRetry = ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+              return (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => cancelJob(job.job_id)}
+                    disabled={!canCancel || Boolean(state.actionJobId)}
+                    title="Cancel queued job"
+                    className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                  >
+                    <Ban size={13} aria-hidden="true" />
+                    {busy && canCancel ? 'Cancelling' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => retryJob(job.job_id)}
+                    disabled={!canRetry || Boolean(state.actionJobId)}
+                    title="Retry failed or cancelled safe job"
+                    className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+                  >
+                    <RotateCcw size={13} aria-hidden="true" />
+                    {busy && canRetry ? 'Retrying' : 'Retry'}
+                  </button>
+                </div>
+              );
+            },
           },
         ]}
       />
