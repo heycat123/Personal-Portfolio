@@ -192,6 +192,14 @@ export const evidenceApi = {
     request(casePath(caseId, '/source-alignment/latest'), options),
   queryCase: (caseId, payload, options) =>
     request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
+  getBaselineTests: (caseId, options) =>
+    request(casePath(caseId, '/tests/baseline'), options),
+  getBaselineTestRuns: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/tests/baseline/runs'), { ...options, query: params }),
+  queueBaselineTestRun: (caseId, payload, options) =>
+    request(casePath(caseId, '/tests/baseline/run'), { ...options, method: 'POST', body: payload }),
+  createBaselineTestReview: (caseId, payload, options) =>
+    request(casePath(caseId, '/tests/baseline/reviews'), { ...options, method: 'POST', body: payload }),
   runStorageSmoke: (caseId, options) =>
     request(casePath(caseId, '/storage/smoke'), { ...options, method: 'POST' }),
   getJobs: (caseId, params = {}, options = {}) =>

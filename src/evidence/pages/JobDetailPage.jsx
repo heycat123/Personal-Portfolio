@@ -12,7 +12,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
-const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke'];
+const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit', 'agentic_quality_test'];
 
 function JsonBlock({ value }) {
   return (
