@@ -10,6 +10,7 @@ import AccountPage from './pages/AccountPage';
 import AdminPage from './pages/AdminPage';
 import DocumentDetailPage from './pages/DocumentDetailPage';
 import DocumentsPage from './pages/DocumentsPage';
+import EntityDetailPage from './pages/EntityDetailPage';
 import EntitiesPage from './pages/EntitiesPage';
 import HealthPage from './pages/HealthPage';
 import IntakePage from './pages/IntakePage';
@@ -101,6 +102,7 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="system-query" element={<SystemQueryPage />} />
             <Route path="health" element={<HealthPage />} />
             <Route path="entities" element={<EntitiesPage />} />
+            <Route path="entities/:personId" element={<EntityDetailPage />} />
             <Route path="tests" element={<TestsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="admin" element={<AdminPage />} />
