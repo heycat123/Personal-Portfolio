@@ -52,10 +52,10 @@ function AppShell({ darkTheme, setDarkTheme }) {
     const evidenceRoute = location.pathname.startsWith('/evidence');
 
     return (
-        <div className="min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#c9d1d9]">
+        <div className="min-h-screen w-full max-w-full overflow-x-hidden transition-colors duration-300 bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#c9d1d9]">
             {!evidenceRoute ? <Header darkTheme={darkTheme} setDarkTheme={setDarkTheme} /> : null}
 
-            <main className={evidenceRoute ? '' : 'pt-16'}>
+            <main className={evidenceRoute ? 'w-full max-w-full overflow-x-hidden' : 'pt-16'}>
                 <Routes>
                     <Route path="/" element={<Portfolio />} />
                     <Route path="/projects" element={<Projects />} />

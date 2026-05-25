@@ -56,7 +56,7 @@ function InlineAnswer({ answer, citations, onOpenCitation }) {
   const lookup = citationLookup(citations);
   const parts = text.split(/(\[[^\]\n]{3,260}\])/g);
   return (
-    <div className="whitespace-pre-wrap leading-6 text-gray-900 dark:text-gray-100">
+    <div className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-words leading-6 text-gray-900 dark:text-gray-100">
       {parts.map((part, index) => {
         const bracketed = part.startsWith('[') && part.endsWith(']');
         const citation = bracketed ? lookup.get(normalizeCitationLabel(part)) : null;
@@ -70,11 +70,11 @@ function InlineAnswer({ answer, citations, onOpenCitation }) {
             type="button"
             onClick={canOpen ? () => onOpenCitation(citation) : undefined}
             disabled={!canOpen}
-            className="mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 disabled:cursor-default disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-600 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 dark:disabled:border-gray-800 dark:disabled:bg-black/20 dark:disabled:text-gray-400"
+            className="mx-0.5 inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 disabled:cursor-default disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-600 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 dark:disabled:border-gray-800 dark:disabled:bg-black/20 dark:disabled:text-gray-400"
             title={citationLabel(citation)}
           >
             <FileText size={12} className="shrink-0" aria-hidden="true" />
-            <span className="max-w-[18rem] truncate">{citationLabel(citation)}</span>
+            <span className="min-w-0 max-w-[calc(100vw-6rem)] truncate sm:max-w-[18rem]">{citationLabel(citation)}</span>
           </button>
         );
       })}
@@ -96,19 +96,19 @@ function CitationList({ citations, onOpenCitation, t }) {
             type="button"
             key={`${label}-${index}`}
             onClick={() => onOpenCitation(citation)}
-            className="inline-flex max-w-full items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-left text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100"
+            className="inline-flex max-w-full min-w-0 items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-left text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100"
             title={label}
           >
             <FileText size={14} className="shrink-0" aria-hidden="true" />
-            <span className="truncate">{label}</span>
+            <span className="min-w-0 truncate">{label}</span>
           </button>
         ) : (
           <span
             key={`${label}-${index}`}
-            className="inline-flex max-w-full items-center rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300"
+            className="inline-flex max-w-full min-w-0 items-center rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300"
             title={label}
           >
-            <span className="truncate">{label}</span>
+            <span className="min-w-0 truncate">{label}</span>
           </span>
         );
       })}
@@ -141,7 +141,7 @@ function AgenticSummary({ result, t }) {
   const verified = Boolean(verifier.verified && verifier.sufficient);
 
   return (
-    <div className="mt-4 rounded-md border border-sky-100 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
+    <div className="mt-4 min-w-0 max-w-full overflow-hidden rounded-md border border-sky-100 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
       <div className="flex flex-wrap items-center gap-2">
         <Bot size={15} aria-hidden="true" />
         <span className="font-semibold">{t('Agentic planner')}</span>
@@ -178,9 +178,9 @@ function AgenticSummary({ result, t }) {
       {executedTools.length ? (
         <div className="mt-3 overflow-hidden rounded-md border border-sky-200 bg-white dark:border-sky-900 dark:bg-black/20">
           {executedTools.map((tool) => (
-            <div key={tool.tool} className="flex items-center justify-between gap-3 border-b border-sky-100 px-2 py-1.5 last:border-b-0 dark:border-sky-900/60">
-              <span className="truncate font-medium">{toolLabel(tool.tool)}</span>
-              <span className="shrink-0 text-sky-700 dark:text-sky-200">
+            <div key={tool.tool} className="flex min-w-0 items-center justify-between gap-3 border-b border-sky-100 px-2 py-1.5 last:border-b-0 dark:border-sky-900/60">
+              <span className="min-w-0 truncate font-medium">{toolLabel(tool.tool)}</span>
+              <span className="shrink-0 text-right text-sky-700 dark:text-sky-200">
                 {tool.status || 'ok'} - {tool.rows ?? 0} rows
               </span>
             </div>
@@ -194,8 +194,8 @@ function AgenticSummary({ result, t }) {
 function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="min-w-0 max-w-[88%] overflow-hidden rounded-lg bg-sky-700 px-4 py-3 text-sm text-white shadow-sm">
+      <div className="flex min-w-0 max-w-full justify-end">
+        <div className="min-w-0 max-w-[calc(100vw-2rem)] overflow-hidden break-words rounded-lg bg-sky-700 px-4 py-3 text-sm text-white shadow-sm sm:max-w-[88%]">
           {message.content}
         </div>
       </div>
@@ -206,8 +206,8 @@ function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
   const verifier = result?.verifier_status;
   const verified = Boolean(verifier?.verified || verifier?.sufficient);
   return (
-    <div className="flex justify-start">
-      <div className="min-w-0 max-w-[92%] overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+    <div className="flex min-w-0 max-w-full justify-start">
+      <div className="min-w-0 w-full max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820] sm:max-w-[92%] sm:p-4">
         {message.running ? (
           <div className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
@@ -406,7 +406,7 @@ function ConversationList({
   t,
 }) {
   return (
-    <aside className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:min-h-[520px]">
+    <aside className="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:min-h-[520px]">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <History size={17} className="shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
@@ -432,7 +432,7 @@ function ConversationList({
         </div>
       </div>
       {error ? <ErrorPanel title="Conversation history failed" error={error} /> : null}
-      <div className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[470px] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
+      <div className="flex max-w-full gap-2 overflow-x-auto pb-1 xl:max-h-[470px] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
         {conversations.length ? (
           conversations.map((conversation) => {
             const active = conversation.conversation_id === activeConversationId;
@@ -700,7 +700,7 @@ export default function QueryPage() {
   const traceRows = useMemo(() => state.result?.retrieval_trace || [], [state.result?.retrieval_trace]);
 
   return (
-    <div className="flex min-h-[calc(100vh-150px)] flex-col">
+    <div className="flex min-h-[calc(100vh-150px)] w-full min-w-0 max-w-full flex-col overflow-x-hidden">
       <PageHeader
         title="Agentic Query"
         description="Ask case-scoped evidence questions through the agentic planner and inspect tools, sufficiency, citations, trace, and cost."
@@ -718,7 +718,7 @@ export default function QueryPage() {
         </div>
       ) : null}
 
-      <div className="grid flex-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid w-full min-w-0 max-w-full flex-1 gap-4 overflow-x-hidden xl:grid-cols-[300px_minmax(0,1fr)]">
         <ConversationList
           conversations={conversationState.conversations}
           activeConversationId={activeConversationId}
@@ -730,8 +730,8 @@ export default function QueryPage() {
           t={t}
         />
 
-        <section className="flex min-h-[520px] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
-        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <section className="flex min-h-[520px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
+        <div className="min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
           {hasMessages ? (
             messages.map((message) => (
               <QueryMessage
@@ -757,7 +757,7 @@ export default function QueryPage() {
           <label className="sr-only" htmlFor="case-query-input">
             {t('Question')}
           </label>
-          <div className="flex flex-col gap-3 lg:flex-row">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row">
             <textarea
               id="case-query-input"
               value={question}
@@ -769,7 +769,7 @@ export default function QueryPage() {
                   runQuery();
                 }
               }}
-              className="min-h-[54px] flex-1 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              className="min-h-[54px] min-w-0 flex-1 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               placeholder={t('Ask a question about the evidence')}
             />
             <button
