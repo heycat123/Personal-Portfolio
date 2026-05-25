@@ -25,8 +25,18 @@ export default function LoginPage() {
   const [form, setForm] = useState({
     identifier: '',
     email: '',
+    firstName: '',
+    familyName: '',
     displayName: '',
     phoneNumber: '',
+    address: '',
+    birthdate: '',
+    gender: '',
+    locale: typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US',
+    timeZone:
+      typeof Intl !== 'undefined'
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Chicago'
+        : 'America/Chicago',
     password: '',
   });
   const [newPassword, setNewPassword] = useState('');
@@ -73,8 +83,15 @@ export default function LoginPage() {
         username: form.email,
         email: form.email,
         password: form.password,
+        firstName: form.firstName,
+        familyName: form.familyName,
         displayName: form.displayName,
         phoneNumber: form.phoneNumber || undefined,
+        address: form.address,
+        birthdate: form.birthdate,
+        gender: form.gender,
+        locale: form.locale,
+        timeZone: form.timeZone,
       });
       setView('confirm-sign-up');
       setNotice('Confirmation code sent.');
@@ -191,7 +208,10 @@ export default function LoginPage() {
 
         {error || submitError ? (
           <div className="mb-5">
-            <ErrorPanel title="Sign in unavailable" error={submitError || error} />
+            <ErrorPanel
+              title={view === 'sign-up' ? 'Sign up unavailable' : view === 'confirm-sign-up' ? 'Account confirmation failed' : 'Sign in unavailable'}
+              error={submitError || error}
+            />
           </div>
         ) : null}
         {notice ? (
@@ -311,6 +331,30 @@ export default function LoginPage() {
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">First name</span>
+                  <input
+                    type="text"
+                    value={form.firstName}
+                    onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))}
+                    autoComplete="given-name"
+                    required
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Last name</span>
+                  <input
+                    type="text"
+                    value={form.familyName}
+                    onChange={(event) => setForm((current) => ({ ...current, familyName: event.target.value }))}
+                    autoComplete="family-name"
+                    required
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                </label>
+              </div>
               <label className="block">
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Display name</span>
                 <input
@@ -321,6 +365,67 @@ export default function LoginPage() {
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Mailing address</span>
+                <input
+                  type="text"
+                  value={form.address}
+                  onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
+                  autoComplete="street-address"
+                  required
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Birthdate</span>
+                  <input
+                    type="date"
+                    value={form.birthdate}
+                    onChange={(event) => setForm((current) => ({ ...current, birthdate: event.target.value }))}
+                    autoComplete="bday"
+                    required
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Gender</span>
+                  <select
+                    value={form.gender}
+                    onChange={(event) => setForm((current) => ({ ...current, gender: event.target.value }))}
+                    required
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                  >
+                    <option value="">Select</option>
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="nonbinary">Nonbinary</option>
+                    <option value="unspecified">Prefer not to say</option>
+                  </select>
+                </label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Locale</span>
+                  <input
+                    type="text"
+                    value={form.locale}
+                    onChange={(event) => setForm((current) => ({ ...current, locale: event.target.value }))}
+                    required
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Timezone</span>
+                  <input
+                    type="text"
+                    value={form.timeZone}
+                    onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))}
+                    required
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                </label>
+              </div>
               <label className="block">
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Phone</span>
                 <input
