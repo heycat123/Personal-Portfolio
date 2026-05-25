@@ -1,4 +1,6 @@
-import { Check, ChevronDown, ChevronRight, ExternalLink, GitMerge, HelpCircle, RefreshCw, Search, X } from 'lucide-react';
+import { Box, Chip } from '@mui/material';
+import { Check, ExternalLink, GitMerge, HelpCircle, RefreshCw, X } from 'lucide-react';
+import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -12,15 +14,27 @@ import { humanizeKey, truncateMiddle } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
 
-const SORT_OPTIONS = [
-  ['source_rows', 'Source rows'],
-  ['entity', 'Entity'],
-  ['confidence', 'Confidence'],
-  ['aliases', 'Aliases'],
-  ['mentions', 'Mentions'],
-  ['roles', 'Roles'],
-  ['confirmed', 'Confirmed'],
-];
+const DEFAULT_SORTING = [{ id: 'source_rows', desc: true }];
+
+const SORT_PARAM_BY_COLUMN = {
+  canonical_name: 'entity',
+  confidence: 'confidence',
+  alias_count: 'aliases',
+  mention_count: 'mentions',
+  role_count: 'roles',
+  confirmed_alias_count: 'confirmed',
+  source_rows: 'source_rows',
+};
+
+const FILTER_LABELS = {
+  canonical_name: 'Entity contains',
+  confidence: 'Confidence >=',
+  alias_count: 'Aliases >=',
+  mention_count: 'Mentions >=',
+  role_count: 'Roles >=',
+  confirmed_alias_count: 'Confirmed >=',
+  source_rows: 'Source rows >=',
+};
 
 function confidenceLabel(value) {
   const number = Number(value);
@@ -57,26 +71,38 @@ function decisionStatus(decision) {
   return 'degraded';
 }
 
+function getColumnFilterValue(columnFilters, id) {
+  const match = columnFilters.find((filter) => filter.id === id);
+  if (match?.value === undefined || match?.value === null) {
+    return '';
+  }
+  return String(match.value).trim();
+}
+
+function normalizeColumnFilters(columnFilters) {
+  return columnFilters
+    .map((filter) => ({ ...filter, value: String(filter.value ?? '').trim() }))
+    .filter((filter) => filter.value !== '');
+}
+
+function sortingLabel(sorting) {
+  const active = sorting[0] || DEFAULT_SORTING[0];
+  const label = FILTER_LABELS[active.id]?.replace(' >=', '')?.replace(' contains', '') || humanizeKey(active.id);
+  return `${label}: ${active.desc ? 'descending' : 'ascending'}`;
+}
+
 export default function EntitiesPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
-  const [queryDraft, setQueryDraft] = useState('');
-  const [appliedQuery, setAppliedQuery] = useState('');
-  const [offset, setOffset] = useState(0);
+  const [columnFilters, setColumnFilters] = useState([]);
+  const [sorting, setSorting] = useState(DEFAULT_SORTING);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE });
   const [selectedPersonId, setSelectedPersonId] = useState(null);
-  const [expandedRows, setExpandedRows] = useState(new Set());
+  const [expanded, setExpanded] = useState({});
   const [rowDetails, setRowDetails] = useState({});
   const [customAlias, setCustomAlias] = useState('');
   const [mergeNote, setMergeNote] = useState('');
-  const [sortBy, setSortBy] = useState('source_rows');
-  const [sortDir, setSortDir] = useState('desc');
-  const [filters, setFilters] = useState({
-    minConfidence: '',
-    minAliases: '',
-    minMentions: '',
-    minConfirmed: '',
-  });
   const [reassignTargets, setReassignTargets] = useState({});
   const [state, setState] = useState({
     loading: true,
@@ -100,6 +126,25 @@ export default function EntitiesPage() {
     state.entities.forEach((item) => map.set(item.person_id, item));
     return map;
   }, [state.entities]);
+
+  const normalizedFilters = useMemo(() => normalizeColumnFilters(columnFilters), [columnFilters]);
+
+  const tableQuery = useMemo(() => {
+    const activeSort = sorting[0] || DEFAULT_SORTING[0];
+    return {
+      limit: pagination.pageSize,
+      offset: pagination.pageIndex * pagination.pageSize,
+      q: getColumnFilterValue(normalizedFilters, 'canonical_name'),
+      sort_by: SORT_PARAM_BY_COLUMN[activeSort.id] || 'source_rows',
+      sort_dir: activeSort.desc ? 'desc' : 'asc',
+      min_confidence: getColumnFilterValue(normalizedFilters, 'confidence'),
+      min_aliases: getColumnFilterValue(normalizedFilters, 'alias_count'),
+      min_mentions: getColumnFilterValue(normalizedFilters, 'mention_count'),
+      min_roles: getColumnFilterValue(normalizedFilters, 'role_count'),
+      min_confirmed: getColumnFilterValue(normalizedFilters, 'confirmed_alias_count'),
+      min_source_rows: getColumnFilterValue(normalizedFilters, 'source_rows'),
+    };
+  }, [normalizedFilters, pagination.pageIndex, pagination.pageSize, sorting]);
 
   const loadEntityDetail = useCallback(async (personId, options = {}) => {
     if (!personId) {
@@ -138,18 +183,7 @@ export default function EntitiesPage() {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const params = {
-        limit: PAGE_SIZE,
-        offset,
-        q: appliedQuery,
-        sort_by: sortBy,
-        sort_dir: sortDir,
-        min_confidence: filters.minConfidence,
-        min_aliases: filters.minAliases,
-        min_mentions: filters.minMentions,
-        min_confirmed: filters.minConfirmed,
-      };
-      const result = await evidenceApi.getEntities(caseId, params, { token });
+      const result = await evidenceApi.getEntities(caseId, tableQuery, { token });
       recordFingerprint(result, 'Entities list');
       const entities = result.data?.entities || [];
       setState((current) => ({
@@ -168,7 +202,7 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
-  }, [appliedQuery, caseId, filters.minAliases, filters.minConfidence, filters.minConfirmed, filters.minMentions, getAccessToken, offset, recordFingerprint, selectedPersonId, sortBy, sortDir]);
+  }, [caseId, getAccessToken, recordFingerprint, selectedPersonId, tableQuery]);
 
   const loadSuggestions = useCallback(async () => {
     setState((current) => ({ ...current, suggestionsLoading: true }));
@@ -190,10 +224,16 @@ export default function EntitiesPage() {
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadEntities();
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [loadEntities]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
       loadSuggestions();
     }, 0);
     return () => window.clearTimeout(timerId);
-  }, [loadEntities, loadSuggestions]);
+  }, [loadSuggestions]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -202,46 +242,37 @@ export default function EntitiesPage() {
     return () => window.clearTimeout(timerId);
   }, [loadEntityDetail, selectedPersonId]);
 
-  const handleSearchSubmit = (event) => {
-    event.preventDefault();
-    setOffset(0);
-    setAppliedQuery(queryDraft.trim());
+  const resetEntityTable = useCallback(() => {
+    setColumnFilters([]);
+    setSorting(DEFAULT_SORTING);
+    setPagination({ pageIndex: 0, pageSize: PAGE_SIZE });
     setSelectedPersonId(null);
-    setExpandedRows(new Set());
-  };
+    setExpanded({});
+  }, []);
 
-  const clearSearch = () => {
-    setQueryDraft('');
-    setAppliedQuery('');
-    setOffset(0);
+  const handleColumnFiltersChange = useCallback((updater) => {
+    setColumnFilters((current) => (typeof updater === 'function' ? updater(current) : updater));
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
     setSelectedPersonId(null);
-    setExpandedRows(new Set());
-    setFilters({ minConfidence: '', minAliases: '', minMentions: '', minConfirmed: '' });
-  };
+    setExpanded({});
+  }, []);
 
-  const toggleSort = (nextSortBy) => {
-    if (sortBy === nextSortBy) {
-      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortBy(nextSortBy);
-      setSortDir(nextSortBy === 'entity' ? 'asc' : 'desc');
-    }
-    setOffset(0);
-  };
+  const handleSortingChange = useCallback((updater) => {
+    setSorting((current) => (typeof updater === 'function' ? updater(current) : updater));
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }, []);
 
-  const toggleExpanded = async (personId) => {
-    const next = new Set(expandedRows);
-    if (next.has(personId)) {
-      next.delete(personId);
-      setExpandedRows(next);
-      return;
-    }
-    next.add(personId);
-    setExpandedRows(next);
-    if (!rowDetails[personId]) {
-      await loadEntityDetail(personId, { forRow: true, silent: true });
-    }
-  };
+  const handleExpandedChange = useCallback((updater) => {
+    setExpanded((current) => {
+      const next = typeof updater === 'function' ? updater(current) : updater;
+      Object.entries(next || {}).forEach(([personId, isExpanded]) => {
+        if (isExpanded && !rowDetails[personId]) {
+          void loadEntityDetail(personId, { forRow: true, silent: true });
+        }
+      });
+      return next;
+    });
+  }, [loadEntityDetail, rowDetails]);
 
   const reviewAlias = useCallback(async (entity, alias, decision) => {
     if (!entity) {
@@ -415,10 +446,11 @@ export default function EntitiesPage() {
   const entity = state.entity;
   const confirmations = useMemo(() => entity?.alias_confirmations || [], [entity]);
   const confirmedAliases = useMemo(() => confirmations.filter((item) => item.decision === 'confirm'), [confirmations]);
-  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-  const totalPages = Math.max(1, Math.ceil((state.total || 0) / PAGE_SIZE));
-  const canGoPrevious = offset > 0;
-  const canGoNext = offset + PAGE_SIZE < state.total;
+  const activeEntityFilter = getColumnFilterValue(normalizedFilters, 'canonical_name');
+  const appliedFilterLabels = normalizedFilters.map((filter) => ({
+    id: filter.id,
+    label: `${FILTER_LABELS[filter.id] || humanizeKey(filter.id)} ${filter.value}`,
+  }));
 
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
@@ -491,11 +523,213 @@ export default function EntitiesPage() {
     });
   };
 
+  const columns = useMemo(() => [
+    {
+      accessorKey: 'canonical_name',
+      header: 'Entity',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Entity
+          <InfoTip label="Canonical entity generated by ingestion. Use this column menu to filter by name, alias, or person id." />
+        </span>
+      ),
+      size: 310,
+      muiFilterTextFieldProps: {
+        placeholder: 'Name, alias, or id',
+      },
+      Cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className="flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedPersonId(item.person_id)}
+              className={`text-left font-semibold ${selectedPersonId === item.person_id ? 'text-sky-700 dark:text-sky-300' : 'text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300'}`}
+            >
+              {item.canonical_name || item.person_id}
+              <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">{truncateMiddle(item.person_id, 28)}</span>
+            </button>
+            <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="mt-0.5 text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
+              <ExternalLink size={14} aria-hidden="true" />
+            </Link>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'confidence',
+      header: 'Confidence',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Confidence
+          <InfoTip label="Average model/heuristic extraction confidence for this canonical entity. Filter means minimum confidence." />
+        </span>
+      ),
+      size: 130,
+      muiFilterTextFieldProps: { placeholder: '>= 0.75', type: 'number', inputProps: { min: 0, max: 1, step: 0.01 } },
+      Cell: ({ cell }) => confidenceLabel(cell.getValue()),
+    },
+    {
+      accessorKey: 'alias_count',
+      header: 'Aliases',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Aliases
+          <InfoTip label="Number of distinct aliases currently attached to this entity by ingestion. Filter means minimum alias count." />
+        </span>
+      ),
+      size: 115,
+      muiFilterTextFieldProps: { placeholder: '>= 2', type: 'number', inputProps: { min: 0, step: 1 } },
+      Cell: ({ cell }) => cell.getValue() || 0,
+    },
+    {
+      accessorKey: 'mention_count',
+      header: 'Mentions',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Mentions
+          <InfoTip label="Number of extracted mentions resolved to this entity. Filter means minimum mention count." />
+        </span>
+      ),
+      size: 120,
+      muiFilterTextFieldProps: { placeholder: '>= 10', type: 'number', inputProps: { min: 0, step: 1 } },
+      Cell: ({ cell }) => cell.getValue() || 0,
+    },
+    {
+      accessorKey: 'role_count',
+      header: 'Roles',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Roles
+          <InfoTip label="Number of role assertions attached to this entity. Filter means minimum role count." />
+        </span>
+      ),
+      size: 105,
+      muiFilterTextFieldProps: { placeholder: '>= 1', type: 'number', inputProps: { min: 0, step: 1 } },
+      Cell: ({ cell }) => cell.getValue() || 0,
+    },
+    {
+      accessorKey: 'confirmed_alias_count',
+      header: 'Confirmed',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Confirmed
+          <InfoTip label="Number of human alias confirmations recorded for this entity. Filter means minimum confirmation count." />
+        </span>
+      ),
+      size: 135,
+      muiFilterTextFieldProps: { placeholder: '>= 1', type: 'number', inputProps: { min: 0, step: 1 } },
+      Cell: ({ cell }) => cell.getValue() || 0,
+    },
+    {
+      accessorKey: 'source_rows',
+      header: 'Source Rows',
+      Header: () => (
+        <span className="inline-flex items-center gap-1">
+          Source Rows
+          <InfoTip label="Number of source rows merged into this canonical entity. Filter means minimum source-row count." />
+        </span>
+      ),
+      size: 135,
+      muiFilterTextFieldProps: { placeholder: '>= 1', type: 'number', inputProps: { min: 0, step: 1 } },
+      Cell: ({ cell }) => cell.getValue() || 0,
+    },
+  ], [caseId, selectedPersonId]);
+
+  const entityTable = useMaterialReactTable({
+    columns,
+    data: state.entities,
+    getRowId: (row) => row.person_id,
+    rowCount: state.total,
+    enableColumnActions: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: false,
+    enableDensityToggle: false,
+    enableFullScreenToggle: false,
+    enableGlobalFilter: false,
+    enableHiding: false,
+    enableSorting: true,
+    manualFiltering: true,
+    manualPagination: true,
+    manualSorting: true,
+    onColumnFiltersChange: handleColumnFiltersChange,
+    onExpandedChange: handleExpandedChange,
+    onPaginationChange: setPagination,
+    onSortingChange: handleSortingChange,
+    renderDetailPanel: ({ row }) => {
+      const detail = rowDetails[row.original.person_id];
+      return (
+        <Box sx={{ p: 2 }}>
+          {detail ? (
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
+                Aliases currently attached to {detail.canonical_name}
+              </div>
+              <div className="grid gap-2 lg:grid-cols-2">{renderAliasRows(detail, true)}</div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-600 dark:text-gray-400">Loading aliases...</div>
+          )}
+        </Box>
+      );
+    },
+    renderTopToolbarCustomActions: () => (
+      <Box sx={{ alignItems: 'center', display: 'flex', flexWrap: 'wrap', gap: 1, py: 0.5 }}>
+        <Chip label={sortingLabel(sorting)} size="small" variant="outlined" />
+        {appliedFilterLabels.map((filter) => (
+          <Chip
+            key={filter.id}
+            label={filter.label}
+            size="small"
+            onDelete={() => handleColumnFiltersChange((current) => current.filter((item) => item.id !== filter.id))}
+          />
+        ))}
+        {appliedFilterLabels.length ? (
+          <Chip label="Clear filters" size="small" color="primary" variant="outlined" onClick={resetEntityTable} />
+        ) : null}
+      </Box>
+    ),
+    state: {
+      columnFilters,
+      expanded,
+      isLoading: state.loading,
+      pagination,
+      showAlertBanner: Boolean(state.error),
+      showProgressBars: state.loading,
+      sorting,
+    },
+    initialState: {
+      density: 'compact',
+    },
+    muiTableContainerProps: {
+      sx: { maxHeight: '68vh' },
+    },
+    muiTablePaperProps: {
+      sx: {
+        backgroundColor: 'transparent',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: '8px',
+        boxShadow: 'none',
+        overflow: 'hidden',
+      },
+    },
+    muiTableHeadCellProps: {
+      sx: { fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' },
+    },
+    muiToolbarAlertBannerProps: state.error
+      ? {
+          color: 'error',
+          children: state.error.message || 'Entities request failed.',
+        }
+      : undefined,
+  });
+
   return (
     <div>
       <PageHeader
         title="Entities"
-        description={`${state.total} canonical entity records${appliedQuery ? ` matching "${appliedQuery}"` : ''}. Alias review means deciding which real person an extracted name should resolve to.`}
+        description={`${state.total} canonical entity records${activeEntityFilter ? ` matching "${activeEntityFilter}"` : ''}. Alias review means deciding which real person an extracted name should resolve to.`}
         actions={
           <button
             type="button"
@@ -526,62 +760,8 @@ export default function EntitiesPage() {
       </section>
 
       <div className="mb-4 flex flex-col gap-3">
-        <form onSubmit={handleSearchSubmit} className="flex flex-col gap-2 lg:flex-row">
-          <label className="relative block flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} aria-hidden="true" />
-            <span className="sr-only">Search entities</span>
-            <input
-              type="search"
-              value={queryDraft}
-              onChange={(event) => setQueryDraft(event.target.value)}
-              placeholder="Search names, aliases, or person ids"
-              className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none ring-0 placeholder:text-gray-400 focus:border-sky-500 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:focus:border-sky-400"
-            />
-          </label>
-          <button type="submit" className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10">
-            Search
-          </button>
-          <button type="button" onClick={clearSearch} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10">
-            Clear
-          </button>
-        </form>
-
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
-          <label className="block">
-            <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-              Sort <InfoTip label="Sort controls the main entity table order." />
-            </span>
-            <select value={sortBy} onChange={(event) => { setSortBy(event.target.value); setOffset(0); }} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100">
-              {SORT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Direction</span>
-            <select value={sortDir} onChange={(event) => { setSortDir(event.target.value); setOffset(0); }} className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100">
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-              Min Confidence <InfoTip label="Average extraction/entity-resolution confidence from ingestion. It is not legal certainty and it is not user confirmation." />
-            </span>
-            <input value={filters.minConfidence} onChange={(event) => { setFilters((current) => ({ ...current, minConfidence: event.target.value })); setOffset(0); }} inputMode="decimal" placeholder="0.75" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100" />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Min Aliases</span>
-            <input value={filters.minAliases} onChange={(event) => { setFilters((current) => ({ ...current, minAliases: event.target.value })); setOffset(0); }} inputMode="numeric" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100" />
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Min Mentions</span>
-            <input value={filters.minMentions} onChange={(event) => { setFilters((current) => ({ ...current, minMentions: event.target.value })); setOffset(0); }} inputMode="numeric" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100" />
-          </label>
-          <label className="block">
-            <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-              Min Confirmed <InfoTip label="Confirmed means a user reviewed an alias and recorded that it resolves to this entity." />
-            </span>
-            <input value={filters.minConfirmed} onChange={(event) => { setFilters((current) => ({ ...current, minConfirmed: event.target.value })); setOffset(0); }} inputMode="numeric" className="mt-1 w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100" />
-          </label>
+        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
+          Use each column header menu to sort or filter. Numeric filters are minimum thresholds, and the entity filter searches canonical names, aliases, and person ids.
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -592,7 +772,9 @@ export default function EntitiesPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_520px]">
         <div>
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="overflow-x-auto">
+            <MaterialReactTable table={entityTable} />
+            {/*
             <table className="min-w-full divide-y divide-gray-200 text-left text-sm dark:divide-gray-800">
               <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:bg-[#0c1218] dark:text-gray-400">
                 <tr>
@@ -672,8 +854,10 @@ export default function EntitiesPage() {
                 ) : null}
               </tbody>
             </table>
+            */}
           </div>
 
+          {/*
           <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
             <span>Page {currentPage} of {totalPages}</span>
             <div className="flex gap-2">
@@ -685,6 +869,7 @@ export default function EntitiesPage() {
               </button>
             </div>
           </div>
+          */}
 
           <section className="mt-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-3 flex items-center justify-between gap-3">
