@@ -82,52 +82,16 @@ export async function confirmCognitoNewPassword({ newPassword }) {
   return amplifyConfirmSignIn({ challengeResponse: newPassword });
 }
 
-export async function signUpWithCognito({
-  username,
-  email,
-  password,
-  firstName,
-  familyName,
-  displayName,
-  phoneNumber,
-  address,
-  birthdate,
-  gender,
-  locale,
-  timeZone,
-}) {
+export async function signUpWithCognito({ username, email, password, displayName, phoneNumber }) {
   const userAttributes = {
     email,
   };
-  if (firstName) {
-    userAttributes.given_name = firstName;
-  }
-  if (familyName) {
-    userAttributes.family_name = familyName;
-  }
-  if (displayName || firstName || familyName) {
-    userAttributes.name = displayName || [firstName, familyName].filter(Boolean).join(' ');
+  if (displayName) {
+    userAttributes.name = displayName;
   }
   if (phoneNumber) {
     userAttributes.phone_number = phoneNumber;
   }
-  if (address) {
-    userAttributes.address = address;
-  }
-  if (birthdate) {
-    userAttributes.birthdate = birthdate;
-  }
-  if (gender) {
-    userAttributes.gender = gender;
-  }
-  if (locale) {
-    userAttributes.locale = locale;
-  }
-  if (timeZone) {
-    userAttributes.zoneinfo = timeZone;
-  }
-
-  userAttributes.updated_at = Math.floor(Date.now() / 1000).toString();
 
   return amplifySignUp({
     username: username || email,

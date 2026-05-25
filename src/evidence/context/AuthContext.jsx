@@ -111,36 +111,10 @@ export function AuthProvider({ children }) {
     }
   }, [refreshUser]);
 
-  const signUp = useCallback(async ({
-    username,
-    email,
-    password,
-    firstName,
-    familyName,
-    displayName,
-    phoneNumber,
-    address,
-    birthdate,
-    gender,
-    locale,
-    timeZone,
-  }) => {
+  const signUp = useCallback(async ({ username, email, password, displayName, phoneNumber }) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const result = await signUpWithCognito({
-        username,
-        email,
-        password,
-        firstName,
-        familyName,
-        displayName,
-        phoneNumber,
-        address,
-        birthdate,
-        gender,
-        locale,
-        timeZone,
-      });
+      const result = await signUpWithCognito({ username, email, password, displayName, phoneNumber });
       setState((current) => ({ ...current, loading: false, error: null }));
       return result;
     } catch (error) {

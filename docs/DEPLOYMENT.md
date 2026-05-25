@@ -129,8 +129,8 @@ For Cognito deployment, use the current SPA user pool/client:
 ```text
 VITE_EVIDENCE_AUTH_MODE=cognito
 VITE_AWS_REGION=us-east-2
-VITE_COGNITO_USER_POOL_ID=us-east-2_2WYlizVQF
-VITE_COGNITO_USER_POOL_CLIENT_ID=6vrgv8dj5tqktnpo4svd52121q
+VITE_COGNITO_USER_POOL_ID=us-east-2_SfO4Yq5qb
+VITE_COGNITO_USER_POOL_CLIENT_ID=46hn6m1uviifa47b3ogrhg7lg8
 ```
 
 The matching Cognito app client callback and logout URLs are:
@@ -149,14 +149,14 @@ npm install oidc-client-ts react-oidc-context --save
 with:
 
 ```text
-authority=https://cognito-idp.us-east-2.amazonaws.com/us-east-2_2WYlizVQF
-client_id=6vrgv8dj5tqktnpo4svd52121q
+authority=https://cognito-idp.us-east-2.amazonaws.com/us-east-2_SfO4Yq5qb
+client_id=46hn6m1uviifa47b3ogrhg7lg8
 redirect_uri=https://forestlee.us/evidence/login
 response_type=code
-scope=phone openid email
+scope=openid email
 ```
 
-The current frontend implementation uses Amplify direct user-pool APIs. Switching to Hosted UI is a contained auth-provider change, but sign-out redirect also needs the Cognito hosted UI domain, `https://us-east-22wylizvqf.auth.us-east-2.amazoncognito.com`.
+The current frontend implementation uses Amplify direct user-pool APIs. Switching to Hosted UI is a contained auth-provider change, but sign-out redirect also needs the Cognito hosted UI domain.
 
 Do not commit `.pem` files.
 
