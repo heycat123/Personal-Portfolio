@@ -3,12 +3,12 @@ import { AuthProvider } from './context/AuthContext';
 import { CaseProvider } from './context/CaseContext';
 import EvidenceRoutes from './evidenceRoutes';
 
-export default function EvidenceApp() {
+export default function EvidenceApp({ darkTheme, setDarkTheme }) {
   return (
     <AuthProvider>
       <ApiStatusProvider>
         <CaseProvider>
-          <EvidenceRoutes />
+          <EvidenceRoutes darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
         </CaseProvider>
       </ApiStatusProvider>
     </AuthProvider>

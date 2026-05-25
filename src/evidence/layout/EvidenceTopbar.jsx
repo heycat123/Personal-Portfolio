@@ -1,4 +1,6 @@
-import { LogOut, RefreshCw, Shield } from 'lucide-react';
+import { LogOut, RefreshCw, Shield, UserCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
@@ -6,7 +8,7 @@ import { useCaseContext } from '../context/CaseContext';
 import { EVIDENCE_API_BASE_URL, EVIDENCE_ENVIRONMENT_LABEL } from '../evidenceConfig';
 import { formatDateTime } from '../utils/formatters';
 
-export default function EvidenceTopbar() {
+export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
   const { status, latestFingerprint, checkApiHealth } = useApiStatus();
   const { user, authMode, signOut } = useEvidenceAuth();
   const { activeCase } = useCaseContext();
@@ -32,6 +34,7 @@ export default function EvidenceTopbar() {
             {EVIDENCE_API_BASE_URL}
           </div>
           <StatusBadge status={status.state} />
+          <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
           <button
             type="button"
             onClick={checkApiHealth}
@@ -46,6 +49,14 @@ export default function EvidenceTopbar() {
             <span>{user?.displayName || 'Evidence User'}</span>
             <span className="text-xs text-gray-500">({authMode})</span>
           </div>
+          <Link
+            to="/evidence/account"
+            title="Account settings"
+            aria-label="Account settings"
+            className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <UserCircle size={16} aria-hidden="true" />
+          </Link>
           <button
             type="button"
             onClick={signOut}

@@ -6,10 +6,12 @@ import {
   configureAmplifyAuth,
   getCognitoAccessToken,
   getCognitoUser,
+  getCognitoUserAttributes,
   resendCognitoSignUpCode,
   signInWithCognito,
   signOutOfCognito,
   signUpWithCognito,
+  updateCognitoUserProfile,
 } from '../auth/amplifyAuth';
 
 const AuthContext = createContext(null);
@@ -61,15 +63,24 @@ export function AuthProvider({ children }) {
 
     try {
       const cognitoUser = await getCognitoUser();
+      let attributes = {};
+      try {
+        attributes = await getCognitoUserAttributes();
+      } catch {
+        attributes = {};
+      }
+      const loginId = cognitoUser.signInDetails?.loginId || cognitoUser.username || '';
+      const displayName = attributes.name || [attributes.given_name, attributes.family_name].filter(Boolean).join(' ') || loginId || 'Evidence User';
       setState({
         loading: false,
         authMode: 'cognito',
         isConfigured: true,
         isAuthenticated: true,
         user: {
-          displayName: cognitoUser.signInDetails?.loginId || cognitoUser.username || 'Evidence User',
-          email: cognitoUser.signInDetails?.loginId || null,
+          displayName,
+          email: attributes.email || loginId || null,
           userId: cognitoUser.userId || cognitoUser.username,
+          attributes,
         },
         error: null,
         config,
@@ -144,6 +155,22 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const getUserAttributes = useCallback(async () => {
+    if (state.authMode !== 'cognito' || !state.isConfigured || !state.isAuthenticated) {
+      return {};
+    }
+    return getCognitoUserAttributes();
+  }, [state.authMode, state.isAuthenticated, state.isConfigured]);
+
+  const updateProfile = useCallback(async (profile) => {
+    if (state.authMode !== 'cognito' || !state.isConfigured || !state.isAuthenticated) {
+      throw new Error('Profile updates require a Cognito session.');
+    }
+    const result = await updateCognitoUserProfile(profile);
+    await refreshUser();
+    return result;
+  }, [refreshUser, state.authMode, state.isAuthenticated, state.isConfigured]);
+
   const confirmNewPassword = useCallback(async ({ newPassword }) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
@@ -187,10 +214,12 @@ export function AuthProvider({ children }) {
       confirmSignUp,
       resendSignUpCode,
       confirmNewPassword,
+      getUserAttributes,
+      updateProfile,
       signOut,
       getAccessToken,
     }),
-    [confirmNewPassword, confirmSignUp, getAccessToken, refreshUser, resendSignUpCode, signIn, signOut, signUp, state],
+    [confirmNewPassword, confirmSignUp, getAccessToken, getUserAttributes, refreshUser, resendSignUpCode, signIn, signOut, signUp, state, updateProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

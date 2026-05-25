@@ -1,6 +1,7 @@
 import { Amplify } from 'aws-amplify';
 import {
   fetchAuthSession,
+  fetchUserAttributes,
   confirmSignUp as amplifyConfirmSignUp,
   confirmSignIn as amplifyConfirmSignIn,
   getCurrentUser,
@@ -8,6 +9,7 @@ import {
   signIn as amplifySignIn,
   signOut as amplifySignOut,
   signUp as amplifySignUp,
+  updateUserAttributes,
 } from 'aws-amplify/auth';
 
 let configured = false;
@@ -62,6 +64,10 @@ export async function getCognitoUser() {
   return getCurrentUser();
 }
 
+export async function getCognitoUserAttributes() {
+  return fetchUserAttributes();
+}
+
 export async function getCognitoAccessToken() {
   const session = await fetchAuthSession();
   return session.tokens?.idToken?.toString() || session.tokens?.accessToken?.toString() || null;
@@ -100,6 +106,27 @@ export async function signUpWithCognito({ username, email, password, displayName
       userAttributes,
     },
   });
+}
+
+export async function updateCognitoUserProfile({ displayName, firstName, familyName, locale, timeZone }) {
+  const userAttributes = {};
+  if (displayName !== undefined) {
+    userAttributes.name = displayName;
+  }
+  if (firstName !== undefined) {
+    userAttributes.given_name = firstName;
+  }
+  if (familyName !== undefined) {
+    userAttributes.family_name = familyName;
+  }
+  if (locale !== undefined) {
+    userAttributes.locale = locale;
+  }
+  if (timeZone !== undefined) {
+    userAttributes.zoneinfo = timeZone;
+  }
+
+  return updateUserAttributes({ userAttributes });
 }
 
 export async function confirmSignUpWithCognito({ username, email, confirmationCode }) {

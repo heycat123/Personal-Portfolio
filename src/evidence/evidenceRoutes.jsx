@@ -6,6 +6,7 @@ import { useEvidenceAuth } from './context/AuthContext';
 import { useCaseContext } from './context/CaseContext';
 import EvidenceLayout from './layout/EvidenceLayout';
 import DashboardPage from './pages/DashboardPage';
+import AccountPage from './pages/AccountPage';
 import AdminPage from './pages/AdminPage';
 import DocumentDetailPage from './pages/DocumentDetailPage';
 import DocumentsPage from './pages/DocumentsPage';
@@ -80,13 +81,14 @@ function NotFoundPage() {
   );
 }
 
-export default function EvidenceRoutes() {
+export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
   return (
     <Routes>
-      <Route path="login" element={<LoginPage />} />
+      <Route path="login" element={<LoginPage darkTheme={darkTheme} setDarkTheme={setDarkTheme} />} />
       <Route element={<ProtectedEvidenceRoute />}>
-        <Route element={<EvidenceLayout />}>
+        <Route element={<EvidenceLayout darkTheme={darkTheme} setDarkTheme={setDarkTheme} />}>
           <Route index element={<EvidenceIndex />} />
+          <Route path="account" element={<AccountPage />} />
           <Route path="cases/:caseId" element={<CaseScope />}>
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />

@@ -2,6 +2,7 @@ import { ArrowLeft, LockKeyhole, LogIn, MailCheck, Scale, UserPlus } from 'lucid
 import { useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
+import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
@@ -36,7 +37,7 @@ function getPasswordRequirementStatus(password) {
   }));
 }
 
-export default function LoginPage() {
+export default function LoginPage({ darkTheme, setDarkTheme }) {
   const location = useLocation();
   const { defaultCaseId } = useCaseContext();
   const {
@@ -203,6 +204,7 @@ export default function LoginPage() {
               <ArrowLeft size={16} aria-hidden="true" />
               Portfolio
             </Link>
+            <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
             <button
               type="button"
               onClick={() => setView('sign-in')}

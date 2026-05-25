@@ -60,7 +60,7 @@ function AppShell({ darkTheme, setDarkTheme }) {
                     <Route path="/" element={<Portfolio />} />
                     <Route path="/projects" element={<Projects />} />
                     <Route path="/homcentral" element={<HomCentralRoute />} />
-                    <Route path="/evidence/*" element={<EvidenceApp />} />
+                    <Route path="/evidence/*" element={<EvidenceApp darkTheme={darkTheme} setDarkTheme={setDarkTheme} />} />
                 </Routes>
             </main>
         </div>
