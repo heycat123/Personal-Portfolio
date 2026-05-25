@@ -212,6 +212,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/source-alignment/latest'), options),
   queryCase: (caseId, payload, options) =>
     request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
+  queryHelp: (caseId, payload, options) =>
+    request(casePath(caseId, '/help/query'), { ...options, method: 'POST', body: payload }),
   getBaselineTests: (caseId, options) =>
     request(casePath(caseId, '/tests/baseline'), options),
   getBaselineTestRuns: (caseId, params = {}, options = {}) =>

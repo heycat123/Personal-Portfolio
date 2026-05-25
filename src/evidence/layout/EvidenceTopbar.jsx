@@ -1,5 +1,6 @@
 import { LogOut, RefreshCw, Shield, UserCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
@@ -34,6 +35,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
             {EVIDENCE_API_BASE_URL}
           </div>
           <StatusBadge status={status.state} />
+          <AxiomHelpDrawer />
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
           <button
             type="button"
