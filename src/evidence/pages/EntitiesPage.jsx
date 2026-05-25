@@ -833,6 +833,7 @@ export default function EntitiesPage() {
             expandedRows={expanded}
             onToggleRow={(item) => toggleExpanded(item.person_id)}
             selectedRowKey={selectedPersonId}
+            onRowSelect={(item) => openEntityDetail(item.person_id)}
             renderDetailPanel={(item) => {
               const detail = rowDetails[item.person_id];
               return detail ? (
