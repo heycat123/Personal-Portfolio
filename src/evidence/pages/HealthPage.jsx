@@ -1,4 +1,4 @@
-import { Activity, Database, Play, Server } from 'lucide-react';
+import { Activity, Database, GitCompare, Play, Server } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -26,6 +26,7 @@ export default function HealthPage() {
     caseHealth: null,
     storageHealth: null,
     graphHealth: null,
+    sourceAlignment: null,
     rawParity: null,
     smokeResult: null,
     smokeError: null,
@@ -41,11 +42,12 @@ export default function HealthPage() {
       evidenceApi.getStorageHealth(caseId, { token }),
       evidenceApi.getRawParity(caseId, { token }),
       evidenceApi.getGraphHealth(caseId, { token }),
+      evidenceApi.getSourceAlignmentLatest(caseId, { token }),
     ]);
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health'];
+        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health', 'Source alignment'];
         recordFingerprint(result.value, labels[index]);
       }
     });
@@ -59,6 +61,7 @@ export default function HealthPage() {
       storageHealth: fulfilledValue(results[1])?.data || null,
       rawParity: fulfilledValue(results[2])?.data || null,
       graphHealth: fulfilledValue(results[3])?.data || null,
+      sourceAlignment: fulfilledValue(results[4])?.data || null,
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
@@ -112,6 +115,14 @@ export default function HealthPage() {
   const missingParentEdges = parentGaps.missing_parent_edges || 0;
   const vectorOk = Boolean(graph?.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
   const rawTables = state.rawParity?.tables || [];
+  const sourceAlignment = state.sourceAlignment;
+  const alignmentRows = Object.entries(sourceAlignment?.comparisons || {}).map(([name, comparison]) => ({
+    name,
+    ...comparison,
+  }));
+  const alignmentGapCount = alignmentRows.filter((row) => !row.skipped && row.ok === false).length;
+  const alignmentAvailable = Boolean(sourceAlignment?.available);
+  const alignmentOk = Boolean(alignmentAvailable && sourceAlignment?.strict_alignment_ok);
 
   return (
     <div>
@@ -143,7 +154,7 @@ export default function HealthPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadHealth} /></div> : null}
       {state.smokeError ? <div className="mb-5"><ErrorPanel title="Storage smoke failed" error={state.smokeError} /></div> : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricTile
           icon={Database}
           label="Postgres"
@@ -190,6 +201,22 @@ export default function HealthPage() {
           }
           tone={vectorOk ? 'good' : graph?.ok ? 'warn' : 'default'}
         />
+        <MetricTile
+          icon={GitCompare}
+          label="Source Proof"
+          value={
+            <StatusBadge
+              status={alignmentOk ? 'online' : alignmentAvailable ? 'degraded' : 'unknown'}
+              label={alignmentOk ? 'Aligned' : alignmentAvailable ? 'Gaps found' : 'No manifest'}
+            />
+          }
+          detail={
+            alignmentAvailable
+              ? `${alignmentGapCount} strict gap(s); finished ${formatDateTime(sourceAlignment.audit_finished_at)}`
+              : sourceAlignment?.reason || 'Run source_alignment_audit.py to generate a proof manifest.'
+          }
+          tone={alignmentOk ? 'good' : alignmentAvailable ? 'warn' : 'default'}
+        />
       </div>
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -204,6 +231,57 @@ export default function HealthPage() {
               { key: 'postgres_rows', header: 'Postgres Rows', render: (table) => table.postgres_rows },
             ]}
           />
+
+          <div className="mt-6">
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">Source Alignment Proof</h3>
+            {alignmentAvailable ? (
+              <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                <div className="flex flex-wrap items-center gap-3">
+                  <StatusBadge status={alignmentOk ? 'succeeded' : 'degraded'} label={alignmentOk ? 'Strict alignment passed' : 'Strict alignment has gaps'} />
+                  <span className="text-gray-600 dark:text-gray-400">
+                    {sourceAlignment.stores?.local_source?.unique_hash_count || 0} local hashes,
+                    {' '}
+                    {sourceAlignment.stores?.sqlite?.document_extractions || 0} SQLite hashes,
+                    {' '}
+                    {sourceAlignment.stores?.google_drive_api?.unique_hash_count || 0} Drive hashes,
+                    {' '}
+                    {sourceAlignment.stores?.neo4j?.chunk_hashes || 0} graph chunk hashes
+                  </span>
+                </div>
+                {sourceAlignment.recommendations?.length ? (
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-gray-700 dark:text-gray-300">
+                    {sourceAlignment.recommendations.slice(0, 4).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : (
+              <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+                {sourceAlignment?.reason || 'No source alignment manifest has been published by the API runtime.'}
+              </div>
+            )}
+            <DataTable
+              rows={alignmentRows}
+              rowKey={(row) => row.name}
+              emptyTitle="No source alignment rows returned"
+              columns={[
+                { key: 'name', header: 'Comparison', render: (row) => row.name.replaceAll('_', ' ') },
+                {
+                  key: 'ok',
+                  header: 'Status',
+                  render: (row) => (
+                    <StatusBadge
+                      status={row.skipped ? 'unknown' : row.ok ? 'succeeded' : 'failed'}
+                      label={row.skipped ? 'Skipped' : row.ok ? 'OK' : 'Gap'}
+                    />
+                  ),
+                },
+                { key: 'missing_count', header: 'Missing', render: (row) => row.missing_count ?? '-' },
+                { key: 'extra_count', header: 'Extra', render: (row) => row.extra_count ?? '-' },
+              ]}
+            />
+          </div>
         </div>
 
         <div className="space-y-5">
