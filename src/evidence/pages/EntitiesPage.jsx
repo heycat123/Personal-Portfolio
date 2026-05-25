@@ -9,7 +9,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { evidenceApi } from '../services/evidenceApi';
-import { formatDateTime, humanizeKey, truncateMiddle } from '../utils/formatters';
+import { humanizeKey, truncateMiddle } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
 
@@ -273,7 +273,7 @@ export default function EntitiesPage() {
   }, [caseId, getAccessToken, loadSuggestions, mergeNote, recordFingerprint]);
 
   const entity = state.entity;
-  const confirmations = entity?.alias_confirmations || [];
+  const confirmations = useMemo(() => entity?.alias_confirmations || [], [entity]);
   const confirmedAliases = useMemo(
     () => confirmations.filter((item) => item.decision === 'confirm'),
     [confirmations],
