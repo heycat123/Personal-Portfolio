@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useCaseContext } from '../context/CaseContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
 
 export default function EvidenceSidebar() {
   const { activeCase } = useCaseContext();
+  const { t } = useLocaleSettings();
   const basePath = `/evidence/cases/${activeCase.caseId}`;
 
   return (
@@ -41,7 +43,7 @@ export default function EvidenceSidebar() {
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-[#0c1218]">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
             <Database size={16} aria-hidden="true" />
-            Evidence
+            {t('Evidence')}
           </div>
           <p className="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-400">{activeCase.caseName}</p>
         </div>
@@ -63,7 +65,7 @@ export default function EvidenceSidebar() {
               }
             >
               <Icon size={16} aria-hidden="true" />
-              {item.label}
+              {t(item.label)}
             </NavLink>
           );
         })}

@@ -26,7 +26,7 @@ function optionalValue(value) {
 
 export default function AccountPage() {
   const { authMode, getUserAttributes, updateProfile, user } = useEvidenceAuth();
-  const { preferences, supportedLanguages, updatePreferences } = useLocaleSettings();
+  const { preferences, supportedLanguages, t, updatePreferences } = useLocaleSettings();
   const [profile, setProfile] = useState(() => initialProfile());
   const [state, setState] = useState({
     loading: true,
@@ -82,7 +82,7 @@ export default function AccountPage() {
         language: optionalValue(profile.locale),
         timeZone: optionalValue(profile.timeZone),
       });
-      setState((current) => ({ ...current, saving: false, notice: 'Account information updated.' }));
+      setState((current) => ({ ...current, saving: false, notice: t('Account information updated.') }));
     } catch (error) {
       setState((current) => ({ ...current, saving: false, error }));
     }
@@ -96,7 +96,7 @@ export default function AccountPage() {
         actions={
           <div className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:text-gray-300">
             <UserCircle size={16} aria-hidden="true" />
-            {user?.displayName || user?.email || 'Evidence User'}
+            {user?.displayName || user?.email || t('Evidence User')}
           </div>
         }
       />
@@ -112,7 +112,7 @@ export default function AccountPage() {
         <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block md:col-span-2">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Email')}</span>
               <input
                 type="email"
                 value={profile.email}
@@ -121,7 +121,7 @@ export default function AccountPage() {
               />
             </label>
             <label className="block md:col-span-2">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Display name</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Display name')}</span>
               <input
                 type="text"
                 value={profile.displayName}
@@ -131,7 +131,7 @@ export default function AccountPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">First name</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('First name')}</span>
               <input
                 type="text"
                 value={profile.firstName}
@@ -141,7 +141,7 @@ export default function AccountPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Last name</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Last name')}</span>
               <input
                 type="text"
                 value={profile.familyName}
@@ -151,7 +151,7 @@ export default function AccountPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Default language</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Default language')}</span>
               <select
                 value={profile.locale}
                 onChange={(event) => setProfile((current) => ({ ...current, locale: event.target.value }))}
@@ -165,7 +165,7 @@ export default function AccountPage() {
               </select>
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Timezone</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Timezone')}</span>
               <input
                 type="text"
                 value={profile.timeZone}
@@ -182,24 +182,24 @@ export default function AccountPage() {
               className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
             >
               <Save size={16} aria-hidden="true" />
-              {state.saving ? 'Saving' : 'Save account'}
+              {state.saving ? t('Saving') : t('Save account')}
             </button>
           </div>
         </form>
 
         <aside className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <h2 className="text-sm font-semibold text-gray-950 dark:text-white">Security</h2>
+          <h2 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Security')}</h2>
           <dl className="mt-4 space-y-3 text-sm">
             <div>
-              <dt className="text-gray-500 dark:text-gray-400">Provider</dt>
+              <dt className="text-gray-500 dark:text-gray-400">{t('Provider')}</dt>
               <dd className="mt-1 font-medium text-gray-900 dark:text-gray-100">Amazon Cognito</dd>
             </div>
             <div>
-              <dt className="text-gray-500 dark:text-gray-400">User ID</dt>
+              <dt className="text-gray-500 dark:text-gray-400">{t('User ID')}</dt>
               <dd className="mt-1 break-all font-mono text-xs text-gray-900 dark:text-gray-100">{user?.userId || '-'}</dd>
             </div>
             <div>
-              <dt className="text-gray-500 dark:text-gray-400">Email</dt>
+              <dt className="text-gray-500 dark:text-gray-400">{t('Email')}</dt>
               <dd className="mt-1 break-all text-gray-900 dark:text-gray-100">{profile.email || '-'}</dd>
             </div>
           </dl>

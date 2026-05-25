@@ -8,6 +8,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import useJobStatusPolling from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { humanizeKey, truncateMiddle } from '../utils/formatters';
@@ -146,10 +147,10 @@ function normalizeColumnFilters(columnFilters) {
     .filter((filter) => filter.value !== '');
 }
 
-function sortingLabel(sorting) {
+function sortingLabel(sorting, t) {
   const active = sorting[0] || DEFAULT_SORTING[0];
   const label = FILTER_LABELS[active.id]?.replace(' >=', '')?.replace(' contains', '') || humanizeKey(active.id);
-  return `${label}: ${active.desc ? 'descending' : 'ascending'}`;
+  return `${t(label)}: ${active.desc ? t('descending') : t('ascending')}`;
 }
 
 function entityColumnValue(entity, columnId) {
@@ -166,6 +167,7 @@ export default function EntitiesPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [columnFilters, setColumnFilters] = useState([]);
   const [sorting, setSorting] = useState(DEFAULT_SORTING);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE });
@@ -553,7 +555,7 @@ export default function EntitiesPage() {
   const activeEntityFilter = getColumnFilterValue(normalizedFilters, 'canonical_name');
   const appliedFilterLabels = normalizedFilters.map((filter) => ({
     id: filter.id,
-    label: `${FILTER_LABELS[filter.id] || humanizeKey(filter.id)} ${filter.value}`,
+    label: `${t(FILTER_LABELS[filter.id] || humanizeKey(filter.id))} ${filter.value}`,
   }));
   const activeSort = sorting[0] || DEFAULT_SORTING[0];
 
@@ -569,46 +571,46 @@ export default function EntitiesPage() {
             <div>
               <span className="font-semibold text-gray-950 dark:text-white">{alias.alias}</span>
               <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                resolves to {detailEntity.canonical_name}; {alias.occurrence_count || 0} occurrence(s)
+                {t('resolves to {name}; {count} occurrence(s)', { name: detailEntity.canonical_name, count: alias.occurrence_count || 0 })}
               </span>
             </div>
             {decision ? <StatusBadge status={decisionStatus(decision.decision)} label={humanizeKey(decision.decision)} /> : null}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <span>{alias.normalized_alias}</span>
-            <span>extraction confidence {confidenceLabel(alias.confidence)}</span>
+            <span>{t('extraction confidence {value}', { value: confidenceLabel(alias.confidence) })}</span>
             {decision?.reviewer_display_name || decision?.reviewer_email ? (
-              <span>reviewed by {decision.reviewer_display_name || decision.reviewer_email}</span>
+              <span>{t('reviewed by {name}', { name: decision.reviewer_display_name || decision.reviewer_email })}</span>
             ) : null}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              title={`Confirm alias "${alias.alias}" should resolve to ${detailEntity.canonical_name}.`}
+              title={t('Confirm alias "{alias}" should resolve to {name}.', { alias: alias.alias, name: detailEntity.canonical_name })}
               onClick={() => reviewAlias(detailEntity, alias, 'confirm')}
               disabled={state.actionId === `${actionBase}_confirm`}
               className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
             >
               <Check size={13} aria-hidden="true" />
-              Confirm here
+              {t('Confirm here')}
             </button>
             <button
               type="button"
-              title={`Reject alias "${alias.alias}" for ${detailEntity.canonical_name}.`}
+              title={t('Reject alias "{alias}" for {name}.', { alias: alias.alias, name: detailEntity.canonical_name })}
               onClick={() => reviewAlias(detailEntity, alias, 'reject')}
               disabled={state.actionId === `${actionBase}_reject`}
               className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
             >
               <X size={13} aria-hidden="true" />
-              Reject here
+              {t('Reject here')}
             </button>
             <select
               value={reassignTargets[targetKey] || ''}
               onChange={(event) => setReassignTargets((current) => ({ ...current, [targetKey]: event.target.value }))}
               className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              title="Choose the correct entity if this alias is attached to the wrong person."
+              title={t('Choose the correct entity if this alias is attached to the wrong person.')}
             >
-              <option value="">Correct target...</option>
+              <option value="">{t('Correct target...')}</option>
               {state.entities.filter((item) => item.person_id !== detailEntity.person_id).map((item) => (
                 <option key={item.person_id} value={item.person_id}>{item.canonical_name}</option>
               ))}
@@ -618,9 +620,9 @@ export default function EntitiesPage() {
               onClick={() => reassignAlias(detailEntity, alias)}
               disabled={!reassignTargets[targetKey] || state.actionId === `${actionBase}_reassign`}
               className="rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
-              title="Reject this alias on the current entity and confirm it on the selected target entity."
+              title={t('Reject this alias on the current entity and confirm it on the selected target entity.')}
             >
-              Move alias
+              {t('Move alias')}
             </button>
           </div>
         </div>
@@ -643,7 +645,7 @@ export default function EntitiesPage() {
       return {
         ...column,
         key: column.id,
-        header: column.label,
+        header: t(column.label),
         sortable: true,
         filterable: true,
         className: 'min-w-[220px]',
@@ -657,7 +659,7 @@ export default function EntitiesPage() {
               <span className="block break-words">{item.canonical_name || item.person_id}</span>
               <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">{truncateMiddle(item.person_id, 28)}</span>
             </button>
-            <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="mt-0.5 shrink-0 text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
+            <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="mt-0.5 shrink-0 text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open entity page')}>
               <ExternalLink size={14} aria-hidden="true" />
             </Link>
           </div>
@@ -668,20 +670,20 @@ export default function EntitiesPage() {
     return {
       ...column,
       key: column.id,
-      header: column.label,
+      header: t(column.label),
       sortable: true,
       filterable: true,
       render: (item) => entityColumnValue(item, column.id),
     };
-  }), [caseId, openEntityDetail, selectedPersonId]);
+  }), [caseId, openEntityDetail, selectedPersonId, t]);
 
   const renderEntityDetailPanel = (detailEntity, { inDrawer = false } = {}) => (
     <aside className={inDrawer ? 'h-full overflow-auto p-4' : 'space-y-5'}>
       <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{detailEntity?.canonical_name || 'Select an entity'}</h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{detailEntity ? truncateMiddle(detailEntity.person_id, 36) : 'Choose a row to inspect aliases and provenance.'}</p>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{detailEntity?.canonical_name || t('Select an entity')}</h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{detailEntity ? truncateMiddle(detailEntity.person_id, 36) : t('Choose a row to inspect aliases and provenance.')}</p>
           </div>
           {detailEntity ? <StatusBadge status="configured" label={detailEntity.entity_type || 'entity'} /> : null}
         </div>
@@ -689,15 +691,15 @@ export default function EntitiesPage() {
         {detailEntity ? (
           <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
             <div>
-              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confidence <InfoTip label="Average extraction/entity-resolution confidence from ingestion." /></div>
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confidence')} <InfoTip label={t('Average extraction/entity-resolution confidence from ingestion.')} /></div>
               <div className="text-gray-950 dark:text-white">{confidenceLabel(detailEntity.confidence)}</div>
             </div>
             <div>
-              <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Source Rows</div>
+              <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source Rows')}</div>
               <div className="text-gray-950 dark:text-white">{detailEntity.source_rows || 0}</div>
             </div>
             <div>
-              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confirmed <InfoTip label="Human alias confirmations for this entity. The confirmation record includes who confirmed it." /></div>
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confirmed')} <InfoTip label={t('Human alias confirmations for this entity. The confirmation record includes who confirmed it.')} /></div>
               <div className="text-gray-950 dark:text-white">{confirmedAliases.length}</div>
             </div>
           </div>
@@ -705,7 +707,7 @@ export default function EntitiesPage() {
         {detailEntity ? (
           <Link to={`/evidence/cases/${caseId}/entities/${detailEntity.person_id}`} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100">
             <ExternalLink size={15} aria-hidden="true" />
-            Open full entity page
+            {t('Open full entity page')}
           </Link>
         ) : null}
       </section>
@@ -714,25 +716,25 @@ export default function EntitiesPage() {
         <>
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
-              Add Confirmed Alias
-              <InfoTip label="Use this only when you know another name, typo, nickname, role, or spelling should resolve to this selected entity." />
+              {t('Add Confirmed Alias')}
+              <InfoTip label={t('Use this only when you know another name, typo, nickname, role, or spelling should resolve to this selected entity.')} />
             </h3>
             <div className="mt-3 flex gap-2">
-              <input value={customAlias} onChange={(event) => setCustomAlias(event.target.value)} placeholder="Example: Kayla Willson" className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+              <input value={customAlias} onChange={(event) => setCustomAlias(event.target.value)} placeholder={t('Example: Kayla Willson')} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
               <button type="button" onClick={addConfirmedAlias} disabled={!customAlias.trim() || state.actionId === 'custom_alias'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
                 <Check size={15} aria-hidden="true" />
-                Add
+                {t('Add')}
               </button>
             </div>
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <h3 className="text-base font-semibold text-gray-950 dark:text-white">Aliases For {detailEntity.canonical_name}</h3>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Aliases For {name}', { name: detailEntity.canonical_name })}</h3>
             <div className="mt-3 space-y-2">{renderAliasRows(detailEntity)}</div>
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <h3 className="text-base font-semibold text-gray-950 dark:text-white">Documents Mentioning This Entity</h3>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents Mentioning This Entity')}</h3>
             <ul className="mt-3 max-h-56 space-y-2 overflow-auto text-sm text-gray-700 dark:text-gray-300">
               {(detailEntity.document_mentions || []).slice(0, 20).map((document) => (
                 <li key={document.file_hash} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
@@ -744,7 +746,7 @@ export default function EntitiesPage() {
                     <span className="font-semibold">{document.original_filename || document.file_hash}</span>
                   )}
                   <span className="block text-xs text-gray-500 dark:text-gray-400">
-                    {document.mention_count} mention(s); pages {(document.pages || []).slice(0, 8).join(', ') || 'n/a'}
+                    {document.mention_count} {t('mention(s)')}; {t('Pages').toLowerCase()} {(document.pages || []).slice(0, 8).join(', ') || 'n/a'}
                   </span>
                 </li>
               ))}
@@ -759,7 +761,10 @@ export default function EntitiesPage() {
     <div>
       <PageHeader
         title="Entities"
-        description={`${state.total} canonical entity records${activeEntityFilter ? ` matching "${activeEntityFilter}"` : ''}. Alias review means deciding which real person an extracted name should resolve to.`}
+        description={t('{count} canonical entity records{filter}. Alias review means deciding which real person an extracted name should resolve to.', {
+          count: state.total,
+          filter: activeEntityFilter ? ` ${t('matching')} "${activeEntityFilter}"` : '',
+        })}
         actions={
           <button
             type="button"
@@ -773,7 +778,7 @@ export default function EntitiesPage() {
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
             <RefreshCw size={16} aria-hidden="true" />
-            Refresh
+            {t('Refresh')}
           </button>
         }
       />
@@ -783,24 +788,24 @@ export default function EntitiesPage() {
 
       <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
         <div className="grid gap-3 lg:grid-cols-3">
-          <div><strong>Confirm here</strong> records that an alias, such as "grandma", should resolve to the selected entity.</div>
-          <div><strong>Reject here</strong> records that the alias should not resolve to the selected entity.</div>
-          <div><strong>Move alias</strong> rejects it on the current entity and confirms it on the chosen correct entity.</div>
+          <div><strong>{t('Confirm here')}</strong> {t('records that an alias, such as "grandma", should resolve to the selected entity.')}</div>
+          <div><strong>{t('Reject here')}</strong> {t('records that the alias should not resolve to the selected entity.')}</div>
+          <div><strong>{t('Move alias')}</strong> {t('rejects it on the current entity and confirms it on the chosen correct entity.')}</div>
         </div>
       </section>
 
       <div className="mb-4 flex flex-col gap-3">
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
-          Use each column header menu to sort or filter. Numeric filters are minimum thresholds, and the entity filter searches canonical names, aliases, and person ids.
+          {t('Use each column header menu to sort or filter. Numeric filters are minimum thresholds, and the entity filter searches canonical names, aliases, and person ids.')}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
-            Live jobs: {liveJobs.activeCount} active
+            {t('Live jobs: {count} active', { count: liveJobs.activeCount })}
           </span>
           {liveJobs.lastFinishedJob ? (
             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
-              Updated after {humanizeKey(liveJobs.lastFinishedJob.job_type)}
+              {t('Updated after {jobType}', { jobType: humanizeKey(liveJobs.lastFinishedJob.job_type) })}
             </span>
           ) : null}
           {state.fingerprint?.id ? <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" /> : null}
@@ -815,11 +820,11 @@ export default function EntitiesPage() {
             rowKey={(item) => item.person_id}
             columns={entityTableColumns}
             loading={state.loading}
-            emptyTitle={state.loading ? 'Loading entities' : 'No entities matched'}
+            emptyTitle={state.loading ? t('Loading entities') : t('No entities matched')}
             enableHeaderMenus
             filterValues={entityFilterValues}
             sort={{ key: activeSort.id, desc: activeSort.desc }}
-            sortLabel={sortingLabel(sorting)}
+            sortLabel={sortingLabel(sorting, t)}
             appliedFilters={appliedFilterLabels}
             onFilterChange={setColumnFilterValue}
             onClearFilter={clearColumnFilter}
@@ -833,12 +838,12 @@ export default function EntitiesPage() {
               return detail ? (
                 <div>
                   <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-                    Aliases currently attached to {detail.canonical_name}
+                    {t('Aliases currently attached to {name}', { name: detail.canonical_name })}
                   </div>
                   <div className="grid gap-2 xl:grid-cols-2">{renderAliasRows(detail, true)}</div>
                 </div>
               ) : (
-                <div className="text-sm text-gray-600 dark:text-gray-400">Loading aliases...</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">{t('Loading aliases...')}</div>
               );
             }}
             mobileTitle={(item) => (
@@ -852,7 +857,7 @@ export default function EntitiesPage() {
             )}
             mobileSubtitle={(item) => truncateMiddle(item.person_id, 32)}
             mobileActions={(item) => (
-              <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
+              <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open entity page')}>
                 <ExternalLink size={15} aria-hidden="true" />
               </Link>
             )}
@@ -868,12 +873,12 @@ export default function EntitiesPage() {
 
           <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Merge Suggestions</h3>
-              <StatusBadge status={state.suggestionsLoading ? 'running' : 'configured'} label={`${state.suggestions.length} suggestion(s)`} />
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Merge Suggestions')}</h3>
+              <StatusBadge status={state.suggestionsLoading ? 'running' : 'configured'} label={t('{count} suggestion(s)', { count: state.suggestions.length })} />
             </div>
             <label className="mb-3 block">
-              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Decision note</span>
-              <input value={mergeNote} onChange={(event) => setMergeNote(event.target.value)} placeholder="Optional note for merge/reject decisions" className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Decision note')}</span>
+              <input value={mergeNote} onChange={(event) => setMergeNote(event.target.value)} placeholder={t('Optional note for merge/reject decisions')} className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
             </label>
             <div className="space-y-3">
               {state.suggestions.slice(0, 8).map((suggestion) => {
@@ -884,7 +889,7 @@ export default function EntitiesPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge status="degraded" label={humanizeKey(suggestion.suggestion_type)} />
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{suggestion.match_value}</span>
-                      <span className="text-gray-500 dark:text-gray-400">confidence {confidenceLabel(suggestion.confidence)}</span>
+                      <span className="text-gray-500 dark:text-gray-400">{t('confidence {value}', { value: confidenceLabel(suggestion.confidence) })}</span>
                     </div>
                     <ul className="mt-2 space-y-1 text-gray-700 dark:text-gray-300">
                       {people.map((person) => (
@@ -895,18 +900,18 @@ export default function EntitiesPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button type="button" onClick={() => decideMergeSuggestion(suggestion, 'merge')} disabled={state.actionId === `${actionBase}_merge`} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
                           <GitMerge size={13} aria-hidden="true" />
-                          Merge first pair
+                          {t('Merge first pair')}
                         </button>
                         <button type="button" onClick={() => decideMergeSuggestion(suggestion, 'reject')} disabled={state.actionId === `${actionBase}_reject`} className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40">
                           <X size={13} aria-hidden="true" />
-                          Reject pair
+                          {t('Reject pair')}
                         </button>
                       </div>
                     ) : null}
                   </div>
                 );
               })}
-              {!state.suggestions.length ? <p className="text-sm text-gray-600 dark:text-gray-400">No duplicate suggestions returned.</p> : null}
+              {!state.suggestions.length ? <p className="text-sm text-gray-600 dark:text-gray-400">{t('No duplicate suggestions returned.')}</p> : null}
             </div>
           </section>
         </div>
@@ -917,15 +922,15 @@ export default function EntitiesPage() {
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
           <button
             type="button"
-            aria-label="Close entity details"
+            aria-label={t('Close entity details')}
             onClick={() => setDetailDrawerOpen(false)}
             className="absolute inset-0 bg-black/50"
           />
           <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-2xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
               <div>
-                <div className="text-sm font-semibold text-gray-950 dark:text-white">Entity Details</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{entity?.canonical_name || 'Select an entity'}</div>
+                <div className="text-sm font-semibold text-gray-950 dark:text-white">{t('Entity Details')}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{entity?.canonical_name || t('Select an entity')}</div>
               </div>
               <button
                 type="button"

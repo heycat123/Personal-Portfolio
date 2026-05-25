@@ -7,6 +7,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, humanizeKey, truncateMiddle } from '../utils/formatters';
 
@@ -30,6 +31,7 @@ export default function EntityDetailPage() {
   const { caseId, personId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -68,11 +70,12 @@ export default function EntityDetailPage() {
     <div>
       <PageHeader
         title={entity?.canonical_name || 'Entity'}
-        description={entity ? `Entity id: ${entity.person_id}` : 'Loading entity detail.'}
+        description={entity ? t('Entity id: {id}', { id: entity.person_id }) : 'Loading entity detail.'}
+        translateTitle={!entity?.canonical_name}
         actions={
           <Link to={`/evidence/cases/${caseId}/entities`} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10">
             <ArrowLeft size={16} aria-hidden="true" />
-            Back to entities
+            {t('Back to entities')}
           </Link>
         }
       />
@@ -84,13 +87,13 @@ export default function EntityDetailPage() {
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-5">
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Aliases</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Aliases')}</h3>
               <div className="mt-3 grid gap-2 lg:grid-cols-2">
                 {(entity.aliases || []).map((alias) => (
                   <div key={alias.normalized_alias || alias.alias} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
                     <div className="font-semibold text-gray-950 dark:text-white">{alias.alias}</div>
                     <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {alias.normalized_alias}; {alias.occurrence_count || 0} occurrence(s); confidence {confidenceLabel(alias.confidence)}
+                      {alias.normalized_alias}; {alias.occurrence_count || 0} {t('occurrence(s)')}; {t('confidence')} {confidenceLabel(alias.confidence)}
                     </div>
                   </div>
                 ))}
@@ -98,7 +101,7 @@ export default function EntityDetailPage() {
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Documents Mentioning This Entity</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents Mentioning This Entity')}</h3>
               <div className="mt-3 space-y-2">
                 {(entity.document_mentions || []).map((document) => (
                   <div key={document.file_hash} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
@@ -110,7 +113,7 @@ export default function EntityDetailPage() {
                       <span className="font-semibold text-gray-950 dark:text-white">{document.original_filename || document.file_hash}</span>
                     )}
                     <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {document.mention_count} mention(s); pages {(document.pages || []).slice(0, 12).join(', ') || 'n/a'}; hash {truncateMiddle(document.file_hash, 24)}
+                      {document.mention_count} {t('mention(s)')}; {t('Pages').toLowerCase()} {(document.pages || []).slice(0, 12).join(', ') || 'n/a'}; {t('Hash').toLowerCase()} {truncateMiddle(document.file_hash, 24)}
                     </div>
                   </div>
                 ))}
@@ -118,13 +121,13 @@ export default function EntityDetailPage() {
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Mention Samples</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Mention Samples')}</h3>
               <div className="mt-3 space-y-2">
                 {(entity.mentions || []).map((mention) => (
                   <div key={mention.mention_id} className="rounded-md bg-gray-50 p-3 text-sm dark:bg-black/20">
                     {mention.mention_text}
                     <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {mention.mention_type}; p. {mention.page_number || 'n/a'}; confidence {confidenceLabel(mention.confidence)}
+                      {mention.mention_type}; {t('Page')} {mention.page_number || 'n/a'}; {t('confidence')} {confidenceLabel(mention.confidence)}
                     </div>
                   </div>
                 ))}
@@ -134,27 +137,27 @@ export default function EntityDetailPage() {
 
           <aside className="space-y-5">
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Resolution Summary</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Resolution Summary')}</h3>
               <dl className="mt-4 space-y-3 text-sm">
                 <div>
                   <dt className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-                    Confidence <InfoTip label="Average extraction/entity-resolution confidence from ingestion. This is not legal certainty." />
+                    {t('Confidence')} <InfoTip label={t('Average extraction/entity-resolution confidence from ingestion. This is not legal certainty.')} />
                   </dt>
                   <dd className="mt-1 text-gray-950 dark:text-white">{confidenceLabel(entity.confidence)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Source Rows</dt>
+                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source Rows')}</dt>
                   <dd className="mt-1 text-gray-950 dark:text-white">{entity.source_rows || 0}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Type</dt>
+                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Type')}</dt>
                   <dd className="mt-1"><StatusBadge status="configured" label={entity.entity_type || 'entity'} /></dd>
                 </div>
               </dl>
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Human Alias Decisions</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Human Alias Decisions')}</h3>
               <div className="mt-3 space-y-2">
                 {(entity.alias_confirmations || []).map((decision) => (
                   <div key={decision.confirmation_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
@@ -163,17 +166,17 @@ export default function EntityDetailPage() {
                       <StatusBadge status={decision.decision === 'confirm' ? 'succeeded' : decision.decision === 'reject' ? 'failed' : 'degraded'} label={humanizeKey(decision.decision)} />
                     </div>
                     <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      by {decision.reviewer_display_name || decision.reviewer_email || decision.reviewer_user_id || 'unknown'} on {formatDateTime(decision.created_at)}
+                      {t('by {name} on {date}', { name: decision.reviewer_display_name || decision.reviewer_email || decision.reviewer_user_id || t('unknown'), date: formatDateTime(decision.created_at) })}
                     </div>
                     {decision.reviewer_note ? <div className="mt-2 text-gray-700 dark:text-gray-300">{decision.reviewer_note}</div> : null}
                   </div>
                 ))}
-                {!(entity.alias_confirmations || []).length ? <p className="text-sm text-gray-600 dark:text-gray-400">No human alias decisions recorded yet.</p> : null}
+                {!(entity.alias_confirmations || []).length ? <p className="text-sm text-gray-600 dark:text-gray-400">{t('No human alias decisions recorded yet.')}</p> : null}
               </div>
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Roles</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Roles')}</h3>
               <div className="mt-3 flex flex-wrap gap-2">
                 {(entity.roles || []).map((role) => (
                   <span key={role.role_name} className="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-200">
@@ -186,7 +189,7 @@ export default function EntityDetailPage() {
         </div>
       ) : !state.loading ? (
         <div className="rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-          Entity not found.
+          {t('Entity not found.')}
         </div>
       ) : null}
     </div>

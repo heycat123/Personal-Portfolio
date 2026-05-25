@@ -15,7 +15,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
   const { status, latestFingerprint, checkApiHealth } = useApiStatus();
   const { user, authMode, signOut } = useEvidenceAuth();
   const { activeCase } = useCaseContext();
-  const { preferences, supportedLanguages, updatePreferences, saving: savingLocale } = useLocaleSettings();
+  const { preferences, supportedLanguages, t, updatePreferences, saving: savingLocale } = useLocaleSettings();
 
   async function handleLanguageChange(event) {
     try {
@@ -30,7 +30,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">Evidence Control Plane</h1>
+            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Evidence Control Plane')}</h1>
             <StatusBadge status={activeCase.status} />
           </div>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
@@ -51,12 +51,12 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
           <label className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5 text-gray-700 dark:border-gray-800 dark:text-gray-300">
             <Languages size={16} aria-hidden="true" />
-            <span className="sr-only">Language</span>
+            <span className="sr-only">{t('Language')}</span>
             <select
               value={preferences.language}
               onChange={handleLanguageChange}
               disabled={savingLocale}
-              title="Display language"
+              title={t('Display language')}
               className="bg-transparent text-sm font-semibold outline-none dark:bg-[#101820]"
             >
               {supportedLanguages.map((language) => (
@@ -69,21 +69,21 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
           <button
             type="button"
             onClick={checkApiHealth}
-            title="Refresh API health"
-            aria-label="Refresh API health"
+            title={t('Refresh')}
+            aria-label={t('Refresh')}
             className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <RefreshCw size={16} aria-hidden="true" />
           </button>
           <div className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300">
             <Shield size={16} aria-hidden="true" />
-            <span>{user?.displayName || 'Evidence User'}</span>
+            <span>{user?.displayName || t('Evidence User')}</span>
             <span className="text-xs text-gray-500">({authMode})</span>
           </div>
           <Link
             to="/evidence/account"
-            title="Account settings"
-            aria-label="Account settings"
+            title={t('Account')}
+            aria-label={t('Account')}
             className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <UserCircle size={16} aria-hidden="true" />
@@ -91,8 +91,8 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
           <button
             type="button"
             onClick={signOut}
-            title="Sign out"
-            aria-label="Sign out"
+            title={t('Sign out')}
+            aria-label={t('Sign out')}
             className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <LogOut size={16} aria-hidden="true" />
@@ -101,8 +101,8 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
       </div>
 
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-500">
-        {status.checkedAt ? <span>API checked {formatDateTime(status.checkedAt)}</span> : null}
-        {latestFingerprint ? <span>Last fingerprint {latestFingerprint.id}</span> : null}
+        {status.checkedAt ? <span>{t('API checked {time}', { time: formatDateTime(status.checkedAt) })}</span> : null}
+        {latestFingerprint ? <span>{t('Last fingerprint {id}', { id: latestFingerprint.id })}</span> : null}
       </div>
     </header>
   );

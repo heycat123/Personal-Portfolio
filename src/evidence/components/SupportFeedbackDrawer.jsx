@@ -8,6 +8,7 @@ import StatusBadge from './StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 const DEFAULT_FORMS = {
@@ -67,6 +68,7 @@ function compactApiError(error) {
 }
 
 function SubmitResult({ result }) {
+  const { t } = useLocaleSettings();
   if (!result?.record) {
     return null;
   }
@@ -74,15 +76,15 @@ function SubmitResult({ result }) {
     <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
       <div className="flex items-center gap-2 font-semibold">
         <CheckCircle2 size={16} aria-hidden="true" />
-        Submitted
+        {t('Submitted')}
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-normal opacity-70">Ticket</div>
+          <div className="text-xs font-semibold uppercase tracking-normal opacity-70">{t('Ticket')}</div>
           <div className="break-all font-mono text-xs leading-5">{result.record.support_record_id}</div>
         </div>
         <div>
-          <div className="text-xs font-semibold uppercase tracking-normal opacity-70">Initial category</div>
+          <div className="text-xs font-semibold uppercase tracking-normal opacity-70">{t('Initial category')}</div>
           <div>{result.record.category}</div>
         </div>
       </div>
@@ -95,6 +97,7 @@ export default function SupportFeedbackDrawer() {
   const { activeCase } = useCaseContext();
   const { getAccessToken } = useEvidenceAuth();
   const { latestFingerprint, recordFingerprint, status } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [mode, setMode] = useState(null);
   const [form, setForm] = useState(DEFAULT_FORMS.issue);
   const [saving, setSaving] = useState(false);
@@ -110,7 +113,7 @@ export default function SupportFeedbackDrawer() {
     return () => window.removeEventListener('evidence-api-error', handler);
   }, []);
 
-  const drawerTitle = mode === 'idea' ? 'Suggest Idea' : 'Report Issue';
+  const drawerTitle = mode === 'idea' ? t('Suggest Idea') : t('Report Issue');
   const activeError = latestApiError || status.error || null;
   const derivedContext = useMemo(() => routeContext(location.pathname), [location.pathname]);
 
@@ -170,7 +173,7 @@ export default function SupportFeedbackDrawer() {
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
       <button
         type="button"
-        aria-label={`Close ${drawerTitle}`}
+        aria-label={`${t('Close')} ${drawerTitle}`}
         onClick={() => setMode(null)}
         className="absolute inset-0 bg-black/50"
       />
@@ -199,8 +202,8 @@ export default function SupportFeedbackDrawer() {
                 <h3 className="text-base font-semibold text-gray-950 dark:text-white">{drawerTitle}</h3>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                   {mode === 'idea'
-                    ? 'Ideas are stored without evidence content unless you explicitly describe it.'
-                    : 'Issue reports attach route, browser context, and the latest request fingerprint when available.'}
+                    ? t('Ideas are stored without evidence content unless you explicitly describe it.')
+                    : t('Issue reports attach route, browser context, and the latest request fingerprint when available.')}
                 </p>
               </div>
               <StatusBadge status="configured" label="Stage 7.10" />
@@ -208,7 +211,7 @@ export default function SupportFeedbackDrawer() {
 
             {mode === 'issue' && activeError ? (
               <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
-                <div className="font-semibold">Latest API error will be attached</div>
+                <div className="font-semibold">{t('Latest API error will be attached')}</div>
                 <div className="mt-1">{activeError.message || String(activeError)}</div>
                 <RequestFingerprint
                   fingerprintId={activeError.requestFingerprintId || activeError.request_fingerprint_id}
@@ -223,7 +226,7 @@ export default function SupportFeedbackDrawer() {
 
             <form className="mt-4 space-y-4" onSubmit={submitFeedback}>
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Title</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Title')}</span>
                 <input
                   type="text"
                   required
@@ -236,7 +239,7 @@ export default function SupportFeedbackDrawer() {
               </label>
 
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Description</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Description')}</span>
                 <textarea
                   required
                   rows={5}
@@ -250,7 +253,7 @@ export default function SupportFeedbackDrawer() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Category</span>
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Category')}</span>
                   <select
                     value={form.category}
                     onChange={(event) => updateForm('category', event.target.value)}
@@ -260,7 +263,7 @@ export default function SupportFeedbackDrawer() {
                   </select>
                 </label>
                 <label className="block">
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Severity</span>
+                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Severity')}</span>
                   <select
                     value={form.severity}
                     onChange={(event) => updateForm('severity', event.target.value)}
@@ -272,13 +275,13 @@ export default function SupportFeedbackDrawer() {
               </div>
 
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Impact</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Impact')}</span>
                 <textarea
                   rows={3}
                   maxLength={2000}
                   value={form.impact}
                   onChange={(event) => updateForm('impact', event.target.value)}
-                  placeholder="Optional: what this blocks, risks, or improves."
+                  placeholder={t('Optional: what this blocks, risks, or improves.')}
                   className="mt-1 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
@@ -289,7 +292,7 @@ export default function SupportFeedbackDrawer() {
                 className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Send size={15} aria-hidden="true" />
-                {saving ? 'Submitting' : `Submit ${mode === 'idea' ? 'Idea' : 'Issue'}`}
+                {saving ? t('Submitting') : t(mode === 'idea' ? 'Submit Idea' : 'Submit Issue')}
               </button>
             </form>
           </section>
@@ -303,8 +306,8 @@ export default function SupportFeedbackDrawer() {
       <button
         type="button"
         onClick={() => openDrawer('idea')}
-        title="Suggest an idea"
-        aria-label="Suggest an idea"
+        title={t('Suggest Idea')}
+        aria-label={t('Suggest Idea')}
         className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
       >
         <Lightbulb size={16} aria-hidden="true" />
@@ -312,8 +315,8 @@ export default function SupportFeedbackDrawer() {
       <button
         type="button"
         onClick={() => openDrawer('issue')}
-        title="Report an issue"
-        aria-label="Report an issue"
+        title={t('Report Issue')}
+        aria-label={t('Report Issue')}
         className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
       >
         <Bug size={16} aria-hidden="true" />

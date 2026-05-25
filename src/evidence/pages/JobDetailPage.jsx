@@ -9,6 +9,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
@@ -26,6 +27,7 @@ export default function JobDetailPage() {
   const { caseId, jobId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     actionLoading: null,
@@ -100,6 +102,8 @@ export default function JobDetailPage() {
       <PageHeader
         title={job?.job_type || 'Job Detail'}
         description={job?.job_id || jobId}
+        translateTitle={!job?.job_type}
+        translateDescription={false}
         actions={
           <>
             <button
@@ -108,7 +112,7 @@ export default function JobDetailPage() {
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <RefreshCw size={16} aria-hidden="true" />
-              Refresh
+              {t('Refresh')}
             </button>
             <button
               type="button"
@@ -117,7 +121,7 @@ export default function JobDetailPage() {
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <Ban size={16} aria-hidden="true" />
-              {state.actionLoading === 'cancel' ? 'Cancelling' : 'Cancel'}
+              {state.actionLoading === 'cancel' ? t('Cancelling') : t('Cancel')}
             </button>
             <button
               type="button"
@@ -126,14 +130,14 @@ export default function JobDetailPage() {
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RotateCcw size={16} aria-hidden="true" />
-              {state.actionLoading === 'retry' ? 'Retrying' : 'Retry'}
+              {state.actionLoading === 'retry' ? t('Retrying') : t('Retry')}
             </button>
             <Link
               to={`/evidence/cases/${caseId}/jobs`}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <ArrowLeft size={16} aria-hidden="true" />
-              Jobs
+              {t('Jobs')}
             </Link>
           </>
         }
@@ -151,25 +155,25 @@ export default function JobDetailPage() {
       {job ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricTile label="Status" value={<StatusBadge status={job.status} />} detail="Current worker state" />
-            <MetricTile label="Priority" value={job.priority ?? 0} detail="Higher priority runs first" />
-            <MetricTile label="Created" value={formatDateTime(job.created_at)} detail={job.created_by_user_id || 'No user recorded'} />
-            <MetricTile label="Worker" value={job.claimed_by_worker_id || 'Not claimed'} detail={job.error_class || 'No error class'} />
+            <MetricTile label={t('Status')} value={<StatusBadge status={job.status} />} detail={t('Current worker state')} />
+            <MetricTile label={t('Priority')} value={job.priority ?? 0} detail={t('Higher priority runs first')} />
+            <MetricTile label={t('Created')} value={formatDateTime(job.created_at)} detail={job.created_by_user_id || t('No user recorded')} />
+            <MetricTile label={t('Worker')} value={job.claimed_by_worker_id || t('Not claimed')} detail={job.error_class || t('No error class')} />
           </div>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
             <div>
-              <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">Events</h3>
+              <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Events')}</h3>
               <JobStatusTimeline events={job.events || []} />
             </div>
 
             <div className="space-y-5">
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">Input</h3>
+                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Input')}</h3>
                 <JsonBlock value={job.input_json} />
               </div>
               <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">Result</h3>
+                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Result')}</h3>
                 <JsonBlock value={job.result_json} />
               </div>
               {job.error_message_redacted ? (
@@ -184,7 +188,7 @@ export default function JobDetailPage() {
 
       {!job && state.loading ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-          Loading job.
+          {t('Loading job.')}
         </div>
       ) : null}
     </div>

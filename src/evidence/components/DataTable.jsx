@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Filter, HelpCircle, X } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
 import EmptyState from './EmptyState';
+import { useLocaleSettings } from '../context/LocaleContext';
 
 function columnId(column) {
   return column.id || column.key;
@@ -53,6 +54,7 @@ function ColumnHeaderMenu({
   onSetSort,
   onToggle,
 }) {
+  const { t } = useLocaleSettings();
   const id = columnId(column);
   const header = columnHeader(column);
   const canFilter = column.filterable !== false;
@@ -85,7 +87,7 @@ function ColumnHeaderMenu({
         <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border border-gray-200 bg-white p-3 text-sm normal-case tracking-normal text-gray-800 shadow-xl dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100">
           {canSort ? (
             <>
-              <div className="mb-3 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Sort</div>
+              <div className="mb-3 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sort')}</div>
               <div className="mb-4 grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -96,7 +98,7 @@ function ColumnHeaderMenu({
                       : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10'
                   }`}
                 >
-                  Ascending
+                  {t('Ascending')}
                 </button>
                 <button
                   type="button"
@@ -107,7 +109,7 @@ function ColumnHeaderMenu({
                       : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10'
                   }`}
                 >
-                  Descending
+                  {t('Descending')}
                 </button>
               </div>
             </>
@@ -116,7 +118,7 @@ function ColumnHeaderMenu({
           {canFilter ? (
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-                {column.filterLabel || (column.filterType === 'number' ? 'Minimum value' : 'Filter contains')}
+                {t(column.filterLabel || (column.filterType === 'number' ? 'Minimum value' : 'Filter contains'))}
               </span>
               <input
                 value={filterValue}
@@ -138,14 +140,14 @@ function ColumnHeaderMenu({
               disabled={!filterValue || !canFilter}
               className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
             >
-              Clear filter
+              {t('Clear filter')}
             </button>
             <button
               type="button"
               onClick={onToggle}
               className="rounded-md border border-sky-700 bg-sky-700 px-2 py-1.5 text-xs font-semibold text-white hover:bg-sky-800"
             >
-              Done
+              {t('Done')}
             </button>
           </div>
         </div>
@@ -182,6 +184,7 @@ export default function DataTable({
   toolbar,
   tableClassName = '',
 }) {
+  const { t } = useLocaleSettings();
   const [openColumnMenu, setOpenColumnMenu] = useState(null);
   const visibleRows = useMemo(() => rows || [], [rows]);
   const visibleColumns = useMemo(() => columns || [], [columns]);
@@ -253,7 +256,7 @@ export default function DataTable({
     }
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:hidden">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Sort and filter</div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sort and filter')}</div>
         <div className="flex flex-wrap gap-2">
           {visibleColumns.filter((column) => column.mobileFilterHidden !== true).map((column) => {
             const id = columnId(column);
@@ -297,7 +300,13 @@ export default function DataTable({
     return (
       <div className="mt-3 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
         <span>
-          Showing {firstVisibleRow}-{lastVisibleRow} of {total}; page {pageIndex + 1} of {totalPages}
+          {t('Showing {first}-{last} of {total}; page {page} of {pages}', {
+            first: firstVisibleRow,
+            last: lastVisibleRow,
+            total,
+            page: pageIndex + 1,
+            pages: totalPages,
+          })}
         </span>
         <div className="flex flex-wrap items-center gap-2">
           {pagination.onPageSizeChange ? (
@@ -306,7 +315,7 @@ export default function DataTable({
               onChange={(event) => pagination.onPageSizeChange(Number(event.target.value))}
               className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
             >
-              {pageSizeOptions.map((size) => <option key={size} value={size}>{size} rows</option>)}
+              {pageSizeOptions.map((size) => <option key={size} value={size}>{t('{size} rows', { size })}</option>)}
             </select>
           ) : null}
           <button
@@ -315,7 +324,7 @@ export default function DataTable({
             disabled={!canGoPrevious || loading}
             className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            Previous
+            {t('Previous')}
           </button>
           <button
             type="button"
@@ -323,7 +332,7 @@ export default function DataTable({
             disabled={!canGoNext || loading}
             className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            Next
+            {t('Next')}
           </button>
         </div>
       </div>
@@ -347,7 +356,7 @@ export default function DataTable({
               type="button"
               onClick={() => onClearFilter?.(filter.id)}
               className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-100"
-              title="Remove this filter"
+              title={t('Remove this filter')}
             >
               {filter.label}
               <X size={12} aria-hidden="true" />
@@ -359,7 +368,7 @@ export default function DataTable({
               onClick={onClearAllFilters}
               className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
             >
-              Clear filters
+              {t('Clear filters')}
             </button>
           ) : null}
         </div>
@@ -455,7 +464,7 @@ export default function DataTable({
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
                 {metrics.map((column) => (
                   <div key={columnId(column)} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{columnHeader(column)}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(columnHeader(column))}</div>
                     <div className="break-words text-gray-950 dark:text-white">{renderCell(column, row)}</div>
                   </div>
                 ))}
@@ -469,7 +478,7 @@ export default function DataTable({
                     className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                   >
                     {isExpanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
-                    Details
+                    {t('Details')}
                   </button>
                   {isExpanded ? <div className="mt-3">{renderDetailPanel(row)}</div> : null}
                 </>

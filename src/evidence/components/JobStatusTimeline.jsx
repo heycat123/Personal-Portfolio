@@ -1,4 +1,5 @@
 import { CheckCircle2, Circle, Clock, XCircle } from 'lucide-react';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { formatDateTime, humanizeKey } from '../utils/formatters';
 
 function eventIcon(eventType) {
@@ -16,10 +17,11 @@ function eventIcon(eventType) {
 }
 
 export default function JobStatusTimeline({ events }) {
+  const { t } = useLocaleSettings();
   if (!events?.length) {
     return (
       <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-        No job events returned.
+        {t('No job events returned.')}
       </p>
     );
   }
@@ -35,7 +37,7 @@ export default function JobStatusTimeline({ events }) {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {humanizeKey(event.event_type)}
+                {t(humanizeKey(event.event_type))}
               </p>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{event.message}</p>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">{formatDateTime(event.created_at)}</p>

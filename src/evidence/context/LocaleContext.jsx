@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { translateUi } from '../i18n/translations';
 import { evidenceApi } from '../services/evidenceApi';
 import { useEvidenceAuth } from './AuthContext';
 
@@ -155,15 +156,24 @@ export function LocaleProvider({ children }) {
     [getAccessToken, isAuthenticated, setPreferences],
   );
 
+  const t = useCallback((key, values) => translateUi(preferences.language, key, values), [preferences.language]);
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = preferences.language;
+    }
+  }, [preferences.language]);
+
   const value = useMemo(
     () => ({
       ...state,
       preferences,
       supportedLanguages: SUPPORTED_LANGUAGES,
       setPreferences,
+      t,
       updatePreferences,
     }),
-    [preferences, setPreferences, state, updatePreferences],
+    [preferences, setPreferences, state, t, updatePreferences],
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

@@ -25,7 +25,7 @@ export default function QueryPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
-  const { preferences } = useLocaleSettings();
+  const { preferences, t } = useLocaleSettings();
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [state, setState] = useState({
     running: false,
@@ -82,7 +82,7 @@ export default function QueryPage() {
         actions={
           <StatusBadge
             status={isVerified ? 'succeeded' : state.result ? 'degraded' : 'pending'}
-            label={isVerified ? 'Verified' : state.result ? 'Not verified' : 'Ready'}
+            label={isVerified ? t('Verified') : state.result ? t('Not verified') : t('Ready')}
           />
         }
       />
@@ -91,7 +91,7 @@ export default function QueryPage() {
 
       <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <label className="block">
-          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Question</span>
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{t('Question')}</span>
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
@@ -107,7 +107,7 @@ export default function QueryPage() {
             className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Send size={16} aria-hidden="true" />
-            {state.running ? 'Running' : 'Run Query'}
+            {state.running ? t('Running') : t('Run Query')}
           </button>
           {state.fingerprint?.id ? (
             <RequestFingerprint
@@ -117,7 +117,7 @@ export default function QueryPage() {
             />
           ) : null}
           <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-            Answer language: {preferences.language} | Timezone: {preferences.timeZone}
+            {t('Answer language: {language} | Timezone: {timeZone}', { language: preferences.language, timeZone: preferences.timeZone })}
           </span>
         </div>
       </section>
@@ -125,28 +125,28 @@ export default function QueryPage() {
       {state.result ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-5">
-            <Panel title="Answer">
+            <Panel title={t('Answer')}>
               <div className={`mb-3 flex items-start gap-2 rounded-md p-3 text-sm ${isUnavailable ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'bg-gray-50 text-gray-800 dark:bg-black/20 dark:text-gray-200'}`}>
                 {isVerified ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />}
                 <div>{state.result.answer || 'No answer returned.'}</div>
               </div>
               <div className="grid gap-2 text-sm sm:grid-cols-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Verifier</div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Verifier')}</div>
                   <StatusBadge status={isVerified ? 'succeeded' : 'failed'} label={verifier?.failure || (isVerified ? 'verified' : 'not verified')} />
                 </div>
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confidence</div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confidence')}</div>
                   <div className="text-gray-950 dark:text-white">{verifier?.confidence ?? 0}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Cost</div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cost')}</div>
                   <div className="text-gray-950 dark:text-white">${Number(state.result.cost?.actual_usd || 0).toFixed(4)}</div>
                 </div>
               </div>
             </Panel>
 
-            <Panel title="Verified Facts">
+            <Panel title={t('Verified Facts')}>
               {state.result.verified_facts?.length ? (
                 <ul className="list-disc space-y-2 pl-5 text-sm text-gray-800 dark:text-gray-200">
                   {state.result.verified_facts.map((fact, index) => (
@@ -154,23 +154,23 @@ export default function QueryPage() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">No verified facts returned.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No verified facts returned.')}</p>
               )}
             </Panel>
 
-            <Panel title="Retrieval Trace">
+            <Panel title={t('Retrieval Trace')}>
               {state.result.retrieval_trace?.length ? (
                 <pre className="max-h-[380px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
                   {JSON.stringify(state.result.retrieval_trace, null, 2)}
                 </pre>
               ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">No trace returned.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No trace returned.')}</p>
               )}
             </Panel>
           </div>
 
           <div className="space-y-5">
-            <Panel title="Citations">
+            <Panel title={t('Citations')}>
               {state.result.citations?.length ? (
                 <ul className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
                   {state.result.citations.map((citation, index) => (
@@ -180,17 +180,17 @@ export default function QueryPage() {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">No citations returned.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No citations returned.')}</p>
               )}
             </Panel>
 
-            <Panel title="Evidence Packet">
+            <Panel title={t('Evidence Packet')}>
               {state.result.evidence_packet?.length ? (
                 <pre className="max-h-[420px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
                   {JSON.stringify(state.result.evidence_packet, null, 2)}
                 </pre>
               ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">No evidence packet returned.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No evidence packet returned.')}</p>
               )}
             </Panel>
           </div>
@@ -199,7 +199,7 @@ export default function QueryPage() {
         <div className="mt-5 rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
           <div className="flex items-center gap-2">
             <MessageSquare size={18} aria-hidden="true" />
-            Run a question to inspect the structured query response.
+            {t('Run a question to inspect the structured query response.')}
           </div>
         </div>
       )}

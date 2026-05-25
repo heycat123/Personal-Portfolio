@@ -9,6 +9,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
@@ -34,6 +35,7 @@ export default function DocumentDetailPage() {
   const { caseId, fileId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -77,13 +79,15 @@ export default function DocumentDetailPage() {
       <PageHeader
         title={document?.original_filename || 'Document Detail'}
         description={document?.file_id || fileId}
+        translateTitle={!document?.original_filename}
+        translateDescription={false}
         actions={
           <Link
             to={`/evidence/cases/${caseId}/documents`}
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
             <ArrowLeft size={16} aria-hidden="true" />
-            Documents
+            {t('Documents')}
           </Link>
         }
       />
@@ -99,15 +103,15 @@ export default function DocumentDetailPage() {
       {document ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricTile icon={FileText} label="Pages" value={document.page_count || 0} detail="Reported extraction page count" />
-            <MetricTile label="Status" value={<StatusBadge status={document.status} />} detail="Evidence file status" />
-            <MetricTile label="Source" value={document.source_provider || 'unknown'} detail={document.source_of_truth_mode || 'unknown mode'} />
-            <MetricTile label="Extraction" value={document.extraction_method || 'pending'} detail={document.media_type || 'unknown media'} />
+            <MetricTile icon={FileText} label={t('Pages')} value={document.page_count || 0} detail={t('Reported extraction page count')} />
+            <MetricTile label={t('Status')} value={<StatusBadge status={document.status} />} detail={t('Evidence file status')} />
+            <MetricTile label={t('Source')} value={document.source_provider || t('unknown')} detail={document.source_of_truth_mode || t('unknown mode')} />
+            <MetricTile label={t('Extraction')} value={document.extraction_method || t('pending')} detail={document.media_type || t('unknown media')} />
           </div>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Metadata</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Metadata')}</h3>
               <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
                 {[
                   ['File ID', document.file_id],
@@ -118,29 +122,29 @@ export default function DocumentDetailPage() {
                   ['Updated', formatDateTime(document.updated_at)],
                 ].map(([label, value]) => (
                   <div key={label} className="min-w-0">
-                    <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</dt>
-                    <dd className="mt-1 break-words text-gray-900 dark:text-gray-100">{value || 'Not recorded'}</dd>
+                    <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(label)}</dt>
+                    <dd className="mt-1 break-words text-gray-900 dark:text-gray-100">{value || t('Not recorded')}</dd>
                   </div>
                 ))}
               </dl>
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Coverage Flags</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Coverage Flags')}</h3>
               <div className="mt-4 space-y-3 text-sm">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Low Text Pages</p>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Low Text Pages')}</p>
                   <p className="mt-1 text-gray-900 dark:text-gray-100">
-                    {lowTextPages.length ? lowTextPages.map((item) => String(item)).join(', ') : 'None reported'}
+                    {lowTextPages.length ? lowTextPages.map((item) => String(item)).join(', ') : t('None reported')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Graph Status</p>
-                  <StatusBadge status="unknown" label="Pending API route" />
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Graph Status')}</p>
+                  <StatusBadge status="unknown" label={t('Pending API route')} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Vector Status</p>
-                  <StatusBadge status="unknown" label="Pending API route" />
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Vector Status')}</p>
+                  <StatusBadge status="unknown" label={t('Pending API route')} />
                 </div>
               </div>
             </div>
@@ -148,18 +152,18 @@ export default function DocumentDetailPage() {
 
           <div className="mt-6">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Page Extraction Rows</h3>
-              <span className="text-sm text-gray-600 dark:text-gray-400">{document.pages?.length || 0} rows</span>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Page Extraction Rows')}</h3>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{document.pages?.length || 0} {t('row(s)')}</span>
             </div>
             <DataTable
               rows={document.pages || []}
               rowKey={(page) => `${page.page_number}-${page.text_source}`}
-              emptyTitle="No page extraction rows returned"
+              emptyTitle={t('No page extraction rows returned')}
               columns={[
-                { key: 'page_number', header: 'Page', render: (page) => page.page_number },
-                { key: 'text_source', header: 'Text Source', render: (page) => page.text_source || 'unknown' },
-                { key: 'page_text_chars', header: 'Characters', render: (page) => page.page_text_chars ?? 0 },
-                { key: 'updated_at', header: 'Updated', render: (page) => formatDateTime(page.updated_at) },
+                { key: 'page_number', header: t('Page'), render: (page) => page.page_number },
+                { key: 'text_source', header: t('Text Source'), render: (page) => page.text_source || t('unknown') },
+                { key: 'page_text_chars', header: t('Characters'), render: (page) => page.page_text_chars ?? 0 },
+                { key: 'updated_at', header: t('Updated'), render: (page) => formatDateTime(page.updated_at) },
               ]}
             />
           </div>
@@ -168,7 +172,7 @@ export default function DocumentDetailPage() {
 
       {!document && state.loading ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-          Loading document.
+          {t('Loading document.')}
         </div>
       ) : null}
     </div>

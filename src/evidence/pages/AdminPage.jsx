@@ -7,6 +7,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
@@ -16,6 +17,7 @@ export default function AdminPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     saving: false,
@@ -127,7 +129,7 @@ export default function AdminPage() {
       <PageHeader
         title="Admin"
         description="Create Cognito-backed accounts and manage access to this case."
-        actions={<StatusBadge status={state.loading ? 'pending' : 'succeeded'} label={state.loading ? 'loading' : 'ready'} />}
+        actions={<StatusBadge status={state.loading ? 'pending' : 'succeeded'} label={state.loading ? t('loading') : t('ready')} />}
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Admin action failed" error={state.error} /></div> : null}
@@ -139,14 +141,14 @@ export default function AdminPage() {
               <UserPlus size={18} aria-hidden="true" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Create Account</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Create an account and link it to this case.</p>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Create Account')}</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('Create an account and link it to this case.')}</p>
             </div>
           </div>
 
           <form className="space-y-4" onSubmit={handleCreateUser}>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Email')}</span>
               <input
                 type="email"
                 value={form.email}
@@ -156,7 +158,7 @@ export default function AdminPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Display name</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Display name')}</span>
               <input
                 type="text"
                 value={form.display_name}
@@ -166,7 +168,7 @@ export default function AdminPage() {
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Global role</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Global role')}</span>
                 <select
                   value={form.global_role}
                   onChange={(event) => setForm((current) => ({ ...current, global_role: event.target.value }))}
@@ -177,7 +179,7 @@ export default function AdminPage() {
                 </select>
               </label>
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Case role</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Case role')}</span>
                 <select
                   value={form.case_role}
                   onChange={(event) => setForm((current) => ({ ...current, case_role: event.target.value }))}
@@ -194,16 +196,16 @@ export default function AdminPage() {
                 onChange={(event) => setForm((current) => ({ ...current, send_email: event.target.checked }))}
                 className="h-4 w-4 rounded border-gray-300 text-sky-700 focus:ring-sky-500"
               />
-              Send Cognito invitation email
+              {t('Send Cognito invitation email')}
             </label>
             {!form.send_email ? (
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Temporary password</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Temporary password')}</span>
                 <input
                   type="text"
                   value={form.temporary_password}
                   onChange={(event) => setForm((current) => ({ ...current, temporary_password: event.target.value }))}
-                  placeholder="Leave blank to generate one"
+                  placeholder={t('Leave blank to generate one')}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
@@ -214,13 +216,13 @@ export default function AdminPage() {
               className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <KeyRound size={16} aria-hidden="true" />
-              {state.saving ? 'Saving' : 'Create and Link'}
+              {state.saving ? t('Saving') : t('Create and Link')}
             </button>
           </form>
 
           {state.result?.cognito?.temporary_password ? (
             <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-              Temporary password: <span className="font-mono">{state.result.cognito.temporary_password}</span>
+              {t('Temporary password')}: <span className="font-mono">{state.result.cognito.temporary_password}</span>
             </div>
           ) : null}
         </section>
@@ -232,16 +234,16 @@ export default function AdminPage() {
                 <ShieldCheck size={18} aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">Case Access</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Current users and their access to this case.</p>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Case Access')}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Current users and their access to this case.')}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={loadAdmin}
               className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-              title="Refresh admin data"
-              aria-label="Refresh admin data"
+              title={t('Refresh')}
+              aria-label={t('Refresh')}
             >
               <RefreshCw size={16} aria-hidden="true" />
             </button>
@@ -251,11 +253,11 @@ export default function AdminPage() {
             <table className="min-w-full text-left text-sm">
               <thead className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-800">
                 <tr>
-                  <th className="py-2 pr-4">User</th>
-                  <th className="py-2 pr-4">Global</th>
-                  <th className="py-2 pr-4">Case Role</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2">Action</th>
+                  <th className="py-2 pr-4">{t('User')}</th>
+                  <th className="py-2 pr-4">{t('Global')}</th>
+                  <th className="py-2 pr-4">{t('Case Role')}</th>
+                  <th className="py-2 pr-4">{t('Status')}</th>
+                  <th className="py-2">{t('Action')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -266,7 +268,7 @@ export default function AdminPage() {
                       <td className="py-3 pr-4">
                         <div className="font-medium text-gray-950 dark:text-white">{user.display_name || user.email}</div>
                         <div className="text-xs text-gray-500">{user.email}</div>
-                        <div className="text-xs text-gray-500">Seen {user.last_seen_at ? formatDateTime(user.last_seen_at) : 'never'}</div>
+                        <div className="text-xs text-gray-500">{t('Seen')} {user.last_seen_at ? formatDateTime(user.last_seen_at) : t('never')}</div>
                       </td>
                       <td className="py-3 pr-4">{user.global_role}</td>
                       <td className="py-3 pr-4">
@@ -290,7 +292,7 @@ export default function AdminPage() {
                           className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                         >
                           <UserX size={13} aria-hidden="true" />
-                          Revoke
+                          {t('Revoke')}
                         </button>
                       </td>
                     </tr>
@@ -302,7 +304,7 @@ export default function AdminPage() {
 
           {state.fingerprint ? (
             <div className="mt-4">
-              <RequestFingerprint fingerprint={{ id: state.fingerprint, label: 'Admin latest' }} />
+              <RequestFingerprint fingerprintId={state.fingerprint} label={t('Admin latest')} />
             </div>
           ) : null}
         </section>

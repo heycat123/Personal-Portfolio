@@ -7,13 +7,15 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 function DetailRow({ label, value }) {
+  const { t } = useLocaleSettings();
   return (
     <div className="flex flex-col gap-1 border-b border-gray-100 py-2 text-sm last:border-0 dark:border-gray-800 sm:flex-row sm:justify-between">
-      <span className="font-medium text-gray-600 dark:text-gray-400">{label}</span>
-      <span className="break-all text-gray-950 dark:text-gray-100">{value || 'None'}</span>
+      <span className="font-medium text-gray-600 dark:text-gray-400">{t(label)}</span>
+      <span className="break-all text-gray-950 dark:text-gray-100">{value || t('None')}</span>
     </div>
   );
 }
@@ -46,6 +48,7 @@ export default function IntakePage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [file, setFile] = useState(null);
   const [sourceMode, setSourceMode] = useState('web_upload');
   const [state, setState] = useState({
@@ -452,7 +455,7 @@ export default function IntakePage() {
     <div>
       <PageHeader
         title="Intake"
-        description="Register new source files into controlled S3 intake before ingestion, graphing, or vector work begins."
+        description="Source coverage and ingestion entry points. Source files keep their original language; only the interface translates."
         actions={<StatusBadge status={state.step === 'registered' ? 'succeeded' : state.step === 'failed' ? 'failed' : 'pending'} label={state.step} />}
       />
 
@@ -468,16 +471,16 @@ export default function IntakePage() {
                   <Link2 size={18} aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">Source Connectors</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Google Drive, OneDrive, and Dropbox source connection status.</p>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source Connectors')}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Google Drive, OneDrive, and Dropbox source connection status.')}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={loadConnectors}
                 className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-                title="Refresh connectors"
-                aria-label="Refresh connectors"
+                title={t('Refresh connectors')}
+                aria-label={t('Refresh connectors')}
               >
                 <RefreshCw size={16} aria-hidden="true" />
               </button>
@@ -505,7 +508,7 @@ export default function IntakePage() {
                           className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Link2 size={16} aria-hidden="true" />
-                          {state.connectorAction === provider.provider ? 'Opening' : provider.provider === 'google_drive' ? 'Connect' : 'Stub'}
+                          {state.connectorAction === provider.provider ? t('Opening') : provider.provider === 'google_drive' ? t('Connect') : t('Stub')}
                         </button>
                       </div>
 
@@ -529,7 +532,7 @@ export default function IntakePage() {
                                 className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                               >
                                 <Unlink size={13} aria-hidden="true" />
-                                Disconnect
+                                {t('Disconnect')}
                               </button>
                             </div>
                           ))}
@@ -540,7 +543,7 @@ export default function IntakePage() {
                 })
               ) : (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  {state.connectorLoading ? 'Loading connectors.' : 'No connectors returned.'}
+                  {state.connectorLoading ? t('Loading connectors.') : t('No connectors returned.')}
                 </p>
               )}
             </div>
@@ -554,7 +557,7 @@ export default function IntakePage() {
                     <FolderOpen size={18} aria-hidden="true" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">Google Drive Selector</h3>
+                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Google Drive Selector')}</h3>
                     <p className="text-sm text-gray-600 dark:text-gray-400">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
                   </div>
                 </div>
@@ -566,7 +569,7 @@ export default function IntakePage() {
                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
                   >
                     <RefreshCw size={15} aria-hidden="true" />
-                    Root
+                    {t('Root')}
                   </button>
                   <button
                     type="button"
@@ -575,7 +578,7 @@ export default function IntakePage() {
                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
                   >
                     <CheckCircle2 size={15} aria-hidden="true" />
-                    Resolve
+                    {t('Resolve')}
                   </button>
                 </div>
               </div>
@@ -594,12 +597,12 @@ export default function IntakePage() {
                 }}
               >
                 <label className="min-w-0 flex-1">
-                  <span className="sr-only">Search Google Drive</span>
+                  <span className="sr-only">{t('Search Google Drive')}</span>
                   <input
                     type="search"
                     value={driveBrowser.searchText}
                     onChange={(event) => setDriveBrowser((current) => ({ ...current, searchText: event.target.value }))}
-                    placeholder="Search Google Drive"
+                    placeholder={t('Search Google Drive')}
                     className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                   />
                 </label>
@@ -609,13 +612,13 @@ export default function IntakePage() {
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Search size={16} aria-hidden="true" />
-                  Search
+                  {t('Search')}
                 </button>
               </form>
 
               <div className="mb-3 flex flex-wrap items-center gap-1 text-sm text-gray-600 dark:text-gray-400">
                 {driveBrowser.mode === 'search' ? (
-                  <span>Search: {driveBrowser.lastSearch}</span>
+                  <span>{t('Search: {query}', { query: driveBrowser.lastSearch })}</span>
                 ) : (
                   driveBrowser.pathStack.map((part, index) => (
                     <span key={`${part.id}-${index}`} className="inline-flex items-center gap-1">
@@ -635,12 +638,12 @@ export default function IntakePage() {
               <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-800">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:border-gray-800 dark:bg-black/20 dark:text-gray-400">
-                    <span>Drive item</span>
-                    <span>Actions</span>
+                    <span>{t('Drive item')}</span>
+                    <span>{t('Actions')}</span>
                   </div>
                   <div className="max-h-[520px] overflow-auto">
                     {driveBrowser.loading ? (
-                      <div className="p-4 text-sm text-gray-600 dark:text-gray-400">Loading Drive items.</div>
+                      <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('Loading Drive items.')}</div>
                     ) : sortedDriveItems.length ? (
                       sortedDriveItems.map((driveItem) => {
                         const isFolder = driveItem.mimeType === GOOGLE_FOLDER_MIME_TYPE;
@@ -669,7 +672,7 @@ export default function IntakePage() {
                                 </button>
                               </div>
                               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                                <span>{isFolder ? 'Folder' : formatBytes(driveItem.size)}</span>
+                                <span>{isFolder ? t('Folder') : t(formatBytes(driveItem.size))}</span>
                                 {driveItem.modifiedTime ? <span>{new Date(driveItem.modifiedTime).toLocaleDateString()}</span> : null}
                               </div>
                             </div>
@@ -681,7 +684,7 @@ export default function IntakePage() {
                                 className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-200 dark:hover:bg-emerald-950/40"
                               >
                                 <PlusCircle size={13} aria-hidden="true" />
-                                Include
+                                {t('Include')}
                               </button>
                               <button
                                 type="button"
@@ -690,7 +693,7 @@ export default function IntakePage() {
                                 className="inline-flex items-center gap-1 rounded-md border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40"
                               >
                                 <MinusCircle size={13} aria-hidden="true" />
-                                Exclude
+                                {t('Exclude')}
                               </button>
                               {!isFolder ? (
                                 <button
@@ -700,7 +703,7 @@ export default function IntakePage() {
                                   className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
                                 >
                                   <UploadCloud size={13} aria-hidden="true" />
-                                  Import
+                                  {t('Import')}
                                 </button>
                               ) : null}
                             </div>
@@ -708,19 +711,19 @@ export default function IntakePage() {
                         );
                       })
                     ) : (
-                      <div className="p-4 text-sm text-gray-600 dark:text-gray-400">No Drive items returned.</div>
+                      <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('No Drive items returned.')}</div>
                     )}
                   </div>
                 </div>
 
                 <aside className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold text-gray-950 dark:text-white">Selected Sources</h4>
+                    <h4 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Selected Sources')}</h4>
                     <StatusBadge status="active" label={`${activeWatchItems.length}`} />
                   </div>
                   <div className="max-h-[480px] space-y-2 overflow-auto">
                     {driveBrowser.watchLoading ? (
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Loading selections.</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading selections.')}</p>
                     ) : activeWatchItems.length ? (
                       activeWatchItems.map((item) => (
                         <div key={item.source_watch_item_id} className="rounded-md bg-gray-50 p-2 text-sm dark:bg-black/20">
@@ -738,8 +741,8 @@ export default function IntakePage() {
                               onClick={() => deactivateDriveWatchItem(item.source_watch_item_id)}
                               disabled={Boolean(driveBrowser.action)}
                               className="rounded-md border border-gray-300 p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
-                              title="Remove source selection"
-                              aria-label="Remove source selection"
+                              title={t('Remove source selection')}
+                              aria-label={t('Remove source selection')}
                             >
                               <Unlink size={13} aria-hidden="true" />
                             </button>
@@ -748,7 +751,7 @@ export default function IntakePage() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-sm text-gray-600 dark:text-gray-400">No selected sources.</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{t('No selected sources.')}</p>
                     )}
                   </div>
                 </aside>
@@ -762,14 +765,14 @@ export default function IntakePage() {
                 <FileUp size={18} aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">Source File</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Phase 7.5 registers uploads only; ingestion starts in a later job.</p>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source File')}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Phase 7.5 registers uploads only; ingestion starts in a later job.')}</p>
               </div>
             </div>
 
             <div className="space-y-4">
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">File</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('File')}</span>
                 <input
                   type="file"
                   onChange={(event) => setFile(event.target.files?.[0] || null)}
@@ -778,14 +781,14 @@ export default function IntakePage() {
               </label>
 
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Source of Truth</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Source of Truth')}</span>
                 <select
                   value={sourceMode}
                   onChange={(event) => setSourceMode(event.target.value)}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 >
-                  <option value="web_upload">Web upload</option>
-                  <option value="google_drive_mirror">Google Drive mirror</option>
+                  <option value="web_upload">{t('Web upload')}</option>
+                  <option value="google_drive_mirror">{t('Google Drive mirror')}</option>
                 </select>
               </label>
 
@@ -804,7 +807,7 @@ export default function IntakePage() {
                 className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <UploadCloud size={16} aria-hidden="true" />
-                {state.busy ? 'Working' : 'Upload and Register'}
+                {state.busy ? t('Working') : t('Upload and Register')}
               </button>
             </div>
           </section>
@@ -812,7 +815,7 @@ export default function IntakePage() {
 
         <aside className="space-y-4">
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">Intake Status</h3>
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Intake Status')}</h3>
             <DetailRow label="Step" value={state.step} />
             <DetailRow label="Upload ID" value={upload?.upload_id} />
             <DetailRow label="S3 Key" value={state.presign?.presign?.key} />
@@ -825,14 +828,14 @@ export default function IntakePage() {
                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
                 >
                   <CheckCircle2 size={16} aria-hidden="true" />
-                  Open Job
+                  {t('Open Job')}
                 </Link>
               </div>
             ) : null}
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">Fingerprints</h3>
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Fingerprints')}</h3>
             <div className="space-y-2">
               {state.fingerprints.length ? (
                 state.fingerprints.map((fingerprint) => (
@@ -845,7 +848,7 @@ export default function IntakePage() {
                   />
                 ))
               ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">No intake request fingerprint yet.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No intake request fingerprint yet.')}</p>
               )}
             </div>
           </section>

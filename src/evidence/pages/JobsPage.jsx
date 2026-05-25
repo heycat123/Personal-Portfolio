@@ -8,6 +8,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import useJobStatusPolling, { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
@@ -18,6 +19,7 @@ export default function JobsPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     creatingJobType: null,
@@ -147,7 +149,7 @@ export default function JobsPage() {
     <div>
       <PageHeader
         title="Jobs"
-        description={`${state.total} job records returned for this case.`}
+        description={t('{count} job records returned for this case.', { count: state.total })}
         actions={
           <>
             <button
@@ -156,7 +158,7 @@ export default function JobsPage() {
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <RefreshCw size={16} aria-hidden="true" />
-              Refresh
+              {t('Refresh')}
             </button>
             {SAFE_JOB_TYPES.map((jobType) => (
               <button
@@ -167,7 +169,7 @@ export default function JobsPage() {
                 className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Play size={16} aria-hidden="true" />
-                {state.creatingJobType === jobType ? 'Queueing' : `Queue ${jobType}`}
+                {state.creatingJobType === jobType ? t('Queueing') : t('Queue {jobType}', { jobType })}
               </button>
             ))}
           </>
@@ -180,11 +182,11 @@ export default function JobsPage() {
 
       <div className="mb-4 flex flex-wrap gap-2">
         <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
-          Live updates: {activeJobCount || liveJobs.activeCount} active
+          {t('Live updates: {count} active', { count: activeJobCount || liveJobs.activeCount })}
         </span>
         {liveJobs.lastFinishedJob ? (
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
-            Last finished: {liveJobs.lastFinishedJob.job_type}
+            {t('Last finished: {jobType}', { jobType: liveJobs.lastFinishedJob.job_type })}
           </span>
         ) : null}
         {state.fingerprint?.id ? (
@@ -203,7 +205,7 @@ export default function JobsPage() {
         rows={state.jobs}
         rowKey={(job) => job.job_id}
         loading={state.loading}
-        emptyTitle={state.loading ? 'Loading jobs' : 'No jobs returned'}
+        emptyTitle={state.loading ? t('Loading jobs') : t('No jobs returned')}
         mobileTitle={(job) => (
           <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
             {job.job_type}
@@ -213,28 +215,28 @@ export default function JobsPage() {
         columns={[
           {
             key: 'job_type',
-            header: 'Type',
+            header: t('Type'),
             render: (job) => (
               <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
                 {job.job_type}
               </Link>
             ),
           },
-          { key: 'status', header: 'Status', render: (job) => <StatusBadge status={job.status} /> },
-          { key: 'priority', header: 'Priority', render: (job) => job.priority ?? 0 },
-          { key: 'created_at', header: 'Created', render: (job) => formatDateTime(job.created_at) },
-          { key: 'started_at', header: 'Started', render: (job) => formatDateTime(job.started_at) },
-          { key: 'finished_at', header: 'Finished', render: (job) => formatDateTime(job.finished_at) },
-          { key: 'claimed_by_worker_id', header: 'Worker', render: (job) => job.claimed_by_worker_id || 'Not claimed' },
-          { key: 'error_class', header: 'Error', render: (job) => job.error_class || 'None' },
+          { key: 'status', header: t('Status'), render: (job) => <StatusBadge status={job.status} /> },
+          { key: 'priority', header: t('Priority'), render: (job) => job.priority ?? 0 },
+          { key: 'created_at', header: t('Created'), render: (job) => formatDateTime(job.created_at) },
+          { key: 'started_at', header: t('Started'), render: (job) => formatDateTime(job.started_at) },
+          { key: 'finished_at', header: t('Finished'), render: (job) => formatDateTime(job.finished_at) },
+          { key: 'claimed_by_worker_id', header: t('Worker'), render: (job) => job.claimed_by_worker_id || t('Not claimed') },
+          { key: 'error_class', header: t('Error'), render: (job) => job.error_class || t('None') },
           {
             key: 'request_fingerprint_id',
-            header: 'Fingerprint',
+            header: t('Fingerprint'),
             render: (job) => truncateMiddle(job.request_fingerprint_id, 24),
           },
           {
             key: 'actions',
-            header: 'Actions',
+            header: t('Actions'),
             render: (job) => {
               const busy = state.actionJobId === job.job_id;
               const canCancel = job.status === 'queued';
@@ -245,21 +247,21 @@ export default function JobsPage() {
                     type="button"
                     onClick={() => cancelJob(job.job_id)}
                     disabled={!canCancel || Boolean(state.actionJobId)}
-                    title="Cancel queued job"
+                    title={t('Cancel queued job')}
                     className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                   >
                     <Ban size={13} aria-hidden="true" />
-                    {busy && canCancel ? 'Cancelling' : 'Cancel'}
+                    {busy && canCancel ? t('Cancelling') : t('Cancel')}
                   </button>
                   <button
                     type="button"
                     onClick={() => retryJob(job.job_id)}
                     disabled={!canRetry || Boolean(state.actionJobId)}
-                    title="Retry failed or cancelled safe job"
+                    title={t('Retry failed or cancelled safe job')}
                     className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
                   >
                     <RotateCcw size={13} aria-hidden="true" />
-                    {busy && canRetry ? 'Retrying' : 'Retry'}
+                    {busy && canRetry ? t('Retrying') : t('Retry')}
                   </button>
                 </div>
               );

@@ -20,7 +20,7 @@ export default function AxiomHelpDrawer() {
   const location = useLocation();
   const { activeCase } = useCaseContext();
   const { getAccessToken } = useEvidenceAuth();
-  const { preferences } = useLocaleSettings();
+  const { preferences, t } = useLocaleSettings();
   const [open, setOpen] = useState(false);
   const [guidedHelp, setGuidedHelp] = useState(true);
   const [question, setQuestion] = useState('');
@@ -61,7 +61,7 @@ export default function AxiomHelpDrawer() {
   }, [activeCase.caseId, getAccessToken, guidedHelp, location.pathname, preferences.language, preferences.timeZone, question]);
 
   const askPageQuestion = async () => {
-    const pageQuestion = 'How do I use this page?';
+    const pageQuestion = t('How do I use this page?');
     setQuestion(pageQuestion);
     setOpen(true);
     await askAxiom(null, pageQuestion);
@@ -71,7 +71,7 @@ export default function AxiomHelpDrawer() {
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
       <button
         type="button"
-        aria-label="Close Axiom help"
+        aria-label={t('Close Axiom help')}
         onClick={() => setOpen(false)}
         className="absolute inset-0 bg-black/50"
       />
@@ -80,7 +80,7 @@ export default function AxiomHelpDrawer() {
           <div className="flex min-w-0 items-center gap-2">
             <Bot className="shrink-0 text-sky-700 dark:text-sky-300" size={18} aria-hidden="true" />
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-gray-950 dark:text-white">Axiom Help</div>
+              <div className="text-sm font-semibold text-gray-950 dark:text-white">{t('Axiom Help')}</div>
               <div className="truncate text-xs text-gray-500 dark:text-gray-400">{location.pathname}</div>
             </div>
           </div>
@@ -97,9 +97,9 @@ export default function AxiomHelpDrawer() {
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">Ask how to use Evidence AI</h3>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Ask how to use Evidence AI')}</h3>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  Axiom is starting with product documentation and page-aware help. Evidence-data answers still belong in Query.
+                  {t('Axiom is starting with product documentation and page-aware help. Evidence-data answers still belong in Query.')}
                 </p>
               </div>
               <StatusBadge status="configured" label="Stage 7.9" />
@@ -107,12 +107,12 @@ export default function AxiomHelpDrawer() {
 
             <form id="axiom-help-form" onSubmit={askAxiom} className="mt-4 space-y-3">
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Question</span>
+                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Question')}</span>
                 <textarea
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   rows={4}
-                  placeholder="Example: How do I review aliases on this page?"
+                  placeholder={t('Example: How do I review aliases on this page?')}
                   className="mt-2 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
@@ -123,7 +123,7 @@ export default function AxiomHelpDrawer() {
                   onChange={(event) => setGuidedHelp(event.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-sky-700"
                 />
-                Include guided-help targets when available
+                {t('Include guided-help targets when available')}
               </label>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -132,7 +132,7 @@ export default function AxiomHelpDrawer() {
                   className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Send size={15} aria-hidden="true" />
-                  {state.loading ? 'Asking' : 'Ask Axiom'}
+                  {state.loading ? t('Asking') : t('Ask Axiom')}
                 </button>
                 <button
                   type="button"
@@ -140,7 +140,7 @@ export default function AxiomHelpDrawer() {
                   className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                 >
                   <CornerDownRight size={15} aria-hidden="true" />
-                  This page
+                  {t('This page')}
                 </button>
               </div>
             </form>
@@ -150,14 +150,14 @@ export default function AxiomHelpDrawer() {
 
           {state.result ? (
             <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Answer</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Answer')}</h3>
               <div className="mt-3 whitespace-pre-wrap text-sm leading-6 text-gray-700 dark:text-gray-300">{state.result.answer}</div>
 
               {state.result.ui_targets?.length ? (
                 <div className="mt-4">
                   <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
                     <LocateFixed size={13} aria-hidden="true" />
-                    Guided Targets
+                    {t('Guided Targets')}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {state.result.ui_targets.map((target) => (
@@ -180,8 +180,8 @@ export default function AxiomHelpDrawer() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        title="Ask Axiom for help"
-        aria-label="Ask Axiom for help"
+        title={t('Ask Axiom for help')}
+        aria-label={t('Ask Axiom for help')}
         className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
       >
         <HelpCircle size={16} aria-hidden="true" />

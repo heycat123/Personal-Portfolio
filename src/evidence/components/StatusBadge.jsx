@@ -1,3 +1,4 @@
+import { useLocaleSettings } from '../context/LocaleContext';
 import { humanizeKey } from '../utils/formatters';
 
 const STATUS_STYLES = {
@@ -16,12 +17,13 @@ const STATUS_STYLES = {
 };
 
 export default function StatusBadge({ status, label }) {
+  const { t } = useLocaleSettings();
   const normalized = String(status || 'unknown').toLowerCase();
   const className = STATUS_STYLES[normalized] || STATUS_STYLES.unknown;
 
   return (
     <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold ${className}`}>
-      {label || humanizeKey(status || 'unknown')}
+      {t(label || humanizeKey(status || 'unknown'))}
     </span>
   );
 }

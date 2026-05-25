@@ -8,6 +8,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
@@ -17,6 +18,7 @@ export default function DocumentsPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [queryDraft, setQueryDraft] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
   const [offset, setOffset] = useState(0);
@@ -123,14 +125,14 @@ export default function DocumentsPage() {
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} document records${appliedQuery ? ` matching "${appliedQuery}"` : ''}.`}
+        description={`${state.total} ${t('document records')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}.`}
         actions={
           <button
             type="button"
             disabled
             className="cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500"
           >
-            Upload locked
+            {t('Upload locked')}
           </button>
         }
       />
@@ -141,12 +143,12 @@ export default function DocumentsPage() {
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
           <label className="relative block flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} aria-hidden="true" />
-            <span className="sr-only">Search documents</span>
+            <span className="sr-only">{t('Search documents')}</span>
             <input
               type="search"
               value={queryDraft}
               onChange={(event) => setQueryDraft(event.target.value)}
-              placeholder="Search all documents"
+              placeholder={t('Search all documents')}
               className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none ring-0 placeholder:text-gray-400 focus:border-sky-500 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:focus:border-sky-400"
             />
           </label>
@@ -154,7 +156,7 @@ export default function DocumentsPage() {
             type="submit"
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            Search
+            {t('Search')}
           </button>
           {appliedQuery ? (
             <button
@@ -162,7 +164,7 @@ export default function DocumentsPage() {
               onClick={clearSearch}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
-              Clear
+              {t('Clear')}
             </button>
           ) : null}
         </form>
@@ -175,7 +177,7 @@ export default function DocumentsPage() {
         rows={state.documents}
         rowKey={(document) => document.file_id}
         loading={state.loading}
-        emptyTitle={state.loading ? 'Loading documents' : 'No documents matched'}
+        emptyTitle={state.loading ? t('Loading documents') : t('No documents matched')}
         selectedRowKey={drawer.open ? drawer.document?.file_id : null}
         onRowSelect={openDocumentDrawer}
         mobileTitle={(document) => (
@@ -188,14 +190,14 @@ export default function DocumentsPage() {
         )}
         mobileSubtitle={(document) => `${document.source_provider || 'unknown'} · ${document.status || 'unknown'}`}
         mobileActions={(document) => (
-          <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open document detail page">
+          <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open document detail page')}>
             <ExternalLink size={15} aria-hidden="true" />
           </Link>
         )}
         columns={[
           {
             key: 'original_filename',
-            header: 'File',
+            header: t('File'),
             headerClassName: 'w-[34%]',
             className: 'min-w-0',
             render: (document) => (
@@ -209,19 +211,19 @@ export default function DocumentsPage() {
               </Link>
             ),
           },
-          { key: 'source_provider', header: 'Source', headerClassName: 'w-[12%]', render: (document) => document.source_provider || 'unknown' },
-          { key: 'source_of_truth_mode', header: 'Mode', headerClassName: 'w-[12%]', render: (document) => document.source_of_truth_mode || 'unknown' },
-          { key: 'status', header: 'Status', render: (document) => <StatusBadge status={document.status} /> },
-          { key: 'page_count', header: 'Pages', render: (document) => document.page_count ?? '0' },
-          { key: 'extraction_method', header: 'Extraction', render: (document) => document.extraction_method || 'pending' },
-          { key: 'updated_at', header: 'Updated', render: (document) => formatDateTime(document.updated_at || document.created_at) },
-          { key: 'content_hash', header: 'Hash', render: (document) => truncateMiddle(document.content_hash, 24) },
+          { key: 'source_provider', header: t('Source'), headerClassName: 'w-[12%]', render: (document) => document.source_provider || 'unknown' },
+          { key: 'source_of_truth_mode', header: t('Mode'), headerClassName: 'w-[12%]', render: (document) => document.source_of_truth_mode || 'unknown' },
+          { key: 'status', header: t('Status'), render: (document) => <StatusBadge status={document.status} /> },
+          { key: 'page_count', header: t('Pages'), render: (document) => document.page_count ?? '0' },
+          { key: 'extraction_method', header: t('Extraction'), render: (document) => document.extraction_method || 'pending' },
+          { key: 'updated_at', header: t('Updated'), render: (document) => formatDateTime(document.updated_at || document.created_at) },
+          { key: 'content_hash', header: t('Hash'), render: (document) => truncateMiddle(document.content_hash, 24) },
         ]}
       />
 
       <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
         <span>
-          Page {currentPage} of {totalPages}
+          {t('Page {page} of {pages}', { page: currentPage, pages: totalPages })}
         </span>
         <div className="flex gap-2">
           <button
@@ -230,7 +232,7 @@ export default function DocumentsPage() {
             disabled={!canGoPrevious || state.loading}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            Previous
+            {t('Previous')}
           </button>
           <button
             type="button"
@@ -238,7 +240,7 @@ export default function DocumentsPage() {
             disabled={!canGoNext || state.loading}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            Next
+            {t('Next')}
           </button>
         </div>
       </div>
@@ -247,7 +249,7 @@ export default function DocumentsPage() {
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
           <button
             type="button"
-            aria-label="Close document preview"
+            aria-label={t('Close document preview')}
             onClick={closeDocumentDrawer}
             className="absolute inset-0 bg-black/50"
           />
@@ -255,9 +257,9 @@ export default function DocumentsPage() {
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-gray-950 dark:text-white">
-                  {drawer.document?.original_filename || 'Document Preview'}
+                  {drawer.document?.original_filename || t('Document Preview')}
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{drawer.document?.file_id || 'Loading document'}</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{drawer.document?.file_id || t('Loading document')}</div>
               </div>
               <button
                 type="button"
@@ -272,7 +274,7 @@ export default function DocumentsPage() {
               {drawer.error ? <div className="mb-4"><ErrorPanel title="Document preview failed" error={drawer.error} /></div> : null}
               {drawer.fingerprint?.id ? (
                 <div className="mb-4">
-                  <RequestFingerprint fingerprintId={drawer.fingerprint.id} correlationId={drawer.fingerprint.correlationId} label="Preview fingerprint" />
+                  <RequestFingerprint fingerprintId={drawer.fingerprint.id} correlationId={drawer.fingerprint.correlationId} label={t('Preview fingerprint')} />
                 </div>
               ) : null}
 
@@ -283,7 +285,7 @@ export default function DocumentsPage() {
                       {drawer.document?.original_filename || drawer.document?.file_id}
                     </h3>
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {drawer.loading ? 'Loading current document metadata.' : drawer.document?.original_filepath || 'No original path recorded.'}
+                      {drawer.loading ? t('Loading current document metadata.') : drawer.document?.original_filepath || t('No original path recorded.')}
                     </p>
                   </div>
                   <StatusBadge status={drawer.document?.status || 'unknown'} />
@@ -291,33 +293,33 @@ export default function DocumentsPage() {
 
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Pages</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages')}</div>
                     <div className="text-gray-950 dark:text-white">{drawer.document?.page_count ?? '0'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Source</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source')}</div>
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.source_provider || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Mode</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Mode')}</div>
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.source_of_truth_mode || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Extraction</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Extraction')}</div>
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.extraction_method || 'pending'}</div>
                   </div>
                 </div>
 
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                   {[
-                    ['Updated', formatDateTime(drawer.document?.updated_at || drawer.document?.created_at)],
-                    ['Content Hash', drawer.document?.content_hash],
-                    ['Version ID', drawer.document?.current_file_version_id],
-                    ['Media Type', drawer.document?.media_type],
+                    [t('Updated'), formatDateTime(drawer.document?.updated_at || drawer.document?.created_at)],
+                    [t('Content Hash'), drawer.document?.content_hash],
+                    [t('Version ID'), drawer.document?.current_file_version_id],
+                    [t('Media Type'), drawer.document?.media_type],
                   ].map(([label, value]) => (
                     <div key={label} className="min-w-0">
                       <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</dt>
-                      <dd className="mt-1 break-words text-gray-900 dark:text-gray-100">{value || 'Not recorded'}</dd>
+                      <dd className="mt-1 break-words text-gray-900 dark:text-gray-100">{value || t('Not recorded')}</dd>
                     </div>
                   ))}
                 </dl>
@@ -327,24 +329,24 @@ export default function DocumentsPage() {
                   className="mt-4 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
                 >
                   <FileText size={16} aria-hidden="true" />
-                  Open document details
+                  {t('Open document details')}
                 </Link>
               </section>
 
               <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">Page Extraction Rows</h3>
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{drawer.document?.pages?.length || 0} rows</span>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Page Extraction Rows')}</h3>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('{size} rows', { size: drawer.document?.pages?.length || 0 })}</span>
                 </div>
                 <DataTable
                   rows={drawer.document?.pages || []}
                   rowKey={(page) => `${page.page_number}-${page.text_source}`}
-                  emptyTitle={drawer.loading ? 'Loading page rows' : 'No page rows returned'}
+                  emptyTitle={drawer.loading ? t('Loading page rows') : t('No page rows returned')}
                   columns={[
-                    { key: 'page_number', header: 'Page', render: (page) => page.page_number },
-                    { key: 'text_source', header: 'Text Source', render: (page) => page.text_source || 'unknown' },
-                    { key: 'page_text_chars', header: 'Characters', render: (page) => page.page_text_chars ?? 0 },
-                    { key: 'updated_at', header: 'Updated', render: (page) => formatDateTime(page.updated_at) },
+                    { key: 'page_number', header: t('Page'), render: (page) => page.page_number },
+                    { key: 'text_source', header: t('Text Source'), render: (page) => page.text_source || 'unknown' },
+                    { key: 'page_text_chars', header: t('Characters'), render: (page) => page.page_text_chars ?? 0 },
+                    { key: 'updated_at', header: t('Updated'), render: (page) => formatDateTime(page.updated_at) },
                   ]}
                 />
               </section>

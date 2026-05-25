@@ -8,6 +8,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
@@ -16,8 +17,9 @@ const STATUSES = ['', 'open', 'triaged', 'in_progress', 'closed'];
 const CATEGORIES = ['', 'ui', 'api', 'ai', 'ingestion', 'graph', 'billing', 'access', 'other'];
 
 function JsonBlock({ value }) {
+  const { t } = useLocaleSettings();
   if (!value || !Object.keys(value).length) {
-    return <span className="text-sm text-gray-500 dark:text-gray-400">None</span>;
+    return <span className="text-sm text-gray-500 dark:text-gray-400">{t('None')}</span>;
   }
   return (
     <pre className="max-h-48 overflow-auto rounded-md bg-gray-100 p-3 text-xs text-gray-800 dark:bg-black/30 dark:text-gray-200">
@@ -30,6 +32,7 @@ export default function SupportPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [filters, setFilters] = useState({
     record_type: '',
     status: '',
@@ -76,13 +79,13 @@ export default function SupportPage() {
   const columns = useMemo(() => [
     {
       id: 'record_type',
-      header: 'Type',
+      header: t('Type'),
       className: 'w-[8%]',
       render: (row) => <StatusBadge status={row.record_type} />,
     },
     {
       id: 'title',
-      header: 'Title',
+      header: t('Title'),
       className: 'w-[28%]',
       render: (row) => (
         <div className="min-w-0">
@@ -93,41 +96,41 @@ export default function SupportPage() {
     },
     {
       id: 'category',
-      header: 'Category',
+      header: t('Category'),
       className: 'w-[10%]',
       render: (row) => row.category,
     },
     {
       id: 'severity',
-      header: 'Severity',
+      header: t('Severity'),
       className: 'w-[10%]',
       render: (row) => <StatusBadge status={row.severity} />,
     },
     {
       id: 'status',
-      header: 'Status',
+      header: t('Status'),
       className: 'w-[10%]',
       render: (row) => <StatusBadge status={row.status} />,
     },
     {
       id: 'route',
-      header: 'Route',
+      header: t('Route'),
       className: 'w-[18%]',
       render: (row) => <span title={row.route || ''}>{truncateMiddle(row.route || '-', 44)}</span>,
     },
     {
       id: 'request_fingerprint_id',
-      header: 'Fingerprint',
+      header: t('Fingerprint'),
       className: 'w-[14%]',
       render: (row) => row.request_fingerprint_id ? truncateMiddle(row.request_fingerprint_id, 30) : '-',
     },
     {
       id: 'created_at',
-      header: 'Created',
+      header: t('Created'),
       className: 'w-[12%]',
       render: (row) => formatDateTime(row.created_at),
     },
-  ], []);
+  ], [t]);
 
   const rows = state.payload?.records || [];
   const scope = state.payload?.scope || 'own';
@@ -144,7 +147,7 @@ export default function SupportPage() {
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
             <RefreshCw size={15} aria-hidden="true" />
-            Refresh
+            {t('Refresh')}
           </button>
         )}
       />
@@ -158,9 +161,9 @@ export default function SupportPage() {
               <LifeBuoy size={18} aria-hidden="true" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">Support Queue</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Support Queue')}</h3>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Scope: {scope === 'admin' ? 'admin can see all case records' : 'showing records created by you'}.
+                {scope === 'admin' ? t('Scope: admin can see all case records.') : t('Scope: showing records created by you.')}
               </p>
             </div>
           </div>
@@ -170,21 +173,21 @@ export default function SupportPage() {
               onChange={(event) => setFilters((current) => ({ ...current, record_type: event.target.value }))}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
             >
-              {RECORD_TYPES.map((value) => <option key={value || 'all'} value={value}>{value || 'all types'}</option>)}
+              {RECORD_TYPES.map((value) => <option key={value || 'all'} value={value}>{value || t('all types')}</option>)}
             </select>
             <select
               value={filters.status}
               onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
             >
-              {STATUSES.map((value) => <option key={value || 'all'} value={value}>{value || 'all statuses'}</option>)}
+              {STATUSES.map((value) => <option key={value || 'all'} value={value}>{value || t('all statuses')}</option>)}
             </select>
             <select
               value={filters.category}
               onChange={(event) => setFilters((current) => ({ ...current, category: event.target.value }))}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
             >
-              {CATEGORIES.map((value) => <option key={value || 'all'} value={value}>{value || 'all categories'}</option>)}
+              {CATEGORIES.map((value) => <option key={value || 'all'} value={value}>{value || t('all categories')}</option>)}
             </select>
           </div>
         </div>
@@ -195,30 +198,30 @@ export default function SupportPage() {
         rows={rows}
         rowKey="support_record_id"
         loading={state.loading}
-        emptyTitle={state.loading ? 'Loading support records' : 'No support records found'}
+        emptyTitle={state.loading ? t('Loading support records') : t('No support records found')}
         renderDetailPanel={(row) => (
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Description</div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Description')}</div>
               <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{row.description}</p>
               {row.impact ? (
                 <>
-                  <div className="mb-1 mt-4 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Impact</div>
+                  <div className="mb-1 mt-4 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Impact')}</div>
                   <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{row.impact}</p>
                 </>
               ) : null}
             </div>
             <div className="space-y-4">
               <div>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Fingerprint</div>
+                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Fingerprint')}</div>
                 <RequestFingerprint fingerprintId={row.request_fingerprint_id} compact />
               </div>
               <div>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Initial triage</div>
+                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Initial triage')}</div>
                 <JsonBlock value={row.triage_json || {}} />
               </div>
               <div>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Context</div>
+                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Context')}</div>
                 <JsonBlock value={row.context_json || {}} />
               </div>
             </div>
@@ -227,15 +230,15 @@ export default function SupportPage() {
         mobileTitle={(row) => row.title}
         mobileSubtitle={(row) => `${row.record_type} / ${row.category} / ${formatDateTime(row.created_at)}`}
         mobileMetrics={(row) => [
-          { id: 'severity', header: 'Severity', render: () => <StatusBadge status={row.severity} /> },
-          { id: 'status', header: 'Status', render: () => <StatusBadge status={row.status} /> },
-          { id: 'fingerprint', header: 'Fingerprint', render: () => truncateMiddle(row.request_fingerprint_id || '-', 28) },
+          { id: 'severity', header: t('Severity'), render: () => <StatusBadge status={row.severity} /> },
+          { id: 'status', header: t('Status'), render: () => <StatusBadge status={row.status} /> },
+          { id: 'fingerprint', header: t('Fingerprint'), render: () => truncateMiddle(row.request_fingerprint_id || '-', 28) },
         ]}
       />
 
       {state.fingerprint ? (
         <div className="mt-4">
-          <RequestFingerprint fingerprintId={state.fingerprint} label="Support latest" />
+          <RequestFingerprint fingerprintId={state.fingerprint} label={t('Support latest')} />
         </div>
       ) : null}
     </div>

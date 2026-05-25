@@ -7,15 +7,16 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, humanizeKey } from '../utils/formatters';
 
-function latestRunSummary(run) {
+function latestRunSummary(run, t) {
   if (!run) {
-    return 'No baseline run has been queued from the web UI yet.';
+    return t('No baseline run has been queued from the web UI yet.');
   }
   const caseCount = run.case_count ?? run.selected_case_ids?.length ?? 0;
-  return `${caseCount} case(s), ${run.status}, ${formatDateTime(run.created_at)}`;
+  return t('{count} case(s), {status}, {time}', { count: caseCount, status: run.status, time: formatDateTime(run.created_at) });
 }
 
 function ReviewBadge({ review }) {
@@ -30,6 +31,7 @@ export default function TestsPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -189,7 +191,11 @@ export default function TestsPage() {
     <div>
       <PageHeader
         title="Tests"
-        description={`${state.cases.length} baseline case(s), ${reviewedCount} reviewed. ${latestRunSummary(latestRun)}`}
+        description={t('{count} baseline case(s), {reviewed} reviewed. {summary}', {
+          count: state.cases.length,
+          reviewed: reviewedCount,
+          summary: latestRunSummary(latestRun, t),
+        })}
         actions={
           <>
             <button
@@ -198,7 +204,7 @@ export default function TestsPage() {
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <RefreshCw size={16} aria-hidden="true" />
-              Refresh
+              {t('Refresh')}
             </button>
             <button
               type="button"
@@ -207,7 +213,7 @@ export default function TestsPage() {
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Play size={16} aria-hidden="true" />
-              {state.queueing ? 'Queueing' : 'Queue baseline'}
+              {state.queueing ? t('Queueing') : t('Queue baseline')}
             </button>
             <button
               type="button"
@@ -216,7 +222,7 @@ export default function TestsPage() {
               className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Play size={16} aria-hidden="true" />
-              Queue selected ({selectedCount})
+              {t('Queue selected ({count})', { count: selectedCount })}
             </button>
           </>
         }
@@ -228,9 +234,9 @@ export default function TestsPage() {
       <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge status="configured" label="Baseline suite" />
+            <StatusBadge status="configured" label={t('Baseline suite')} />
             <span className="text-sm text-gray-600 dark:text-gray-400">
-              Reviews stored here are human audit records. The cloud worker currently queues the request; paid execution remains a controlled runtime task.
+              {t('Reviews stored here are human audit records. The cloud worker currently queues the request; paid execution remains a controlled runtime task.')}
             </span>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
@@ -244,7 +250,7 @@ export default function TestsPage() {
         </section>
 
         <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <h3 className="text-base font-semibold text-gray-950 dark:text-white">Run Options</h3>
+          <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Run Options')}</h3>
           <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
             <input
               type="checkbox"
@@ -252,7 +258,7 @@ export default function TestsPage() {
               onChange={(event) => setState((current) => ({ ...current, runPaid: event.target.checked }))}
               className="mt-1"
             />
-            Mark the request as a paid baseline run.
+            {t('Mark the request as a paid baseline run.')}
           </label>
           <label className="mt-3 flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
             <input
@@ -261,23 +267,23 @@ export default function TestsPage() {
               onChange={(event) => setState((current) => ({ ...current, agenticLlmGrader: event.target.checked }))}
               className="mt-1"
             />
-            Request LLM answer-equivalence grading.
+            {t('Request LLM answer-equivalence grading.')}
           </label>
           {latestRun ? (
             <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm dark:bg-black/20">
               <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">Latest run</span>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">{t('Latest run')}</span>
                 <StatusBadge status={latestRun.status} />
               </div>
               <div className="mt-2 text-gray-600 dark:text-gray-400">
-                Estimated: ${Number(latestRun.estimated_cost_json?.estimated_paid_quality_usd || 0).toFixed(4)}
+                {t('Estimated')}: ${Number(latestRun.estimated_cost_json?.estimated_paid_quality_usd || 0).toFixed(4)}
               </div>
               {latestRun.source_job_id ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${latestRun.source_job_id}`}
                   className="mt-2 inline-block text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
                 >
-                  Open job
+                  {t('Open job')}
                 </Link>
               ) : null}
             </div>
@@ -322,24 +328,24 @@ export default function TestsPage() {
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="space-y-4">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confirmed answer</div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confirmed answer')}</div>
                     <div className="mt-1 rounded-md bg-gray-50 p-3 text-sm text-gray-800 dark:bg-black/20 dark:text-gray-200">
-                      {testCase.expected_answer || 'No confirmed answer stored; validate using required text and citations.'}
+                      {testCase.expected_answer || t('No confirmed answer stored; validate using required text and citations.')}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Required text</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Required text')}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {(testCase.must_contain || []).map((item) => (
                         <span key={item} className="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-200">
                           {item}
                         </span>
                       ))}
-                      {!(testCase.must_contain || []).length ? <span className="text-sm text-gray-500">None</span> : null}
+                      {!(testCase.must_contain || []).length ? <span className="text-sm text-gray-500">{t('None')}</span> : null}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Required sources</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Required sources')}</div>
                     <ul className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-300">
                       {(testCase.must_include_sources || []).map((source) => (
                         <li key={source} className="flex gap-2">
@@ -353,36 +359,36 @@ export default function TestsPage() {
 
                 <div className="space-y-3">
                   <label className="block">
-                    <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">System answer for review</span>
+                    <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('System answer for review')}</span>
                     <textarea
                       value={form.system_answer}
                       onChange={(event) => updateReviewForm(testCase.id, { system_answer: event.target.value })}
                       rows={7}
                       className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-                      placeholder="Paste the system answer here when reviewing a run."
+                      placeholder={t('Paste the system answer here when reviewing a run.')}
                     />
                   </label>
                   <div className="grid gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                     <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Decision</span>
+                      <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Decision')}</span>
                       <select
                         value={form.decision}
                         onChange={(event) => updateReviewForm(testCase.id, { decision: event.target.value })}
                         className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                       >
-                        <option value="pass">Pass</option>
-                        <option value="fail">Fail</option>
-                        <option value="needs_work">Needs work</option>
-                        <option value="skip">Skip</option>
+                        <option value="pass">{t('Pass')}</option>
+                        <option value="fail">{t('Fail')}</option>
+                        <option value="needs_work">{t('Needs work')}</option>
+                        <option value="skip">{t('Skip')}</option>
                       </select>
                     </label>
                     <label className="block">
-                      <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Review note</span>
+                      <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Review note')}</span>
                       <input
                         value={form.reviewer_note}
                         onChange={(event) => updateReviewForm(testCase.id, { reviewer_note: event.target.value })}
                         className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-                        placeholder="Why it passed or failed"
+                        placeholder={t('Why it passed or failed')}
                       />
                     </label>
                   </div>
@@ -394,12 +400,12 @@ export default function TestsPage() {
                       className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Save size={16} aria-hidden="true" />
-                      {state.savingCaseId === testCase.id ? 'Saving' : 'Save review'}
+                      {state.savingCaseId === testCase.id ? t('Saving') : t('Save review')}
                     </button>
                     {latestReview ? (
                       <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                         <ClipboardCheck size={16} aria-hidden="true" />
-                        Last reviewed {formatDateTime(latestReview.created_at)}
+                        {t('Last reviewed {time}', { time: formatDateTime(latestReview.created_at) })}
                       </div>
                     ) : null}
                   </div>
