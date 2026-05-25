@@ -19,6 +19,7 @@ import JobsPage from './pages/JobsPage';
 import LoginPage from './pages/LoginPage';
 import QueryPage from './pages/QueryPage';
 import SettingsPage from './pages/SettingsPage';
+import SupportPage from './pages/SupportPage';
 import SystemQueryPage from './pages/SystemQueryPage';
 import TestsPage from './pages/TestsPage';
 
@@ -105,6 +106,7 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="entities/:personId" element={<EntityDetailPage />} />
             <Route path="tests" element={<TestsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="support" element={<SupportPage />} />
             <Route path="admin" element={<AdminPage />} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />

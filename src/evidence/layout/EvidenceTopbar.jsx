@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import StatusBadge from '../components/StatusBadge';
+import SupportFeedbackDrawer from '../components/SupportFeedbackDrawer';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
@@ -36,6 +37,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
           </div>
           <StatusBadge status={status.state} />
           <AxiomHelpDrawer />
+          <SupportFeedbackDrawer />
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
           <button
             type="button"

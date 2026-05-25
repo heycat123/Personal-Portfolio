@@ -10,6 +10,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  LifeBuoy,
   Upload,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { label: 'Entities', path: 'entities', icon: Network },
   { label: 'Tests', path: 'tests', icon: ClipboardCheck },
   { label: 'Settings', path: 'settings', icon: Settings },
+  { label: 'Support', path: 'support', icon: LifeBuoy },
   { label: 'Admin', path: 'admin', icon: ShieldCheck },
 ];
 

@@ -33,6 +33,13 @@ function apiUrl(path, query) {
   return url;
 }
 
+function emitApiError(detail) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent('evidence-api-error', { detail }));
+}
+
 async function parseResponse(response) {
   const text = await response.text();
   if (!text) {
@@ -77,6 +84,14 @@ async function request(path, options = {}) {
       signal,
     });
   } catch (error) {
+    emitApiError({
+      message: error.message || 'Evidence API request failed.',
+      path,
+      status: null,
+      requestFingerprintId: null,
+      correlationId,
+      capturedAt: new Date().toISOString(),
+    });
     throw new EvidenceApiError(error.message || 'Evidence API request failed.', {
       correlationId,
     });
@@ -98,6 +113,15 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const detail = payload?.detail || payload?.error_message || response.statusText;
+    emitApiError({
+      message: detail || 'Evidence API returned an error.',
+      path,
+      status: response.status,
+      payload,
+      requestFingerprintId,
+      correlationId: result.correlationId,
+      capturedAt: new Date().toISOString(),
+    });
     throw new EvidenceApiError(detail || 'Evidence API returned an error.', {
       status: response.status,
       payload,
@@ -214,6 +238,10 @@ export const evidenceApi = {
     request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
   queryHelp: (caseId, payload, options) =>
     request(casePath(caseId, '/help/query'), { ...options, method: 'POST', body: payload }),
+  createSupportRecord: (caseId, payload, options) =>
+    request(casePath(caseId, '/support-records'), { ...options, method: 'POST', body: payload }),
+  getSupportRecords: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/support-records'), { ...options, query: params }),
   getBaselineTests: (caseId, options) =>
     request(casePath(caseId, '/tests/baseline'), options),
   getBaselineTestRuns: (caseId, params = {}, options = {}) =>
