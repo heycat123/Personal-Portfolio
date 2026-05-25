@@ -28,6 +28,13 @@ function citationLabel(citation) {
   return citation?.citation || `${citation?.source || 'Source'}${citation?.page ? `, p. ${citation.page}` : ''}`;
 }
 
+function citationOpenId(citation) {
+  if (!citation || typeof citation === 'string') {
+    return null;
+  }
+  return citation.file_id || citation.file_hash || citation.content_hash || null;
+}
+
 function normalizeCitationLabel(value) {
   return String(value || '')
     .replace(/^\[/, '')
@@ -37,11 +44,24 @@ function normalizeCitationLabel(value) {
     .toLowerCase();
 }
 
+function citationCandidates(citation) {
+  if (!citation || typeof citation === 'string') {
+    return [citation].filter(Boolean);
+  }
+  const page = citation.page || citation.page_number;
+  return [
+    citationLabel(citation),
+    citation.citation,
+    citation.source && page ? `${citation.source}, p. ${page}` : null,
+    citation.source && page ? `${citation.source} p. ${page}` : null,
+    citation.source && page ? `${citation.source}, page ${page}` : null,
+  ].filter(Boolean);
+}
+
 function citationLookup(citations = []) {
   const lookup = new Map();
   citations.forEach((citation) => {
-    const label = citationLabel(citation);
-    [label, citation?.citation, `${citation?.source || ''}, p. ${citation?.page || citation?.page_number || ''}`].forEach((candidate) => {
+    citationCandidates(citation).forEach((candidate) => {
       const normalized = normalizeCitationLabel(candidate);
       if (normalized && !lookup.has(normalized)) {
         lookup.set(normalized, citation);
@@ -49,6 +69,73 @@ function citationLookup(citations = []) {
     });
   });
   return lookup;
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchingCitationsForBracket(part, citations, lookup) {
+  const exact = lookup.get(normalizeCitationLabel(part));
+  if (exact) {
+    return [exact];
+  }
+  const inner = normalizeCitationLabel(part);
+  const evidenceMatches = [...inner.matchAll(/\be\s*(\d{1,3})\b/g)]
+    .map((match) => citations[Number(match[1]) - 1])
+    .filter(Boolean);
+  if (evidenceMatches.length) {
+    return [...new Set(evidenceMatches)];
+  }
+
+  const matches = [];
+  citations.forEach((citation) => {
+    let bestIndex = Infinity;
+    citationCandidates(citation).forEach((candidate) => {
+      const normalized = normalizeCitationLabel(candidate);
+      if (normalized && normalized.length > 4) {
+        const index = inner.indexOf(normalized);
+        if (index >= 0 && index < bestIndex) {
+          bestIndex = index;
+        }
+      }
+    });
+
+    if (bestIndex === Infinity && citation && typeof citation !== 'string') {
+      const source = normalizeCitationLabel(citation.source);
+      const page = citation.page || citation.page_number;
+      const pagePattern = page ? new RegExp(`\\bp(?:age)?\\.?\\s*${escapeRegex(page)}\\b`) : null;
+      if (source && pagePattern && inner.includes(source) && pagePattern.test(inner)) {
+        bestIndex = inner.indexOf(source);
+      }
+    }
+
+    if (bestIndex !== Infinity) {
+      matches.push({ citation, index: bestIndex });
+    }
+  });
+
+  return matches
+    .sort((left, right) => left.index - right.index)
+    .map((match) => match.citation)
+    .filter((citation, index, all) => all.indexOf(citation) === index);
+}
+
+function CitationChip({ citation, onOpenCitation }) {
+  const label = citationLabel(citation);
+  const canOpen = Boolean(citationOpenId(citation));
+  return (
+    <button
+      type="button"
+      onClick={canOpen ? () => onOpenCitation(citation) : undefined}
+      disabled={!canOpen}
+      className="mx-0.5 inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 disabled:cursor-default disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-600 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 dark:disabled:border-gray-800 dark:disabled:bg-black/20 dark:disabled:text-gray-400"
+      title={label}
+    >
+      <FileText size={12} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 max-w-[calc(100vw-6rem)] truncate sm:max-w-[18rem]">{label}</span>
+    </button>
+  );
 }
 
 function InlineAnswer({ answer, citations, onOpenCitation }) {
@@ -59,23 +146,21 @@ function InlineAnswer({ answer, citations, onOpenCitation }) {
     <div className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-words leading-6 text-gray-900 dark:text-gray-100">
       {parts.map((part, index) => {
         const bracketed = part.startsWith('[') && part.endsWith(']');
-        const citation = bracketed ? lookup.get(normalizeCitationLabel(part)) : null;
-        if (!citation) {
+        const matchedCitations = bracketed ? matchingCitationsForBracket(part, citations, lookup) : [];
+        if (!matchedCitations.length) {
           return <span key={`${index}-${part.slice(0, 24)}`}>{part}</span>;
         }
-        const canOpen = typeof citation !== 'string' && citation.file_id;
         return (
-          <button
-            key={`${index}-${citationLabel(citation)}`}
-            type="button"
-            onClick={canOpen ? () => onOpenCitation(citation) : undefined}
-            disabled={!canOpen}
-            className="mx-0.5 inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 disabled:cursor-default disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-600 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 dark:disabled:border-gray-800 dark:disabled:bg-black/20 dark:disabled:text-gray-400"
-            title={citationLabel(citation)}
-          >
-            <FileText size={12} className="shrink-0" aria-hidden="true" />
-            <span className="min-w-0 max-w-[calc(100vw-6rem)] truncate sm:max-w-[18rem]">{citationLabel(citation)}</span>
-          </button>
+          <span key={`${index}-${part.slice(0, 24)}`} className="inline">
+            [
+            {matchedCitations.map((citation, citationIndex) => (
+              <span key={`${citationLabel(citation)}-${citationIndex}`} className="inline">
+                {citationIndex > 0 ? '; ' : ''}
+                <CitationChip citation={citation} onOpenCitation={onOpenCitation} />
+              </span>
+            ))}
+            ]
+          </span>
         );
       })}
     </div>
@@ -90,7 +175,7 @@ function CitationList({ citations, onOpenCitation, t }) {
     <div className="flex flex-wrap gap-2">
       {citations.map((citation, index) => {
         const label = citationLabel(citation);
-        const canOpen = typeof citation !== 'string' && citation.file_id;
+        const canOpen = Boolean(citationOpenId(citation));
         return canOpen ? (
           <button
             type="button"
@@ -659,7 +744,8 @@ export default function QueryPage() {
 
   const openCitation = useCallback(
     async (citation) => {
-      if (!citation?.file_id) {
+      const documentId = citationOpenId(citation);
+      if (!documentId) {
         return;
       }
       setDrawer({
@@ -672,7 +758,7 @@ export default function QueryPage() {
       });
       try {
         const token = await getAccessToken();
-        const result = await evidenceApi.getDocument(caseId, citation.file_id, { token });
+        const result = await evidenceApi.getDocument(caseId, documentId, { token });
         recordFingerprint(result, 'Citation document drawer');
         setDrawer((current) => ({
           ...current,
