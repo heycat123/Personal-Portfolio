@@ -50,6 +50,8 @@ function citationCandidates(citation) {
   }
   const page = citation.page || citation.page_number;
   return [
+    citation.packet_item_id,
+    citation.packet_item_id ? `[${citation.packet_item_id}]` : null,
     citationLabel(citation),
     citation.citation,
     citation.source && page ? `${citation.source}, p. ${page}` : null,
@@ -141,7 +143,7 @@ function CitationChip({ citation, onOpenCitation }) {
 function InlineAnswer({ answer, citations, onOpenCitation }) {
   const text = String(answer || 'No answer returned.');
   const lookup = citationLookup(citations);
-  const parts = text.split(/(\[[^\]\n]{3,260}\])/g);
+  const parts = text.split(/(\[[^\]\n]{2,260}\])/g);
   return (
     <div className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-words leading-6 text-gray-900 dark:text-gray-100">
       {parts.map((part, index) => {
