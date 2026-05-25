@@ -1,5 +1,5 @@
 import { ExternalLink, FileText, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
@@ -10,7 +10,7 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
-import { formatDateTime, truncateMiddle } from '../utils/formatters';
+import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
 
@@ -41,6 +41,8 @@ export default function DocumentsPage() {
   const { t } = useLocaleSettings();
   const [queryDraft, setQueryDraft] = useState('');
   const [appliedQuery, setAppliedQuery] = useState('');
+  const [filterValues, setFilterValues] = useState({});
+  const [sort, setSort] = useState({ key: 'updated_at', desc: true });
   const [offset, setOffset] = useState(0);
   const [state, setState] = useState({
     loading: true,
@@ -141,6 +143,95 @@ export default function DocumentsPage() {
   const canGoPrevious = offset > 0;
   const canGoNext = offset + PAGE_SIZE < state.total;
 
+  const documentColumns = useMemo(() => ([
+    {
+      key: 'original_filename',
+      header: t('File'),
+      headerClassName: 'w-[36%]',
+      className: 'min-w-0',
+      help: t('The file name recorded for this evidence item. Click the name for the document detail page; click the row for the drawer.'),
+      render: (document) => (
+        <Link
+          to={`/evidence/cases/${caseId}/documents/${document.file_id}`}
+          className="flex max-w-full min-w-0 items-center gap-2 font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300"
+          title={document.original_filename || document.file_id}
+        >
+          <span className="min-w-0 truncate">{document.original_filename || document.file_id}</span>
+          <ExternalLink className="shrink-0" size={14} aria-hidden="true" />
+        </Link>
+      ),
+    },
+    {
+      key: 'origin_label',
+      header: t('Origin'),
+      headerClassName: 'w-[14%]',
+      help: t('Where the item originally came from, such as Google Drive, web upload, or a communication export.'),
+      render: (document) => document.origin_label || 'unknown',
+    },
+    {
+      key: 'evidence_type_label',
+      header: t('Evidence Type'),
+      headerClassName: 'w-[14%]',
+      help: t('What kind of evidence this is. This is separate from where the file came from.'),
+      render: (document) => document.evidence_type_label || 'Document',
+    },
+    {
+      key: 'canonical_storage_label',
+      header: t('Storage'),
+      headerClassName: 'w-[14%]',
+      help: t('Whether Evidence AI has an S3 canonical copy or this is still a legacy local import that needs S3 sync.'),
+      render: (document) => document.canonical_storage_label || 'unknown',
+    },
+    { key: 'status', header: t('Status'), headerClassName: 'w-[9%]', render: (document) => <StatusBadge status={document.status} /> },
+    { key: 'page_count', header: t('Pages'), headerClassName: 'w-[7%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
+    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[12%]', render: (document) => formatDateTime(document.updated_at || document.created_at) },
+  ]), [caseId, t]);
+
+  const filteredDocuments = useMemo(() => {
+    const activeFilters = Object.entries(filterValues || {}).filter(([, value]) => String(value || '').trim());
+    const rows = state.documents.filter((document) =>
+      activeFilters.every(([key, value]) => {
+        const needle = String(value || '').trim().toLowerCase();
+        if (!needle) {
+          return true;
+        }
+        const raw = document[key];
+        if (key === 'page_count') {
+          return Number(raw || 0) >= Number(value || 0);
+        }
+        return String(raw ?? '').toLowerCase().includes(needle);
+      }),
+    );
+    const sortKey = sort?.key;
+    if (!sortKey) {
+      return rows;
+    }
+    return [...rows].sort((left, right) => {
+      const leftValue = left[sortKey] ?? '';
+      const rightValue = right[sortKey] ?? '';
+      if (sortKey === 'page_count') {
+        return (Number(leftValue || 0) - Number(rightValue || 0)) * (sort.desc ? -1 : 1);
+      }
+      return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * (sort.desc ? -1 : 1);
+    });
+  }, [filterValues, sort, state.documents]);
+
+  const appliedFilters = useMemo(() =>
+    Object.entries(filterValues || {})
+      .filter(([, value]) => String(value || '').trim())
+      .map(([key, value]) => {
+        const column = documentColumns.find((candidate) => candidate.key === key);
+        return { id: key, label: `${column?.header || key}: ${value}` };
+      }), [documentColumns, filterValues]);
+
+  const clearColumnFilter = (columnId) => {
+    setFilterValues((current) => {
+      const next = { ...current };
+      delete next[columnId];
+      return next;
+    });
+  };
+
   return (
     <div>
       <PageHeader
@@ -194,10 +285,19 @@ export default function DocumentsPage() {
       </div>
 
       <DataTable
-        rows={state.documents}
+        rows={filteredDocuments}
         rowKey={(document) => document.file_id}
         loading={state.loading}
         emptyTitle={state.loading ? t('Loading documents') : t('No documents matched')}
+        enableHeaderMenus
+        filterValues={filterValues}
+        sort={sort}
+        onFilterChange={(columnId, value) => setFilterValues((current) => ({ ...current, [columnId]: value }))}
+        onClearFilter={clearColumnFilter}
+        onClearAllFilters={() => setFilterValues({})}
+        onSort={(columnId, desc) => setSort({ key: columnId, desc })}
+        appliedFilters={appliedFilters}
+        sortLabel={sort?.key ? `${t('Sorted by')} ${documentColumns.find((column) => column.key === sort.key)?.header || sort.key} (${sort.desc ? t('Descending') : t('Ascending')})` : null}
         selectedRowKey={drawer.open ? drawer.document?.file_id : null}
         onRowSelect={openDocumentDrawer}
         mobileTitle={(document) => (
@@ -208,37 +308,13 @@ export default function DocumentsPage() {
             {document.original_filename || document.file_id}
           </Link>
         )}
-        mobileSubtitle={(document) => `${document.source_provider || 'unknown'} · ${document.status || 'unknown'}`}
+        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${document.evidence_type_label || 'Document'} | ${document.status || 'unknown'}`}
         mobileActions={(document) => (
           <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open document detail page')}>
             <ExternalLink size={15} aria-hidden="true" />
           </Link>
         )}
-        columns={[
-          {
-            key: 'original_filename',
-            header: t('File'),
-            headerClassName: 'w-[34%]',
-            className: 'min-w-0',
-            render: (document) => (
-              <Link
-                to={`/evidence/cases/${caseId}/documents/${document.file_id}`}
-                className="flex max-w-full min-w-0 items-center gap-2 font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300"
-                title={document.original_filename || document.file_id}
-              >
-                <span className="min-w-0 truncate">{document.original_filename || document.file_id}</span>
-                <ExternalLink className="shrink-0" size={14} aria-hidden="true" />
-              </Link>
-            ),
-          },
-          { key: 'source_provider', header: t('Source'), headerClassName: 'w-[12%]', render: (document) => document.source_provider || 'unknown' },
-          { key: 'source_of_truth_mode', header: t('Mode'), headerClassName: 'w-[12%]', render: (document) => document.source_of_truth_mode || 'unknown' },
-          { key: 'status', header: t('Status'), render: (document) => <StatusBadge status={document.status} /> },
-          { key: 'page_count', header: t('Pages'), render: (document) => document.page_count ?? '0' },
-          { key: 'extraction_method', header: t('Extraction'), render: (document) => document.extraction_method || 'pending' },
-          { key: 'updated_at', header: t('Updated'), render: (document) => formatDateTime(document.updated_at || document.created_at) },
-          { key: 'content_hash', header: t('Hash'), render: (document) => truncateMiddle(document.content_hash, 24) },
-        ]}
+        columns={documentColumns}
       />
 
       <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
@@ -317,16 +393,16 @@ export default function DocumentsPage() {
                     <div className="text-gray-950 dark:text-white">{drawer.document?.page_count ?? '0'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source')}</div>
-                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.source_provider || 'unknown'}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Origin')}</div>
+                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.origin_label || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Mode')}</div>
-                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.source_of_truth_mode || 'unknown'}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Evidence Type')}</div>
+                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.evidence_type_label || 'Document'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Extraction')}</div>
-                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.extraction_method || 'pending'}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Storage')}</div>
+                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.canonical_storage_label || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Language')}</div>
