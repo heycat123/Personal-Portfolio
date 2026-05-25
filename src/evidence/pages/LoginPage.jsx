@@ -1,6 +1,6 @@
-import { LockKeyhole, LogIn, MailCheck, UserPlus } from 'lucide-react';
+import { ArrowLeft, LockKeyhole, LogIn, MailCheck, Scale, UserPlus } from 'lucide-react';
 import { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
@@ -137,11 +137,56 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-8 text-gray-950 dark:bg-[#0b1117] dark:text-gray-100">
-      <div className="mx-auto max-w-md">
+    <main className="min-h-screen bg-gray-50 text-gray-950 dark:bg-[#0b1117] dark:text-gray-100">
+      <header className="border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-[#101820]/95">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="rounded-md border border-gray-200 p-2 text-sky-700 dark:border-gray-700 dark:text-sky-300">
+              <Scale size={20} aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold text-gray-950 dark:text-white">Evidence AI</h1>
+              <p className="truncate text-sm text-gray-600 dark:text-gray-400">Legal evidence workspace</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/projects"
+              className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10"
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              Portfolio
+            </Link>
+            <button
+              type="button"
+              onClick={() => setView('sign-in')}
+              className={`rounded-md px-3 py-2 text-sm font-semibold ${
+                view === 'sign-in'
+                  ? 'bg-sky-700 text-white dark:bg-sky-600'
+                  : 'border border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10'
+              }`}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('sign-up')}
+              className={`rounded-md px-3 py-2 text-sm font-semibold ${
+                view === 'sign-up'
+                  ? 'bg-sky-700 text-white dark:bg-sky-600'
+                  : 'border border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10'
+              }`}
+            >
+              Create account
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-md px-4 py-8">
         <PageHeader
-          title="Evidence Sign In"
-          description="Access to the evidence control plane requires an authenticated session."
+          title={view === 'sign-up' ? 'Create Evidence Account' : view === 'confirm-sign-up' ? 'Confirm Evidence Account' : 'Evidence Sign In'}
+          description="Sign in or create an account to access the Evidence AI workspace."
         />
 
         {error || submitError ? (

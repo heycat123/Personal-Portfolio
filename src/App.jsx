@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import Header from './Header.jsx';
 import Portfolio from './Portfolio.jsx';
@@ -47,6 +47,26 @@ function HomCentralRoute() {
     );
 }
 
+function AppShell({ darkTheme, setDarkTheme }) {
+    const location = useLocation();
+    const evidenceRoute = location.pathname.startsWith('/evidence');
+
+    return (
+        <div className="min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#c9d1d9]">
+            {!evidenceRoute ? <Header darkTheme={darkTheme} setDarkTheme={setDarkTheme} /> : null}
+
+            <main className={evidenceRoute ? '' : 'pt-16'}>
+                <Routes>
+                    <Route path="/" element={<Portfolio />} />
+                    <Route path="/projects" element={<Projects />} />
+                    <Route path="/homcentral" element={<HomCentralRoute />} />
+                    <Route path="/evidence/*" element={<EvidenceApp />} />
+                </Routes>
+            </main>
+        </div>
+    );
+}
+
 export default function App() {
     const [darkTheme, setDarkTheme] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -72,18 +92,7 @@ export default function App() {
 
     return (
         <Router>
-            <div className="min-h-screen transition-colors duration-300 bg-gray-50 dark:bg-[#0d1117] text-gray-900 dark:text-[#c9d1d9]">
-                <Header darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
-
-                <main className="pt-16">
-                    <Routes>
-                        <Route path="/" element={<Portfolio />} />
-                        <Route path="/projects" element={<Projects />} />
-                        <Route path="/homcentral" element={<HomCentralRoute />} />
-                        <Route path="/evidence/*" element={<EvidenceApp />} />
-                    </Routes>
-                </main>
-            </div>
+            <AppShell darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
         </Router>
     );
 }
