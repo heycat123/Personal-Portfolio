@@ -26,7 +26,6 @@ export default function LoginPage() {
     identifier: '',
     email: '',
     displayName: '',
-    phoneNumber: '',
     password: '',
   });
   const [newPassword, setNewPassword] = useState('');
@@ -74,7 +73,6 @@ export default function LoginPage() {
         email: form.email,
         password: form.password,
         displayName: form.displayName,
-        phoneNumber: form.phoneNumber || undefined,
       });
       setView('confirm-sign-up');
       setNotice('Confirmation code sent.');
@@ -321,17 +319,6 @@ export default function LoginPage() {
                   value={form.displayName}
                   onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))}
                   autoComplete="name"
-                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Phone</span>
-                <input
-                  type="tel"
-                  value={form.phoneNumber}
-                  onChange={(event) => setForm((current) => ({ ...current, phoneNumber: event.target.value }))}
-                  autoComplete="tel"
-                  placeholder="+15555555555"
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
