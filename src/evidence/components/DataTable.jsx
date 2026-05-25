@@ -174,6 +174,7 @@ export default function DataTable({
   expandedRows = {},
   onToggleRow,
   selectedRowKey = null,
+  onRowSelect,
   mobileTitle,
   mobileSubtitle,
   mobileMetrics,
@@ -197,6 +198,15 @@ export default function DataTable({
 
   const getRowKey = (row) => (typeof rowKey === 'function' ? rowKey(row) : row[rowKey]);
   const hasDetailPanel = Boolean(renderDetailPanel);
+  const handleRowClick = (event, row) => {
+    if (!onRowSelect) {
+      return;
+    }
+    if (event.target.closest('a,button,input,select,textarea,label')) {
+      return;
+    }
+    onRowSelect(row);
+  };
 
   if (!hasRows && !loading) {
     return (
@@ -377,7 +387,10 @@ export default function DataTable({
                 const isSelected = selectedRowKey === key;
                 return (
                   <Fragment key={key}>
-                    <tr className={`${isSelected ? 'bg-sky-50/70 dark:bg-sky-950/20' : ''} hover:bg-gray-50 dark:hover:bg-white/[0.03]`}>
+                    <tr
+                      onClick={(event) => handleRowClick(event, row)}
+                      className={`${isSelected ? 'bg-sky-50/70 dark:bg-sky-950/20' : ''} ${onRowSelect ? 'cursor-pointer' : ''} hover:bg-gray-50 dark:hover:bg-white/[0.03]`}
+                    >
                       {hasDetailPanel ? (
                         <td className="px-2 py-2 align-top">
                           <button
@@ -424,7 +437,11 @@ export default function DataTable({
           const isExpanded = Boolean(expandedRows[key]);
           const metrics = mobileMetrics ? mobileMetrics(row) : visibleColumns.slice(1).filter((column) => column.mobileHidden !== true);
           return (
-            <section key={key} className={`rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] ${selectedRowKey === key ? 'ring-1 ring-sky-500' : ''}`}>
+            <section
+              key={key}
+              onClick={(event) => handleRowClick(event, row)}
+              className={`rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] ${onRowSelect ? 'cursor-pointer' : ''} ${selectedRowKey === key ? 'ring-1 ring-sky-500' : ''}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-semibold text-gray-950 dark:text-white">
