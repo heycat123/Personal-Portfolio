@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, FileText, Loader2, MessageSquare, Send, Wrench, X } from 'lucide-react';
+import { Bot, ExternalLink, FileText, History, ListChecks, Loader2, MessageSquare, Plus, RefreshCw, Send, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -21,22 +21,65 @@ function Panel({ title, children }) {
   );
 }
 
-function answerLines(answer) {
-  return String(answer || 'No answer returned.')
-    .split('\n')
-    .map((line, index) => (
-      <span key={`${line}-${index}`}>
-        {line}
-        <br />
-      </span>
-    ));
-}
-
 function citationLabel(citation) {
   if (typeof citation === 'string') {
     return citation;
   }
   return citation?.citation || `${citation?.source || 'Source'}${citation?.page ? `, p. ${citation.page}` : ''}`;
+}
+
+function normalizeCitationLabel(value) {
+  return String(value || '')
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function citationLookup(citations = []) {
+  const lookup = new Map();
+  citations.forEach((citation) => {
+    const label = citationLabel(citation);
+    [label, citation?.citation, `${citation?.source || ''}, p. ${citation?.page || citation?.page_number || ''}`].forEach((candidate) => {
+      const normalized = normalizeCitationLabel(candidate);
+      if (normalized && !lookup.has(normalized)) {
+        lookup.set(normalized, citation);
+      }
+    });
+  });
+  return lookup;
+}
+
+function InlineAnswer({ answer, citations, onOpenCitation }) {
+  const text = String(answer || 'No answer returned.');
+  const lookup = citationLookup(citations);
+  const parts = text.split(/(\[[^\]\n]{3,260}\])/g);
+  return (
+    <div className="whitespace-pre-wrap leading-6 text-gray-900 dark:text-gray-100">
+      {parts.map((part, index) => {
+        const bracketed = part.startsWith('[') && part.endsWith(']');
+        const citation = bracketed ? lookup.get(normalizeCitationLabel(part)) : null;
+        if (!citation) {
+          return <span key={`${index}-${part.slice(0, 24)}`}>{part}</span>;
+        }
+        const canOpen = typeof citation !== 'string' && citation.file_id;
+        return (
+          <button
+            key={`${index}-${citationLabel(citation)}`}
+            type="button"
+            onClick={canOpen ? () => onOpenCitation(citation) : undefined}
+            disabled={!canOpen}
+            className="mx-0.5 inline-flex max-w-full items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 disabled:cursor-default disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-600 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 dark:disabled:border-gray-800 dark:disabled:bg-black/20 dark:disabled:text-gray-400"
+            title={citationLabel(citation)}
+          >
+            <FileText size={12} className="shrink-0" aria-hidden="true" />
+            <span className="max-w-[18rem] truncate">{citationLabel(citation)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function CitationList({ citations, onOpenCitation, t }) {
@@ -148,7 +191,7 @@ function AgenticSummary({ result, t }) {
   );
 }
 
-function QueryMessage({ message, onOpenCitation, t }) {
+function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -187,13 +230,20 @@ function QueryMessage({ message, onOpenCitation, t }) {
                 />
               ) : null}
             </div>
-            <div className="whitespace-pre-wrap leading-6 text-gray-900 dark:text-gray-100">
-              {answerLines(result?.answer)}
-            </div>
+            <InlineAnswer answer={result?.answer} citations={result?.citations || []} onOpenCitation={onOpenCitation} />
             <AgenticSummary result={result} t={t} />
-            <div className="mt-4">
-              <CitationList citations={result?.citations || []} onOpenCitation={onOpenCitation} t={t} />
-            </div>
+            {result?.citations?.length ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => onOpenCitationList(result.citations)}
+                  className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30 dark:hover:text-sky-100"
+                >
+                  <ListChecks size={14} aria-hidden="true" />
+                  {t('Open citation list')} ({result.citations.length})
+                </button>
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-3 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3">
               <div>
                 <div className="font-semibold uppercase tracking-normal">{t('Verifier')}</div>
@@ -249,7 +299,7 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
             <div className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
               <div className="font-semibold text-gray-950 dark:text-white">{drawer.document.original_filename || drawer.document.file_id}</div>
               <div className="mt-1 text-gray-600 dark:text-gray-400">
-                {t('Page')} {drawer.page || 'n/a'} · {drawer.document.source_provider || 'unknown'} · {drawer.document.source_of_truth_mode || 'unknown'}
+                {t('Page')} {drawer.page || 'n/a'} | {drawer.document.source_provider || 'unknown'} | {drawer.document.source_of_truth_mode || 'unknown'}
               </div>
               <Link
                 to={`/evidence/cases/${caseId}/documents/${drawer.document.file_id}`}
@@ -276,6 +326,147 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
   );
 }
 
+function CitationListDrawer({ drawer, onClose, onOpenCitation, t }) {
+  if (!drawer.open) {
+    return null;
+  }
+  const citations = drawer.citations || [];
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/30">
+      <aside className="h-full w-screen max-w-full overflow-y-auto overflow-x-hidden border-l border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-lg sm:p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Answer citations')}</div>
+            <h2 className="truncate text-lg font-semibold text-gray-950 dark:text-white">
+              {citations.length} {citations.length === 1 ? t('citation') : t('citations')}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+            aria-label={t('Close')}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <CitationList citations={citations} onOpenCitation={onOpenCitation} t={t} />
+      </aside>
+    </div>
+  );
+}
+
+function conversationStorageKey(caseId) {
+  return `evidence.query.activeConversation.${caseId || 'default'}`;
+}
+
+function formatConversationTime(value) {
+  if (!value) {
+    return '';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function messagesFromConversation(conversation) {
+  return (conversation?.messages || []).map((message) => {
+    if (message.role === 'assistant') {
+      const result = message.query_result_json && Object.keys(message.query_result_json).length
+        ? message.query_result_json
+        : { answer: message.content, citations: [] };
+      return {
+        id: message.message_id,
+        role: 'assistant',
+        result,
+        fingerprint: {
+          id: message.request_fingerprint_id || result.request_fingerprint_id,
+          correlationId: null,
+        },
+      };
+    }
+    return {
+      id: message.message_id,
+      role: 'user',
+      content: message.content,
+    };
+  });
+}
+
+function ConversationList({
+  conversations,
+  activeConversationId,
+  loading,
+  error,
+  onNewConversation,
+  onSelectConversation,
+  onRefresh,
+  t,
+}) {
+  return (
+    <aside className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:min-h-[520px]">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <History size={17} className="shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
+          <h3 className="truncate text-sm font-semibold text-gray-950 dark:text-white">{t('Conversations')}</h3>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+            aria-label={t('Refresh conversations')}
+          >
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onNewConversation}
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+            aria-label={t('New conversation')}
+          >
+            <Plus size={16} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      {error ? <ErrorPanel title="Conversation history failed" error={error} /> : null}
+      <div className="flex gap-2 overflow-x-auto pb-1 xl:max-h-[470px] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
+        {conversations.length ? (
+          conversations.map((conversation) => {
+            const active = conversation.conversation_id === activeConversationId;
+            return (
+              <button
+                key={conversation.conversation_id}
+                type="button"
+                onClick={() => onSelectConversation(conversation.conversation_id)}
+                className={`min-w-[240px] rounded-md border p-3 text-left text-sm xl:min-w-0 ${
+                  active
+                    ? 'border-sky-400 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100'
+                    : 'border-gray-200 bg-gray-50 text-gray-800 hover:border-sky-300 hover:bg-sky-50 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/20'
+                }`}
+              >
+                <div className="truncate font-semibold">{conversation.title || t('New conversation')}</div>
+                <div className="mt-1 truncate text-xs opacity-75">
+                  {conversation.last_message_preview || `${conversation.message_count || 0} ${t('messages')}`}
+                </div>
+                <div className="mt-2 text-xs opacity-70">
+                  {formatConversationTime(conversation.last_message_at || conversation.updated_at || conversation.created_at)}
+                </div>
+              </button>
+            );
+          })
+        ) : (
+          <div className="min-w-[240px] rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-400 xl:min-w-0">
+            {loading ? t('Loading conversations.') : t('No saved conversations yet.')}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 export default function QueryPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -297,11 +488,106 @@ export default function QueryPage() {
     page: null,
     document: null,
   });
+  const [citationListDrawer, setCitationListDrawer] = useState({
+    open: false,
+    citations: [],
+  });
+  const [activeConversationId, setActiveConversationId] = useState(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+    return window.localStorage.getItem(conversationStorageKey(caseId));
+  });
+  const [conversationState, setConversationState] = useState({
+    loading: false,
+    error: null,
+    conversations: [],
+  });
   const scrollRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
+
+  const loadConversation = useCallback(
+    async (conversationId) => {
+      if (!conversationId) {
+        return null;
+      }
+      setConversationState((current) => ({ ...current, loading: true, error: null }));
+      try {
+        const token = await getAccessToken();
+        const result = await evidenceApi.getQueryConversation(caseId, conversationId, { token });
+        recordFingerprint(result, 'Load query conversation');
+        const conversation = result.data?.conversation;
+        const loadedMessages = messagesFromConversation(conversation);
+        const latestAssistant = [...loadedMessages].reverse().find((message) => message.role === 'assistant' && message.result);
+        setMessages(loadedMessages);
+        setActiveConversationId(conversation?.conversation_id || conversationId);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(conversationStorageKey(caseId), conversation?.conversation_id || conversationId);
+        }
+        setState((current) => ({
+          ...current,
+          running: false,
+          error: null,
+          result: latestAssistant?.result || null,
+          fingerprint: latestAssistant?.fingerprint || null,
+        }));
+        setConversationState((current) => ({ ...current, loading: false, error: null }));
+        return conversation;
+      } catch (error) {
+        setConversationState((current) => ({ ...current, loading: false, error }));
+        return null;
+      }
+    },
+    [caseId, getAccessToken, recordFingerprint],
+  );
+
+  const refreshConversations = useCallback(async () => {
+    setConversationState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getQueryConversations(caseId, { limit: 40 }, { token });
+      recordFingerprint(result, 'Query conversation list');
+      const conversations = result.data?.conversations || [];
+      setConversationState({ loading: false, error: null, conversations });
+      return conversations;
+    } catch (error) {
+      setConversationState((current) => ({ ...current, loading: false, error }));
+      return [];
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMessages([]);
+    setState({ running: false, error: null, result: null, fingerprint: null });
+    const savedConversationId = typeof window === 'undefined' ? null : window.localStorage.getItem(conversationStorageKey(caseId));
+    setActiveConversationId(savedConversationId);
+    (async () => {
+      const conversations = await refreshConversations();
+      if (cancelled || !savedConversationId) {
+        return;
+      }
+      if (conversations.some((conversation) => conversation.conversation_id === savedConversationId)) {
+        await loadConversation(savedConversationId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId, loadConversation, refreshConversations]);
+
+  const startNewConversation = useCallback(() => {
+    setActiveConversationId(null);
+    setMessages([]);
+    setQuestion(DEFAULT_QUESTION);
+    setState({ running: false, error: null, result: null, fingerprint: null });
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(conversationStorageKey(caseId));
+    }
+  }, [caseId]);
 
   const runQuery = useCallback(async () => {
     const trimmed = question.trim();
@@ -329,6 +615,7 @@ export default function QueryPage() {
           include_trace: true,
           response_language: preferences.language,
           viewer_timezone: preferences.timeZone,
+          conversation_id: activeConversationId,
         },
         { token },
       );
@@ -355,13 +642,20 @@ export default function QueryPage() {
         result: result.data,
         fingerprint,
       });
+      if (result.data?.conversation_id) {
+        setActiveConversationId(result.data.conversation_id);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(conversationStorageKey(caseId), result.data.conversation_id);
+        }
+      }
+      await refreshConversations();
     } catch (error) {
       setMessages((current) =>
         current.map((message) => (message.id === assistantId ? { ...message, running: false, error } : message)),
       );
       setState((current) => ({ ...current, running: false, error }));
     }
-  }, [caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint]);
+  }, [activeConversationId, caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations]);
 
   const openCitation = useCallback(
     async (citation) => {
@@ -396,6 +690,10 @@ export default function QueryPage() {
     [caseId, getAccessToken, recordFingerprint],
   );
 
+  const openCitationList = useCallback((citations) => {
+    setCitationListDrawer({ open: true, citations: citations || [] });
+  }, []);
+
   const latestVerifier = state.result?.verifier_status;
   const latestVerified = Boolean(latestVerifier?.verified || latestVerifier?.sufficient);
   const hasMessages = messages.length > 0;
@@ -420,10 +718,30 @@ export default function QueryPage() {
         </div>
       ) : null}
 
-      <section className="flex min-h-[520px] flex-1 flex-col rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
+      <div className="grid flex-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <ConversationList
+          conversations={conversationState.conversations}
+          activeConversationId={activeConversationId}
+          loading={conversationState.loading}
+          error={conversationState.error}
+          onNewConversation={startNewConversation}
+          onSelectConversation={loadConversation}
+          onRefresh={refreshConversations}
+          t={t}
+        />
+
+        <section className="flex min-h-[520px] min-w-0 flex-1 flex-col rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {hasMessages ? (
-            messages.map((message) => <QueryMessage key={message.id} message={message} onOpenCitation={openCitation} t={t} />)
+            messages.map((message) => (
+              <QueryMessage
+                key={message.id}
+                message={message}
+                onOpenCitation={openCitation}
+                onOpenCitationList={openCitationList}
+                t={t}
+              />
+            ))
           ) : (
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
               <div className="flex items-center gap-2">
@@ -475,7 +793,8 @@ export default function QueryPage() {
             ) : null}
           </div>
         </div>
-      </section>
+        </section>
+      </div>
 
       {state.result ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -501,6 +820,12 @@ export default function QueryPage() {
         </div>
       ) : null}
 
+      <CitationListDrawer
+        drawer={citationListDrawer}
+        onClose={() => setCitationListDrawer({ open: false, citations: [] })}
+        onOpenCitation={openCitation}
+        t={t}
+      />
       <CitationDrawer drawer={drawer} caseId={caseId} onClose={() => setDrawer((current) => ({ ...current, open: false }))} t={t} />
     </div>
   );

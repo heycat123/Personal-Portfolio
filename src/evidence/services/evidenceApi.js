@@ -238,6 +238,12 @@ export const evidenceApi = {
     request(casePath(caseId, '/queue/health'), options),
   getSourceAlignmentLatest: (caseId, options) =>
     request(casePath(caseId, '/source-alignment/latest'), options),
+  getQueryConversations: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/query/conversations'), { ...options, query: params }),
+  createQueryConversation: (caseId, payload, options) =>
+    request(casePath(caseId, '/query/conversations'), { ...options, method: 'POST', body: payload }),
+  getQueryConversation: (caseId, conversationId, options) =>
+    request(casePath(caseId, `/query/conversations/${encodeURIComponent(conversationId)}`), options),
   queryCase: (caseId, payload, options) =>
     request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
   queryHelp: (caseId, payload, options) =>
