@@ -6,6 +6,36 @@ import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 
+const PASSWORD_REQUIREMENTS = [
+  {
+    label: 'At least 8 characters',
+    test: (password) => password.length >= 8,
+  },
+  {
+    label: 'At least 1 uppercase letter',
+    test: (password) => /[A-Z]/.test(password),
+  },
+  {
+    label: 'At least 1 lowercase letter',
+    test: (password) => /[a-z]/.test(password),
+  },
+  {
+    label: 'At least 1 number',
+    test: (password) => /\d/.test(password),
+  },
+  {
+    label: 'At least 1 special character',
+    test: (password) => /[^A-Za-z0-9]/.test(password),
+  },
+];
+
+function getPasswordRequirementStatus(password) {
+  return PASSWORD_REQUIREMENTS.map((requirement) => ({
+    ...requirement,
+    met: requirement.test(password || ''),
+  }));
+}
+
 export default function LoginPage() {
   const location = useLocation();
   const { defaultCaseId } = useCaseContext();
@@ -27,6 +57,7 @@ export default function LoginPage() {
     email: '',
     displayName: '',
     password: '',
+    confirmPassword: '',
   });
   const [newPassword, setNewPassword] = useState('');
   const [confirmationCode, setConfirmationCode] = useState('');
@@ -43,6 +74,9 @@ export default function LoginPage() {
   }
 
   const cognitoNotConfigured = authMode === 'cognito' && !isConfigured;
+  const passwordRequirementStatus = getPasswordRequirementStatus(form.password);
+  const passwordMeetsRequirements = passwordRequirementStatus.every((requirement) => requirement.met);
+  const passwordsMatch = Boolean(form.password) && form.password === form.confirmPassword;
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -67,6 +101,20 @@ export default function LoginPage() {
     setSubmitting(true);
     setSubmitError(null);
     setNotice(null);
+    if (!passwordMeetsRequirements) {
+      const missingRequirements = passwordRequirementStatus
+        .filter((requirement) => !requirement.met)
+        .map((requirement) => requirement.label.toLowerCase())
+        .join(', ');
+      setSubmitError(new Error(`Password does not meet Cognito requirements: ${missingRequirements}.`));
+      setSubmitting(false);
+      return;
+    }
+    if (!passwordsMatch) {
+      setSubmitError(new Error('Passwords must match.'));
+      setSubmitting(false);
+      return;
+    }
     try {
       await signUp({
         username: form.email,
@@ -96,7 +144,7 @@ export default function LoginPage() {
       });
       setView('sign-in');
       setConfirmationCode('');
-      setForm((current) => ({ ...current, identifier: current.email, password: '' }));
+      setForm((current) => ({ ...current, identifier: current.email, password: '', confirmPassword: '' }));
       setNotice('Account confirmed. Sign in to continue.');
     } catch (nextError) {
       setSubmitError(nextError);
@@ -331,12 +379,39 @@ export default function LoginPage() {
                   autoComplete="new-password"
                   required
                   minLength={8}
+                  aria-describedby="signup-password-requirements"
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
               </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Confirm password</span>
+                <input
+                  type="password"
+                  value={form.confirmPassword}
+                  onChange={(event) => setForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  aria-invalid={form.confirmPassword ? !passwordsMatch : undefined}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+                {form.confirmPassword && !passwordsMatch ? (
+                  <span className="mt-1 block text-xs font-medium text-red-700 dark:text-red-300">Passwords do not match.</span>
+                ) : null}
+              </label>
+              <div id="signup-password-requirements" className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs dark:border-gray-800 dark:bg-black/20">
+                <p className="mb-2 font-semibold text-gray-800 dark:text-gray-200">Password requirements</p>
+                <ul className="space-y-1">
+                  {passwordRequirementStatus.map((requirement) => (
+                    <li key={requirement.label} className={requirement.met ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-600 dark:text-gray-400'}>
+                      <span className="font-semibold">{requirement.met ? 'OK' : 'Needed'}:</span> {requirement.label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <button
                 type="submit"
-                disabled={submitting || loading}
+                disabled={submitting || loading || !passwordMeetsRequirements || !passwordsMatch}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
                 <UserPlus size={16} aria-hidden="true" />
@@ -353,12 +428,12 @@ export default function LoginPage() {
           ) : (
             <form className="space-y-4" onSubmit={handleSubmit}>
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email, username, or phone</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email</span>
                 <input
-                  type="text"
+                  type="email"
                   value={form.identifier}
                   onChange={(event) => setForm((current) => ({ ...current, identifier: event.target.value }))}
-                  autoComplete="username"
+                  autoComplete="email"
                   required
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
