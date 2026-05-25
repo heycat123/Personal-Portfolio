@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Languages } from 'lucide-react';
+import { ArrowLeft, FileText, Languages, Play } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -55,12 +55,15 @@ export default function DocumentDetailPage() {
   const { caseId, fileId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
-  const { t } = useLocaleSettings();
+  const { preferences, t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     error: null,
+    actionError: null,
     document: null,
     fingerprint: null,
+    languageJob: null,
+    languageAction: null,
   });
 
   const loadDocument = useCallback(async () => {
@@ -72,11 +75,14 @@ export default function DocumentDetailPage() {
       setState({
         loading: false,
         error: null,
+        actionError: null,
         document: result.data,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
+        languageJob: null,
+        languageAction: null,
       });
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -94,6 +100,44 @@ export default function DocumentDetailPage() {
   const document = state.document;
   const lowTextPages = useMemo(() => parseLowTextPages(document?.low_text_pages_json), [document]);
 
+  const queueLanguageJob = useCallback(async (jobType) => {
+    if (!document?.file_id) {
+      return;
+    }
+    setState((current) => ({ ...current, languageAction: jobType, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createJob(
+        caseId,
+        {
+          job_type: jobType,
+          input_json: {
+            requested_from: 'document_detail',
+            file_id: document.file_id,
+            file_hash: document.content_hash,
+            target_language: preferences.language || 'en-US',
+          },
+          priority: 0,
+        },
+        { token },
+      );
+      recordFingerprint(result, `Queue ${jobType}`);
+      setState((current) => ({
+        ...current,
+        languageAction: null,
+        languageJob: {
+          data: result.data,
+          fingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, languageAction: null, actionError: error }));
+    }
+  }, [caseId, document?.content_hash, document?.file_id, getAccessToken, preferences.language, recordFingerprint]);
+
   return (
     <div>
       <PageHeader
@@ -102,21 +146,57 @@ export default function DocumentDetailPage() {
         translateTitle={!document?.original_filename}
         translateDescription={false}
         actions={
-          <Link
-            to={`/evidence/cases/${caseId}/documents`}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
-          >
-            <ArrowLeft size={16} aria-hidden="true" />
-            {t('Documents')}
-          </Link>
+          <>
+            <button
+              type="button"
+              onClick={() => queueLanguageJob('document_language_detect')}
+              disabled={!document || Boolean(state.languageAction)}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              <Play size={16} aria-hidden="true" />
+              {state.languageAction === 'document_language_detect' ? t('Queueing') : t('Queue language detection')}
+            </button>
+            <button
+              type="button"
+              onClick={() => queueLanguageJob('document_translation_cache')}
+              disabled={!document || Boolean(state.languageAction)}
+              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Languages size={16} aria-hidden="true" />
+              {state.languageAction === 'document_translation_cache' ? t('Queueing') : t('Queue translation cache')}
+            </button>
+            <Link
+              to={`/evidence/cases/${caseId}/documents`}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              {t('Documents')}
+            </Link>
+          </>
         }
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocument} /></div> : null}
+      {state.actionError ? <div className="mb-5"><ErrorPanel title={t('Language job failed')} error={state.actionError} /></div> : null}
 
       {state.fingerprint?.id ? (
         <div className="mb-5">
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
+        </div>
+      ) : null}
+      {state.languageJob?.fingerprint?.id ? (
+        <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+          <div className="font-semibold">{t('Language job queued')}</div>
+          <div className="mt-1 break-words">
+            {state.languageJob.data?.job_type || t('Job')} {state.languageJob.data?.job_id ? `| ${state.languageJob.data.job_id}` : ''}
+          </div>
+          <div className="mt-3">
+            <RequestFingerprint
+              fingerprintId={state.languageJob.fingerprint.id}
+              correlationId={state.languageJob.fingerprint.correlationId}
+              label={t('Action fingerprint')}
+            />
+          </div>
         </div>
       ) : null}
 
