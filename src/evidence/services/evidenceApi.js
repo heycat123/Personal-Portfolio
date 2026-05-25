@@ -136,6 +136,20 @@ export const evidenceApi = {
     request(casePath(caseId, '/documents'), { ...options, query: params }),
   getDocument: (caseId, fileId, options) =>
     request(casePath(caseId, `/documents/${encodeURIComponent(fileId)}`), options),
+  getEntities: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/entities'), { ...options, query: params }),
+  getEntity: (caseId, personId, options) =>
+    request(casePath(caseId, `/entities/${encodeURIComponent(personId)}`), options),
+  getEntityMergeSuggestions: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/entities/merge-suggestions'), { ...options, query: params }),
+  reviewEntityAlias: (caseId, personId, payload, options) =>
+    request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/aliases/review`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
+  createEntityMergeDecision: (caseId, payload, options) =>
+    request(casePath(caseId, '/entities/merge-decisions'), { ...options, method: 'POST', body: payload }),
   presignDocumentUpload: (caseId, payload, options) =>
     request(casePath(caseId, '/documents/presign-upload'), { ...options, method: 'POST', body: payload }),
   registerDocumentUpload: (caseId, payload, options) =>
