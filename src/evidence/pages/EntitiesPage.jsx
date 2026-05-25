@@ -808,7 +808,7 @@ export default function EntitiesPage() {
         </div>
       </div>
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-5">
         <div>
           <DataTable
             rows={state.entities}
@@ -911,20 +911,17 @@ export default function EntitiesPage() {
           </section>
         </div>
 
-        <div className="hidden 2xl:block">
-          {renderEntityDetailPanel(entity)}
-        </div>
       </div>
 
       {detailDrawerOpen ? (
-        <div className="fixed inset-0 z-50 2xl:hidden" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
           <button
             type="button"
             aria-label="Close entity details"
             onClick={() => setDetailDrawerOpen(false)}
             className="absolute inset-0 bg-black/50"
           />
-          <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
+          <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-2xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
               <div>
                 <div className="text-sm font-semibold text-gray-950 dark:text-white">Entity Details</div>

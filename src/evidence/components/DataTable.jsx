@@ -359,7 +359,7 @@ export default function DataTable({
 
       <div className="hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:block">
         <div className="max-h-[calc(100vh-260px)] overflow-auto">
-          <table className="w-full table-auto text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm">
             <thead className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:border-gray-800 dark:bg-[#0c1218] dark:text-gray-400">
               <tr>
                 {hasDetailPanel ? <th className="w-10 px-2 py-2" /> : null}
@@ -391,7 +391,7 @@ export default function DataTable({
                         </td>
                       ) : null}
                       {visibleColumns.map((column) => (
-                        <td key={columnId(column)} className={`px-3 py-2 align-top text-gray-700 dark:text-gray-300 ${column.className || ''}`}>
+                        <td key={columnId(column)} className={`break-words px-3 py-2 align-top text-gray-700 dark:text-gray-300 ${column.className || ''}`}>
                           {renderCell(column, row)}
                         </td>
                       ))}
