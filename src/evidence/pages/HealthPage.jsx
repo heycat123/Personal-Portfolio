@@ -1,6 +1,6 @@
 import { Activity, Database, GitCompare, Play, Server } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import MetricTile from '../components/MetricTile';
@@ -31,6 +31,9 @@ export default function HealthPage() {
     smokeResult: null,
     smokeError: null,
     smokeRunning: false,
+    alignmentJob: null,
+    alignmentJobError: null,
+    alignmentJobRunning: false,
     fingerprints: [],
   });
 
@@ -93,6 +96,41 @@ export default function HealthPage() {
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
+  const queueSourceAlignmentAudit = useCallback(async () => {
+    setState((current) => ({ ...current, alignmentJobRunning: true, alignmentJobError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createJob(
+        caseId,
+        {
+          job_type: 'source_alignment_audit',
+          input_json: {
+            requested_from: 'health_page',
+            mode: 'read_only',
+            cloud_neo4j: true,
+            scan_google_drive_api: true,
+          },
+          priority: 0,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Queue source alignment audit');
+      setState((current) => ({
+        ...current,
+        alignmentJobRunning: false,
+        alignmentJob: {
+          data: result.data,
+          fingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, alignmentJobRunning: false, alignmentJobError: error }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadHealth();
@@ -147,12 +185,22 @@ export default function HealthPage() {
               <Play size={16} aria-hidden="true" />
               {state.smokeRunning ? 'Running' : 'Run S3 smoke'}
             </button>
+            <button
+              type="button"
+              onClick={queueSourceAlignmentAudit}
+              disabled={state.alignmentJobRunning}
+              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Play size={16} aria-hidden="true" />
+              {state.alignmentJobRunning ? 'Queueing' : 'Queue alignment check'}
+            </button>
           </>
         }
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadHealth} /></div> : null}
       {state.smokeError ? <div className="mb-5"><ErrorPanel title="Storage smoke failed" error={state.smokeError} /></div> : null}
+      {state.alignmentJobError ? <div className="mb-5"><ErrorPanel title="Alignment job failed" error={state.alignmentJobError} /></div> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricTile
@@ -327,6 +375,44 @@ export default function HealthPage() {
                   <RequestFingerprint
                     fingerprintId={state.smokeResult.fingerprint.id}
                     correlationId={state.smokeResult.fingerprint.correlationId}
+                    compact
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {state.alignmentJob ? (
+            <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">Latest Alignment Job</h3>
+                <StatusBadge status={state.alignmentJob.data?.job?.status || 'queued'} />
+              </div>
+              <dl className="mt-4 space-y-3 text-sm">
+                {[
+                  ['Job ID', state.alignmentJob.data?.job?.job_id],
+                  ['Type', state.alignmentJob.data?.job?.job_type],
+                  ['Status', state.alignmentJob.data?.job?.status],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</dt>
+                    <dd className="mt-1 break-words text-gray-900 dark:text-gray-100">{value || 'Not returned'}</dd>
+                  </div>
+                ))}
+              </dl>
+              {state.alignmentJob.data?.job?.job_id ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/jobs/${state.alignmentJob.data.job.job_id}`}
+                  className="mt-3 inline-flex rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+                >
+                  Open job
+                </Link>
+              ) : null}
+              {state.alignmentJob.fingerprint?.id ? (
+                <div className="mt-4">
+                  <RequestFingerprint
+                    fingerprintId={state.alignmentJob.fingerprint.id}
+                    correlationId={state.alignmentJob.fingerprint.correlationId}
                     compact
                   />
                 </div>

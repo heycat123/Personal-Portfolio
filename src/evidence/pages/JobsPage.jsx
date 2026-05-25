@@ -11,7 +11,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
-const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke'];
+const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
 export default function JobsPage() {
   const { caseId } = useParams();

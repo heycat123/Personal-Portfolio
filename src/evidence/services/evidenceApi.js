@@ -190,6 +190,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/graph/health'), options),
   getSourceAlignmentLatest: (caseId, options) =>
     request(casePath(caseId, '/source-alignment/latest'), options),
+  queryCase: (caseId, payload, options) =>
+    request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
   runStorageSmoke: (caseId, options) =>
     request(casePath(caseId, '/storage/smoke'), { ...options, method: 'POST' }),
   getJobs: (caseId, params = {}, options = {}) =>
