@@ -79,7 +79,7 @@ function SubmitResult({ result }) {
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div>
           <div className="text-xs font-semibold uppercase tracking-normal opacity-70">Ticket</div>
-          <div className="font-mono text-xs">{result.record.support_record_id}</div>
+          <div className="break-all font-mono text-xs leading-5">{result.record.support_record_id}</div>
         </div>
         <div>
           <div className="text-xs font-semibold uppercase tracking-normal opacity-70">Initial category</div>
@@ -157,6 +157,7 @@ export default function SupportFeedbackDrawer() {
       const response = await evidenceApi.createSupportRecord(activeCase.caseId, payload, { token });
       recordFingerprint(response, `${drawerTitle} submitted`);
       setResult(response.data);
+      setForm(DEFAULT_FORMS[mode]);
       window.dispatchEvent(new CustomEvent('evidence-support-record-created', { detail: response.data }));
     } catch (submitError) {
       setError(submitError);

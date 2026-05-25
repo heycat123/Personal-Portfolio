@@ -26,6 +26,7 @@ export default function HealthPage() {
     caseHealth: null,
     storageHealth: null,
     graphHealth: null,
+    queueHealth: null,
     sourceAlignment: null,
     rawParity: null,
     smokeResult: null,
@@ -45,12 +46,13 @@ export default function HealthPage() {
       evidenceApi.getStorageHealth(caseId, { token }),
       evidenceApi.getRawParity(caseId, { token }),
       evidenceApi.getGraphHealth(caseId, { token }),
+      evidenceApi.getQueueHealth(caseId, { token }),
       evidenceApi.getSourceAlignmentLatest(caseId, { token }),
     ]);
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health', 'Source alignment'];
+        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health', 'Queue health', 'Source alignment'];
         recordFingerprint(result.value, labels[index]);
       }
     });
@@ -64,7 +66,8 @@ export default function HealthPage() {
       storageHealth: fulfilledValue(results[1])?.data || null,
       rawParity: fulfilledValue(results[2])?.data || null,
       graphHealth: fulfilledValue(results[3])?.data || null,
-      sourceAlignment: fulfilledValue(results[4])?.data || null,
+      queueHealth: fulfilledValue(results[4])?.data || null,
+      sourceAlignment: fulfilledValue(results[5])?.data || null,
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
@@ -142,6 +145,7 @@ export default function HealthPage() {
   const database = state.caseHealth?.database;
   const storage = state.storageHealth || state.caseHealth?.storage;
   const graph = state.graphHealth || state.caseHealth?.graph;
+  const queue = state.queueHealth || state.caseHealth?.queue || {};
   const graphError = graph?.error_message || graph?.reason;
   const graphCaseTotals = graph?.case_totals || {};
   const vectorCoverage = graph?.chunk_embedding_coverage || {};
@@ -202,7 +206,7 @@ export default function HealthPage() {
       {state.smokeError ? <div className="mb-5"><ErrorPanel title="Storage smoke failed" error={state.smokeError} /></div> : null}
       {state.alignmentJobError ? <div className="mb-5"><ErrorPanel title="Alignment job failed" error={state.alignmentJobError} /></div> : null}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MetricTile
           icon={Database}
           label="Postgres"
@@ -232,6 +236,22 @@ export default function HealthPage() {
               : graphError || 'No Neo4j payload returned'
           }
           tone={graph?.ok ? 'good' : graph?.configured ? 'bad' : 'warn'}
+        />
+        <MetricTile
+          icon={Activity}
+          label="Queue"
+          value={
+            <StatusBadge
+              status={queue.rabbitmq?.ok && queue.redis?.ok ? 'online' : queue.rabbitmq?.configured || queue.redis?.configured ? 'degraded' : 'unknown'}
+              label={queue.rabbitmq?.ok && queue.redis?.ok ? 'Ready' : queue.rabbitmq?.configured || queue.redis?.configured ? 'Check' : 'Not configured'}
+            />
+          }
+          detail={
+            queue.rabbitmq?.ok && queue.redis?.ok
+              ? `${queue.rabbitmq.queue} has ${queue.rabbitmq.message_count || 0} message(s); Redis ping OK`
+              : queue.rabbitmq?.error_message || queue.redis?.error_message || queue.rabbitmq?.reason || 'Queue health not returned'
+          }
+          tone={queue.rabbitmq?.ok && queue.redis?.ok ? 'good' : queue.rabbitmq?.configured || queue.redis?.configured ? 'warn' : 'default'}
         />
         <MetricTile
           icon={Activity}

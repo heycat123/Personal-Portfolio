@@ -232,6 +232,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/storage/health'), options),
   getGraphHealth: (caseId, options) =>
     request(casePath(caseId, '/graph/health'), options),
+  getQueueHealth: (caseId, options) =>
+    request(casePath(caseId, '/queue/health'), options),
   getSourceAlignmentLatest: (caseId, options) =>
     request(casePath(caseId, '/source-alignment/latest'), options),
   queryCase: (caseId, payload, options) =>
