@@ -42,7 +42,7 @@ Run your normal local checks on the branch:
 
 ### HTTPS limitation
 
-Some parts may require HTTPS and/or secure-origin behavior (auth cookies, OAuth/OIDC, some browsers’ auth restrictions). If your current flow requires that:
+Some parts may require HTTPS and/or secure-origin behavior (auth cookies, OAuth/OIDC, some browsers' auth restrictions). If your current flow requires that:
 - Use the frontend dev server with HTTPS if practical
 - Or test these flows in a staging environment that is HTTPS-enabled
 
@@ -156,7 +156,7 @@ response_type=code
 scope=phone openid email
 ```
 
-The current frontend implementation uses Amplify direct user-pool APIs. Switching to Hosted UI is a contained auth-provider change, but sign-out redirect also needs the Cognito hosted UI domain, for example `https://<prefix>.auth.us-east-2.amazoncognito.com`.
+The current frontend implementation uses Amplify direct user-pool APIs. Switching to Hosted UI is a contained auth-provider change, but sign-out redirect also needs the Cognito hosted UI domain, `https://us-east-22wylizvqf.auth.us-east-2.amazoncognito.com`.
 
 Do not commit `.pem` files.
 
