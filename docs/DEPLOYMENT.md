@@ -124,6 +124,40 @@ VITE_EVIDENCE_API_BASE_URL=/evidence-api
 VITE_EVIDENCE_AUTH_MODE=local
 ```
 
+For Cognito deployment, use the current SPA user pool/client:
+
+```text
+VITE_EVIDENCE_AUTH_MODE=cognito
+VITE_AWS_REGION=us-east-2
+VITE_COGNITO_USER_POOL_ID=us-east-2_2WYlizVQF
+VITE_COGNITO_USER_POOL_CLIENT_ID=6vrgv8dj5tqktnpo4svd52121q
+```
+
+The matching Cognito app client callback and logout URLs are:
+
+```text
+https://forestlee.us/evidence/login
+http://localhost:5173/evidence/login
+```
+
+AWS's Hosted UI SPA sample uses:
+
+```text
+npm install oidc-client-ts react-oidc-context --save
+```
+
+with:
+
+```text
+authority=https://cognito-idp.us-east-2.amazonaws.com/us-east-2_2WYlizVQF
+client_id=6vrgv8dj5tqktnpo4svd52121q
+redirect_uri=https://forestlee.us/evidence/login
+response_type=code
+scope=phone openid email
+```
+
+The current frontend implementation uses Amplify direct user-pool APIs. Switching to Hosted UI is a contained auth-provider change, but sign-out redirect also needs the Cognito hosted UI domain, for example `https://<prefix>.auth.us-east-2.amazoncognito.com`.
+
 Do not commit `.pem` files.
 
 ## 6) Deployment targets and runtime config
