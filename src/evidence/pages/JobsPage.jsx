@@ -8,6 +8,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import useJobStatusPolling, { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
@@ -30,8 +31,10 @@ export default function JobsPage() {
     createdFingerprint: null,
   });
 
-  const loadJobs = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: null }));
+  const loadJobs = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) {
+      setState((current) => ({ ...current, loading: true, error: null }));
+    }
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getJobs(caseId, { limit: 50, offset: 0 }, { token });
@@ -51,6 +54,26 @@ export default function JobsPage() {
       setState((current) => ({ ...current, loading: false, error }));
     }
   }, [caseId, getAccessToken, recordFingerprint]);
+
+  const handleLiveJobs = useCallback((jobs, payload, result) => {
+    setState((current) => ({
+      ...current,
+      loading: false,
+      error: null,
+      jobs,
+      total: payload?.total || jobs.length,
+      fingerprint: {
+        id: result.requestFingerprintId,
+        correlationId: result.correlationId,
+      },
+    }));
+  }, []);
+
+  const liveJobs = useJobStatusPolling({
+    caseId,
+    intervalMs: 5000,
+    onJobsChange: handleLiveJobs,
+  });
 
   const createSafeJob = useCallback(async (jobType) => {
     setState((current) => ({ ...current, creatingJobType: jobType, createError: null, actionError: null }));
@@ -76,7 +99,7 @@ export default function JobsPage() {
           correlationId: result.correlationId,
         },
       }));
-      await loadJobs();
+      await loadJobs({ quiet: true });
     } catch (error) {
       setState((current) => ({ ...current, creatingJobType: null, createError: error }));
     }
@@ -88,7 +111,7 @@ export default function JobsPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.cancelJob(caseId, jobId, { token });
       recordFingerprint(result, 'Cancel job');
-      await loadJobs();
+      await loadJobs({ quiet: true });
     } catch (error) {
       setState((current) => ({ ...current, actionError: error }));
     } finally {
@@ -102,7 +125,7 @@ export default function JobsPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.retryJob(caseId, jobId, { token });
       recordFingerprint(result, 'Retry job');
-      await loadJobs();
+      await loadJobs({ quiet: true });
     } catch (error) {
       setState((current) => ({ ...current, actionError: error }));
     } finally {
@@ -118,6 +141,8 @@ export default function JobsPage() {
     return () => window.clearTimeout(timerId);
   }, [loadJobs]);
 
+  const activeJobCount = state.jobs.filter(isActiveJob).length;
+
   return (
     <div>
       <PageHeader
@@ -127,7 +152,7 @@ export default function JobsPage() {
           <>
             <button
               type="button"
-              onClick={loadJobs}
+              onClick={() => loadJobs()}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <RefreshCw size={16} aria-hidden="true" />
@@ -154,6 +179,14 @@ export default function JobsPage() {
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Job action failed" error={state.actionError} /></div> : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
+        <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
+          Live updates: {activeJobCount || liveJobs.activeCount} active
+        </span>
+        {liveJobs.lastFinishedJob ? (
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
+            Last finished: {liveJobs.lastFinishedJob.job_type}
+          </span>
+        ) : null}
         {state.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" />
         ) : null}
@@ -169,7 +202,14 @@ export default function JobsPage() {
       <DataTable
         rows={state.jobs}
         rowKey={(job) => job.job_id}
+        loading={state.loading}
         emptyTitle={state.loading ? 'Loading jobs' : 'No jobs returned'}
+        mobileTitle={(job) => (
+          <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
+            {job.job_type}
+          </Link>
+        )}
+        mobileSubtitle={(job) => `${job.status} · ${formatDateTime(job.created_at)}`}
         columns={[
           {
             key: 'job_type',

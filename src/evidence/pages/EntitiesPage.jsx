@@ -1,12 +1,14 @@
-import { Check, ChevronDown, ChevronRight, ExternalLink, Filter, GitMerge, HelpCircle, RefreshCw, X } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Check, ExternalLink, GitMerge, HelpCircle, RefreshCw, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import useJobStatusPolling from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { humanizeKey, truncateMiddle } from '../utils/formatters';
 
@@ -160,92 +162,6 @@ function entityColumnValue(entity, columnId) {
   return entity[columnId] || 0;
 }
 
-function ColumnHeaderMenu({
-  column,
-  filterValue,
-  isOpen,
-  isSorted,
-  sortDescending,
-  onClearFilter,
-  onFilterChange,
-  onSetSort,
-  onToggle,
-}) {
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="inline-flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left hover:bg-gray-100 dark:hover:bg-white/10"
-        title={`${column.label} filter and sort`}
-      >
-        <span className="inline-flex min-w-0 items-center gap-1">
-          <span className="truncate">{column.label}</span>
-          <InfoTip label={column.help} />
-        </span>
-        <span className="inline-flex items-center gap-1 text-gray-400">
-          {filterValue ? <Filter size={13} aria-hidden="true" /> : null}
-          {isSorted ? <span className="text-xs text-sky-700 dark:text-sky-300">{sortDescending ? 'down' : 'up'}</span> : null}
-          <ChevronDown size={14} aria-hidden="true" />
-        </span>
-      </button>
-      {isOpen ? (
-        <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border border-gray-200 bg-white p-3 text-sm normal-case tracking-normal text-gray-800 shadow-xl dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Sort</div>
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onSetSort(false)}
-              className={`rounded-md border px-2 py-1.5 text-xs font-semibold ${isSorted && !sortDescending ? 'border-sky-600 bg-sky-50 text-sky-800 dark:border-sky-500 dark:bg-sky-950/50 dark:text-sky-200' : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10'}`}
-            >
-              Ascending
-            </button>
-            <button
-              type="button"
-              onClick={() => onSetSort(true)}
-              className={`rounded-md border px-2 py-1.5 text-xs font-semibold ${isSorted && sortDescending ? 'border-sky-600 bg-sky-50 text-sky-800 dark:border-sky-500 dark:bg-sky-950/50 dark:text-sky-200' : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-white/10'}`}
-            >
-              Descending
-            </button>
-          </div>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-              {column.id === 'canonical_name' ? 'Filter contains' : 'Minimum value'}
-            </span>
-            <input
-              value={filterValue}
-              onChange={(event) => onFilterChange(event.target.value)}
-              type={column.filterType}
-              min={column.filterType === 'number' ? '0' : undefined}
-              max={column.max}
-              step={column.step || '1'}
-              placeholder={column.placeholder}
-              className="w-full rounded-md border border-gray-300 bg-white px-2 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-            />
-          </label>
-          <div className="mt-3 flex justify-between gap-2">
-            <button
-              type="button"
-              onClick={onClearFilter}
-              disabled={!filterValue}
-              className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-            >
-              Clear filter
-            </button>
-            <button
-              type="button"
-              onClick={onToggle}
-              className="rounded-md border border-sky-700 bg-sky-700 px-2 py-1.5 text-xs font-semibold text-white hover:bg-sky-800"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export default function EntitiesPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -253,8 +169,8 @@ export default function EntitiesPage() {
   const [columnFilters, setColumnFilters] = useState([]);
   const [sorting, setSorting] = useState(DEFAULT_SORTING);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE });
-  const [openColumnMenu, setOpenColumnMenu] = useState(null);
   const [selectedPersonId, setSelectedPersonId] = useState(null);
+  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [rowDetails, setRowDetails] = useState({});
   const [customAlias, setCustomAlias] = useState('');
@@ -398,13 +314,27 @@ export default function EntitiesPage() {
     return () => window.clearTimeout(timerId);
   }, [loadEntityDetail, selectedPersonId]);
 
+  const refreshEntityWorkspace = useCallback(async () => {
+    await loadEntities();
+    await loadSuggestions();
+    if (selectedPersonId) {
+      await loadEntityDetail(selectedPersonId);
+      await loadEntityDetail(selectedPersonId, { forRow: true, silent: true });
+    }
+  }, [loadEntities, loadEntityDetail, loadSuggestions, selectedPersonId]);
+
+  const liveJobs = useJobStatusPolling({
+    caseId,
+    intervalMs: 6000,
+    onJobFinished: refreshEntityWorkspace,
+  });
+
   const resetEntityTable = useCallback(() => {
     setColumnFilters([]);
     setSorting(DEFAULT_SORTING);
     setPagination({ pageIndex: 0, pageSize: PAGE_SIZE });
     setSelectedPersonId(null);
     setExpanded({});
-    setOpenColumnMenu(null);
   }, []);
 
   const handleColumnFiltersChange = useCallback((updater) => {
@@ -626,12 +556,6 @@ export default function EntitiesPage() {
     label: `${FILTER_LABELS[filter.id] || humanizeKey(filter.id)} ${filter.value}`,
   }));
   const activeSort = sorting[0] || DEFAULT_SORTING[0];
-  const currentPage = pagination.pageIndex + 1;
-  const totalPages = Math.max(1, Math.ceil((state.total || 0) / pagination.pageSize));
-  const canGoPrevious = pagination.pageIndex > 0;
-  const canGoNext = pagination.pageIndex + 1 < totalPages;
-  const firstVisibleRow = state.total ? pagination.pageIndex * pagination.pageSize + 1 : 0;
-  const lastVisibleRow = Math.min(state.total, (pagination.pageIndex + 1) * pagination.pageSize);
 
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
@@ -704,6 +628,133 @@ export default function EntitiesPage() {
     });
   };
 
+  const openEntityDetail = useCallback((personId) => {
+    setSelectedPersonId(personId);
+    setDetailDrawerOpen(true);
+  }, []);
+
+  const entityFilterValues = useMemo(
+    () => Object.fromEntries(normalizedFilters.map((filter) => [filter.id, filter.value])),
+    [normalizedFilters],
+  );
+
+  const entityTableColumns = useMemo(() => ENTITY_COLUMNS.map((column) => {
+    if (column.id === 'canonical_name') {
+      return {
+        ...column,
+        key: column.id,
+        header: column.label,
+        sortable: true,
+        filterable: true,
+        className: 'min-w-[220px]',
+        render: (item) => (
+          <div className="flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => openEntityDetail(item.person_id)}
+              className={`min-w-0 text-left font-semibold ${selectedPersonId === item.person_id ? 'text-sky-700 dark:text-sky-300' : 'text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300'}`}
+            >
+              <span className="block break-words">{item.canonical_name || item.person_id}</span>
+              <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">{truncateMiddle(item.person_id, 28)}</span>
+            </button>
+            <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="mt-0.5 shrink-0 text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
+              <ExternalLink size={14} aria-hidden="true" />
+            </Link>
+          </div>
+        ),
+      };
+    }
+
+    return {
+      ...column,
+      key: column.id,
+      header: column.label,
+      sortable: true,
+      filterable: true,
+      render: (item) => entityColumnValue(item, column.id),
+    };
+  }), [caseId, openEntityDetail, selectedPersonId]);
+
+  const renderEntityDetailPanel = (detailEntity, { inDrawer = false } = {}) => (
+    <aside className={inDrawer ? 'h-full overflow-auto p-4' : 'space-y-5'}>
+      <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{detailEntity?.canonical_name || 'Select an entity'}</h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{detailEntity ? truncateMiddle(detailEntity.person_id, 36) : 'Choose a row to inspect aliases and provenance.'}</p>
+          </div>
+          {detailEntity ? <StatusBadge status="configured" label={detailEntity.entity_type || 'entity'} /> : null}
+        </div>
+        {state.detailFingerprint?.id ? <div className="mt-3"><RequestFingerprint fingerprintId={state.detailFingerprint.id} correlationId={state.detailFingerprint.correlationId} compact /></div> : null}
+        {detailEntity ? (
+          <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+            <div>
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confidence <InfoTip label="Average extraction/entity-resolution confidence from ingestion." /></div>
+              <div className="text-gray-950 dark:text-white">{confidenceLabel(detailEntity.confidence)}</div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Source Rows</div>
+              <div className="text-gray-950 dark:text-white">{detailEntity.source_rows || 0}</div>
+            </div>
+            <div>
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confirmed <InfoTip label="Human alias confirmations for this entity. The confirmation record includes who confirmed it." /></div>
+              <div className="text-gray-950 dark:text-white">{confirmedAliases.length}</div>
+            </div>
+          </div>
+        ) : null}
+        {detailEntity ? (
+          <Link to={`/evidence/cases/${caseId}/entities/${detailEntity.person_id}`} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100">
+            <ExternalLink size={15} aria-hidden="true" />
+            Open full entity page
+          </Link>
+        ) : null}
+      </section>
+
+      {detailEntity ? (
+        <>
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              Add Confirmed Alias
+              <InfoTip label="Use this only when you know another name, typo, nickname, role, or spelling should resolve to this selected entity." />
+            </h3>
+            <div className="mt-3 flex gap-2">
+              <input value={customAlias} onChange={(event) => setCustomAlias(event.target.value)} placeholder="Example: Kayla Willson" className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+              <button type="button" onClick={addConfirmedAlias} disabled={!customAlias.trim() || state.actionId === 'custom_alias'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+                <Check size={15} aria-hidden="true" />
+                Add
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">Aliases For {detailEntity.canonical_name}</h3>
+            <div className="mt-3 space-y-2">{renderAliasRows(detailEntity)}</div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">Documents Mentioning This Entity</h3>
+            <ul className="mt-3 max-h-56 space-y-2 overflow-auto text-sm text-gray-700 dark:text-gray-300">
+              {(detailEntity.document_mentions || []).slice(0, 20).map((document) => (
+                <li key={document.file_hash} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
+                  {document.file_id ? (
+                    <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300">
+                      {document.original_filename || document.file_hash}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold">{document.original_filename || document.file_hash}</span>
+                  )}
+                  <span className="block text-xs text-gray-500 dark:text-gray-400">
+                    {document.mention_count} mention(s); pages {(document.pages || []).slice(0, 8).join(', ') || 'n/a'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
+      ) : null}
+    </aside>
+  );
+
   return (
     <div>
       <PageHeader
@@ -745,241 +796,75 @@ export default function EntitiesPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
-            {sortingLabel(sorting)}
+            Live jobs: {liveJobs.activeCount} active
           </span>
-          {appliedFilterLabels.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => clearColumnFilter(filter.id)}
-              className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-100"
-              title="Remove this filter"
-            >
-              {filter.label}
-              <X size={12} aria-hidden="true" />
-            </button>
-          ))}
-          {appliedFilterLabels.length ? (
-            <button
-              type="button"
-              onClick={resetEntityTable}
-              className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
-            >
-              Clear filters
-            </button>
+          {liveJobs.lastFinishedJob ? (
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
+              Updated after {humanizeKey(liveJobs.lastFinishedJob.job_type)}
+            </span>
           ) : null}
           {state.fingerprint?.id ? <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" /> : null}
           {state.actionFingerprint?.id ? <RequestFingerprint fingerprintId={state.actionFingerprint.id} correlationId={state.actionFingerprint.correlationId} label="Action fingerprint" /> : null}
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_420px]">
         <div>
-          <div className="mb-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:hidden">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Sort and filter</div>
-            <div className="flex flex-wrap gap-2">
-              {ENTITY_COLUMNS.map((column) => {
-                const filterValue = getColumnFilterValue(columnFilters, column.id);
-                const isSorted = activeSort.id === column.id;
-                return (
-                  <div key={column.id} className="min-w-[150px] flex-1">
-                    <ColumnHeaderMenu
-                      column={column}
-                      filterValue={filterValue}
-                      isOpen={openColumnMenu === `mobile_${column.id}`}
-                      isSorted={isSorted}
-                      sortDescending={activeSort.desc}
-                      onClearFilter={() => clearColumnFilter(column.id)}
-                      onFilterChange={(value) => setColumnFilterValue(column.id, value)}
-                      onSetSort={(desc) => setColumnSort(column.id, desc)}
-                      onToggle={() => setOpenColumnMenu((current) => (current === `mobile_${column.id}` ? null : `mobile_${column.id}`))}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:block">
-            <div className="max-h-[calc(100vh-260px)] overflow-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:border-gray-800 dark:bg-[#0c1218] dark:text-gray-400">
-                  <tr>
-                    <th className="w-10 px-2 py-2" />
-                    {ENTITY_COLUMNS.map((column) => {
-                      const filterValue = getColumnFilterValue(columnFilters, column.id);
-                      const isSorted = activeSort.id === column.id;
-                      return (
-                        <th key={column.id} className={`px-2 py-2 align-top ${column.headerClassName || ''}`}>
-                          <ColumnHeaderMenu
-                            column={column}
-                            filterValue={filterValue}
-                            isOpen={openColumnMenu === column.id}
-                            isSorted={isSorted}
-                            sortDescending={activeSort.desc}
-                            onClearFilter={() => clearColumnFilter(column.id)}
-                            onFilterChange={(value) => setColumnFilterValue(column.id, value)}
-                            onSetSort={(desc) => setColumnSort(column.id, desc)}
-                            onToggle={() => setOpenColumnMenu((current) => (current === column.id ? null : column.id))}
-                          />
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {state.entities.map((item) => {
-                    const isExpanded = Boolean(expanded[item.person_id]);
-                    const detail = rowDetails[item.person_id];
-                    return (
-                      <Fragment key={item.person_id}>
-                        <tr className="hover:bg-gray-50 dark:hover:bg-white/[0.03]">
-                          <td className="px-2 py-2 align-top">
-                            <button
-                              type="button"
-                              onClick={() => toggleExpanded(item.person_id)}
-                              className="rounded-md p-1 hover:bg-gray-100 dark:hover:bg-white/10"
-                              title="Expand aliases"
-                            >
-                              {isExpanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                            </button>
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            <div className="flex items-start gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedPersonId(item.person_id)}
-                                className={`text-left font-semibold ${selectedPersonId === item.person_id ? 'text-sky-700 dark:text-sky-300' : 'text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300'}`}
-                              >
-                                {item.canonical_name || item.person_id}
-                                <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">{truncateMiddle(item.person_id, 28)}</span>
-                              </button>
-                              <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="mt-0.5 text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
-                                <ExternalLink size={14} aria-hidden="true" />
-                              </Link>
-                            </div>
-                          </td>
-                          {ENTITY_COLUMNS.slice(1).map((column) => (
-                            <td key={column.id} className="px-3 py-2 align-top text-gray-700 dark:text-gray-300">
-                              {entityColumnValue(item, column.id)}
-                            </td>
-                          ))}
-                        </tr>
-                        {isExpanded ? (
-                          <tr>
-                            <td colSpan={ENTITY_COLUMNS.length + 1} className="bg-gray-50 px-4 py-3 dark:bg-black/20">
-                              {detail ? (
-                                <div>
-                                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-                                    Aliases currently attached to {detail.canonical_name}
-                                  </div>
-                                  <div className="grid gap-2 xl:grid-cols-2">{renderAliasRows(detail, true)}</div>
-                                </div>
-                              ) : (
-                                <div className="text-sm text-gray-600 dark:text-gray-400">Loading aliases...</div>
-                              )}
-                            </td>
-                          </tr>
-                        ) : null}
-                      </Fragment>
-                    );
-                  })}
-                  {!state.entities.length ? (
-                    <tr>
-                      <td colSpan={ENTITY_COLUMNS.length + 1} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-                        {state.loading ? 'Loading entities' : 'No entities matched'}
-                      </td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="space-y-3 lg:hidden">
-            {state.entities.map((item) => {
-              const isExpanded = Boolean(expanded[item.person_id]);
+          <DataTable
+            rows={state.entities}
+            rowKey={(item) => item.person_id}
+            columns={entityTableColumns}
+            loading={state.loading}
+            emptyTitle={state.loading ? 'Loading entities' : 'No entities matched'}
+            enableHeaderMenus
+            filterValues={entityFilterValues}
+            sort={{ key: activeSort.id, desc: activeSort.desc }}
+            sortLabel={sortingLabel(sorting)}
+            appliedFilters={appliedFilterLabels}
+            onFilterChange={setColumnFilterValue}
+            onClearFilter={clearColumnFilter}
+            onClearAllFilters={resetEntityTable}
+            onSort={setColumnSort}
+            expandedRows={expanded}
+            onToggleRow={(item) => toggleExpanded(item.person_id)}
+            selectedRowKey={selectedPersonId}
+            renderDetailPanel={(item) => {
               const detail = rowDetails[item.person_id];
-              return (
-                <section key={item.person_id} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                  <div className="flex items-start justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPersonId(item.person_id)}
-                      className={`min-w-0 text-left font-semibold ${selectedPersonId === item.person_id ? 'text-sky-700 dark:text-sky-300' : 'text-gray-950 dark:text-white'}`}
-                    >
-                      {item.canonical_name || item.person_id}
-                      <span className="block text-xs font-normal text-gray-500 dark:text-gray-400">{truncateMiddle(item.person_id, 32)}</span>
-                    </button>
-                    <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
-                      <ExternalLink size={15} aria-hidden="true" />
-                    </Link>
+              return detail ? (
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
+                    Aliases currently attached to {detail.canonical_name}
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
-                    {ENTITY_COLUMNS.slice(1).map((column) => (
-                      <div key={column.id} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
-                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{column.label}</div>
-                        <div className="text-gray-950 dark:text-white">{entityColumnValue(item, column.id)}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(item.person_id)}
-                    className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-                  >
-                    {isExpanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
-                    Aliases
-                  </button>
-                  {isExpanded ? (
-                    <div className="mt-3">
-                      {detail ? (
-                        <div className="space-y-2">{renderAliasRows(detail, true)}</div>
-                      ) : (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">Loading aliases...</div>
-                      )}
-                    </div>
-                  ) : null}
-                </section>
+                  <div className="grid gap-2 xl:grid-cols-2">{renderAliasRows(detail, true)}</div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600 dark:text-gray-400">Loading aliases...</div>
               );
-            })}
-            {!state.entities.length ? (
-              <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-                {state.loading ? 'Loading entities' : 'No entities matched'}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-3 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              Showing {firstVisibleRow}-{lastVisibleRow} of {state.total} entities; page {currentPage} of {totalPages}
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={pagination.pageSize}
-                onChange={(event) => setPagination({ pageIndex: 0, pageSize: Number(event.target.value) })}
-                className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              >
-                {[25, 50, 100].map((size) => <option key={size} value={size}>{size} rows</option>)}
-              </select>
+            }}
+            mobileTitle={(item) => (
               <button
                 type="button"
-                onClick={() => setPagination((current) => ({ ...current, pageIndex: Math.max(0, current.pageIndex - 1) }))}
-                disabled={!canGoPrevious || state.loading}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+                onClick={() => openEntityDetail(item.person_id)}
+                className="min-w-0 text-left font-semibold text-gray-950 dark:text-white"
               >
-                Previous
+                {item.canonical_name || item.person_id}
               </button>
-              <button
-                type="button"
-                onClick={() => setPagination((current) => ({ ...current, pageIndex: current.pageIndex + 1 }))}
-                disabled={!canGoNext || state.loading}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+            )}
+            mobileSubtitle={(item) => truncateMiddle(item.person_id, 32)}
+            mobileActions={(item) => (
+              <Link to={`/evidence/cases/${caseId}/entities/${item.person_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title="Open entity page">
+                <ExternalLink size={15} aria-hidden="true" />
+              </Link>
+            )}
+            pagination={{
+              pageIndex: pagination.pageIndex,
+              pageSize: pagination.pageSize,
+              total: state.total,
+              pageSizeOptions: [25, 50, 100],
+              onPageChange: (pageIndex) => setPagination((current) => ({ ...current, pageIndex })),
+              onPageSizeChange: (pageSize) => setPagination({ pageIndex: 0, pageSize }),
+            }}
+          />
 
           <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -1026,84 +911,37 @@ export default function EntitiesPage() {
           </section>
         </div>
 
-        <aside className="space-y-5">
-          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{entity?.canonical_name || 'Select an entity'}</h3>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{entity ? truncateMiddle(entity.person_id, 36) : 'Choose a row to inspect aliases and provenance.'}</p>
-              </div>
-              {entity ? <StatusBadge status="configured" label={entity.entity_type || 'entity'} /> : null}
-            </div>
-            {state.detailFingerprint?.id ? <div className="mt-3"><RequestFingerprint fingerprintId={state.detailFingerprint.id} correlationId={state.detailFingerprint.correlationId} compact /></div> : null}
-            {entity ? (
-              <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-                <div>
-                  <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confidence <InfoTip label="Average extraction/entity-resolution confidence from ingestion." /></div>
-                  <div className="text-gray-950 dark:text-white">{confidenceLabel(entity.confidence)}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Source Rows</div>
-                  <div className="text-gray-950 dark:text-white">{entity.source_rows || 0}</div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">Confirmed <InfoTip label="Human alias confirmations for this entity. The confirmation record includes who confirmed it." /></div>
-                  <div className="text-gray-950 dark:text-white">{confirmedAliases.length}</div>
-                </div>
-              </div>
-            ) : null}
-            {entity ? (
-              <Link to={`/evidence/cases/${caseId}/entities/${entity.person_id}`} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100">
-                <ExternalLink size={15} aria-hidden="true" />
-                Open full entity page
-              </Link>
-            ) : null}
-          </section>
-
-          {entity ? (
-            <>
-              <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
-                  Add Confirmed Alias
-                  <InfoTip label="Use this only when you know another name, typo, nickname, role, or spelling should resolve to this selected entity." />
-                </h3>
-                <div className="mt-3 flex gap-2">
-                  <input value={customAlias} onChange={(event) => setCustomAlias(event.target.value)} placeholder="Example: Kayla Willson" className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
-                  <button type="button" onClick={addConfirmedAlias} disabled={!customAlias.trim() || state.actionId === 'custom_alias'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
-                    <Check size={15} aria-hidden="true" />
-                    Add
-                  </button>
-                </div>
-              </section>
-
-              <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">Aliases For {entity.canonical_name}</h3>
-                <div className="mt-3 space-y-2">{renderAliasRows(entity)}</div>
-              </section>
-
-              <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">Documents Mentioning This Entity</h3>
-                <ul className="mt-3 max-h-56 space-y-2 overflow-auto text-sm text-gray-700 dark:text-gray-300">
-                  {(entity.document_mentions || []).slice(0, 20).map((document) => (
-                    <li key={document.file_hash} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
-                      {document.file_id ? (
-                        <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300">
-                          {document.original_filename || document.file_hash}
-                        </Link>
-                      ) : (
-                        <span className="font-semibold">{document.original_filename || document.file_hash}</span>
-                      )}
-                      <span className="block text-xs text-gray-500 dark:text-gray-400">
-                        {document.mention_count} mention(s); pages {(document.pages || []).slice(0, 8).join(', ') || 'n/a'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            </>
-          ) : null}
-        </aside>
+        <div className="hidden 2xl:block">
+          {renderEntityDetailPanel(entity)}
+        </div>
       </div>
+
+      {detailDrawerOpen ? (
+        <div className="fixed inset-0 z-50 2xl:hidden" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label="Close entity details"
+            onClick={() => setDetailDrawerOpen(false)}
+            className="absolute inset-0 bg-black/50"
+          />
+          <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
+              <div>
+                <div className="text-sm font-semibold text-gray-950 dark:text-white">Entity Details</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{entity?.canonical_name || 'Select an entity'}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailDrawerOpen(false)}
+                className="rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            {renderEntityDetailPanel(entity, { inDrawer: true })}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
