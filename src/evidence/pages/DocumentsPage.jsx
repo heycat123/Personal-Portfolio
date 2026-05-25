@@ -196,18 +196,21 @@ export default function DocumentsPage() {
           {
             key: 'original_filename',
             header: 'File',
+            headerClassName: 'w-[34%]',
+            className: 'min-w-0',
             render: (document) => (
               <Link
                 to={`/evidence/cases/${caseId}/documents/${document.file_id}`}
-                className="inline-flex max-w-md items-center gap-2 font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300"
+                className="flex max-w-full min-w-0 items-center gap-2 font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300"
+                title={document.original_filename || document.file_id}
               >
-                <span className="truncate">{document.original_filename || document.file_id}</span>
-                <ExternalLink size={14} aria-hidden="true" />
+                <span className="min-w-0 truncate">{document.original_filename || document.file_id}</span>
+                <ExternalLink className="shrink-0" size={14} aria-hidden="true" />
               </Link>
             ),
           },
-          { key: 'source_provider', header: 'Source', render: (document) => document.source_provider || 'unknown' },
-          { key: 'source_of_truth_mode', header: 'Mode', render: (document) => document.source_of_truth_mode || 'unknown' },
+          { key: 'source_provider', header: 'Source', headerClassName: 'w-[12%]', render: (document) => document.source_provider || 'unknown' },
+          { key: 'source_of_truth_mode', header: 'Mode', headerClassName: 'w-[12%]', render: (document) => document.source_of_truth_mode || 'unknown' },
           { key: 'status', header: 'Status', render: (document) => <StatusBadge status={document.status} /> },
           { key: 'page_count', header: 'Pages', render: (document) => document.page_count ?? '0' },
           { key: 'extraction_method', header: 'Extraction', render: (document) => document.extraction_method || 'pending' },

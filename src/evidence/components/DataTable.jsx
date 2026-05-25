@@ -374,7 +374,7 @@ export default function DataTable({
               <tr>
                 {hasDetailPanel ? <th className="w-10 px-2 py-2" /> : null}
                 {visibleColumns.map((column) => (
-                  <th key={columnId(column)} className={`px-2 py-2 align-top ${column.headerClassName || ''}`}>
+                  <th key={columnId(column)} className={`overflow-hidden px-2 py-2 align-top ${column.headerClassName || ''}`}>
                     {renderDesktopHeader(column)}
                   </th>
                 ))}
@@ -404,7 +404,7 @@ export default function DataTable({
                         </td>
                       ) : null}
                       {visibleColumns.map((column) => (
-                        <td key={columnId(column)} className={`break-words px-3 py-2 align-top text-gray-700 dark:text-gray-300 ${column.className || ''}`}>
+                        <td key={columnId(column)} className={`overflow-hidden break-words px-3 py-2 align-top text-gray-700 dark:text-gray-300 ${column.className || ''}`}>
                           {renderCell(column, row)}
                         </td>
                       ))}
