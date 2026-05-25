@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft, FileText, Languages } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -29,6 +29,26 @@ function parseLowTextPages(value) {
     }
   }
   return [value];
+}
+
+function formatSummary(summary, fallback, t) {
+  const entries = Object.entries(summary || {}).filter(([, count]) => Number(count) > 0);
+  if (!entries.length) {
+    return t(fallback);
+  }
+  return entries.map(([label, count]) => `${label}: ${count}`).join(', ');
+}
+
+function formatTranslationTargets(targets, t) {
+  if (!Array.isArray(targets) || !targets.length) {
+    return t('None reported');
+  }
+  const counts = targets.reduce((accumulator, target) => {
+    const language = target?.target_language || 'unknown';
+    accumulator[language] = (accumulator[language] || 0) + 1;
+    return accumulator;
+  }, {});
+  return Object.entries(counts).map(([language, count]) => `${language}: ${count}`).join(', ');
 }
 
 export default function DocumentDetailPage() {
@@ -102,11 +122,18 @@ export default function DocumentDetailPage() {
 
       {document ? (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricTile icon={FileText} label={t('Pages')} value={document.page_count || 0} detail={t('Reported extraction page count')} />
             <MetricTile label={t('Status')} value={<StatusBadge status={document.status} />} detail={t('Evidence file status')} />
             <MetricTile label={t('Source')} value={document.source_provider || t('unknown')} detail={document.source_of_truth_mode || t('unknown mode')} />
             <MetricTile label={t('Extraction')} value={document.extraction_method || t('pending')} detail={document.media_type || t('unknown media')} />
+            <MetricTile
+              icon={Languages}
+              label={t('Language Layer')}
+              value={document.translation_available ? t('Available') : t('Original')}
+              detail={formatSummary(document.language_summary, 'No language detection yet', t)}
+              tone={document.translation_available ? 'good' : 'info'}
+            />
           </div>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -146,6 +173,21 @@ export default function DocumentDetailPage() {
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Vector Status')}</p>
                   <StatusBadge status="unknown" label={t('Pending API route')} />
                 </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Detected Languages')}</p>
+                  <p className="mt-1 text-gray-900 dark:text-gray-100">
+                    {formatSummary(document.language_summary, 'No language detection yet', t)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Translation Targets')}</p>
+                  <p className="mt-1 text-gray-900 dark:text-gray-100">
+                    {formatSummary(document.translation_summary, 'No translation cache yet', t)}
+                  </p>
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {t('Source documents stay in their original language; translations are derived aids.')}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
@@ -163,6 +205,16 @@ export default function DocumentDetailPage() {
                 { key: 'page_number', header: t('Page'), render: (page) => page.page_number },
                 { key: 'text_source', header: t('Text Source'), render: (page) => page.text_source || t('unknown') },
                 { key: 'page_text_chars', header: t('Characters'), render: (page) => page.page_text_chars ?? 0 },
+                {
+                  key: 'language_detected',
+                  header: t('Detected Language'),
+                  render: (page) => page.language_detected || t('Undetected'),
+                },
+                {
+                  key: 'translation_targets',
+                  header: t('Translations'),
+                  render: (page) => formatTranslationTargets(page.translation_targets, t),
+                },
                 { key: 'updated_at', header: t('Updated'), render: (page) => formatDateTime(page.updated_at) },
               ]}
             />

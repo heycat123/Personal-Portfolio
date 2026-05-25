@@ -14,6 +14,26 @@ import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
 
+function formatSummary(summary, fallback, t) {
+  const entries = Object.entries(summary || {}).filter(([, count]) => Number(count) > 0);
+  if (!entries.length) {
+    return t(fallback);
+  }
+  return entries.map(([label, count]) => `${label}: ${count}`).join(', ');
+}
+
+function formatTranslationTargets(targets, t) {
+  if (!Array.isArray(targets) || !targets.length) {
+    return t('None reported');
+  }
+  const counts = targets.reduce((accumulator, target) => {
+    const language = target?.target_language || 'unknown';
+    accumulator[language] = (accumulator[language] || 0) + 1;
+    return accumulator;
+  }, {});
+  return Object.entries(counts).map(([language, count]) => `${language}: ${count}`).join(', ');
+}
+
 export default function DocumentsPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -308,6 +328,18 @@ export default function DocumentsPage() {
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Extraction')}</div>
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.extraction_method || 'pending'}</div>
                   </div>
+                  <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Language')}</div>
+                    <div className="break-words text-gray-950 dark:text-white">
+                      {formatSummary(drawer.document?.language_summary, 'No language detection yet', t)}
+                    </div>
+                  </div>
+                  <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Translations')}</div>
+                    <div className="break-words text-gray-950 dark:text-white">
+                      {formatSummary(drawer.document?.translation_summary, 'No translation cache yet', t)}
+                    </div>
+                  </div>
                 </div>
 
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
@@ -346,6 +378,8 @@ export default function DocumentsPage() {
                     { key: 'page_number', header: t('Page'), render: (page) => page.page_number },
                     { key: 'text_source', header: t('Text Source'), render: (page) => page.text_source || 'unknown' },
                     { key: 'page_text_chars', header: t('Characters'), render: (page) => page.page_text_chars ?? 0 },
+                    { key: 'language_detected', header: t('Detected Language'), render: (page) => page.language_detected || t('Undetected') },
+                    { key: 'translation_targets', header: t('Translations'), render: (page) => formatTranslationTargets(page.translation_targets, t) },
                     { key: 'updated_at', header: t('Updated'), render: (page) => formatDateTime(page.updated_at) },
                   ]}
                 />
