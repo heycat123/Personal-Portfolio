@@ -1,12 +1,15 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
+  confirmSignUpWithCognito,
   confirmCognitoNewPassword,
   configureAmplifyAuth,
   getCognitoAccessToken,
   getCognitoUser,
+  resendCognitoSignUpCode,
   signInWithCognito,
   signOutOfCognito,
+  signUpWithCognito,
 } from '../auth/amplifyAuth';
 
 const AuthContext = createContext(null);
@@ -88,10 +91,10 @@ export function AuthProvider({ children }) {
     refreshUser();
   }, [refreshUser]);
 
-  const signIn = useCallback(async ({ email, password }) => {
+  const signIn = useCallback(async ({ username, email, password }) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const result = await signInWithCognito({ email, password });
+      const result = await signInWithCognito({ username, email, password });
       if (result?.nextStep?.signInStep && result.nextStep.signInStep !== 'DONE') {
         setState((current) => ({
           ...current,
@@ -107,6 +110,39 @@ export function AuthProvider({ children }) {
       throw error;
     }
   }, [refreshUser]);
+
+  const signUp = useCallback(async ({ username, email, password, displayName, phoneNumber }) => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const result = await signUpWithCognito({ username, email, password, displayName, phoneNumber });
+      setState((current) => ({ ...current, loading: false, error: null }));
+      return result;
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error }));
+      throw error;
+    }
+  }, []);
+
+  const confirmSignUp = useCallback(async ({ username, email, confirmationCode }) => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const result = await confirmSignUpWithCognito({ username, email, confirmationCode });
+      setState((current) => ({ ...current, loading: false, error: null }));
+      return result;
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error }));
+      throw error;
+    }
+  }, []);
+
+  const resendSignUpCode = useCallback(async ({ username, email }) => {
+    try {
+      return resendCognitoSignUpCode({ username, email });
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+      throw error;
+    }
+  }, []);
 
   const confirmNewPassword = useCallback(async ({ newPassword }) => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -147,11 +183,14 @@ export function AuthProvider({ children }) {
       ...state,
       refreshUser,
       signIn,
+      signUp,
+      confirmSignUp,
+      resendSignUpCode,
       confirmNewPassword,
       signOut,
       getAccessToken,
     }),
-    [confirmNewPassword, getAccessToken, refreshUser, signIn, signOut, state],
+    [confirmNewPassword, confirmSignUp, getAccessToken, refreshUser, resendSignUpCode, signIn, signOut, signUp, state],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

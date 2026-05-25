@@ -1,10 +1,13 @@
 import { Amplify } from 'aws-amplify';
 import {
   fetchAuthSession,
+  confirmSignUp as amplifyConfirmSignUp,
   confirmSignIn as amplifyConfirmSignIn,
   getCurrentUser,
+  resendSignUpCode as amplifyResendSignUpCode,
   signIn as amplifySignIn,
   signOut as amplifySignOut,
+  signUp as amplifySignUp,
 } from 'aws-amplify/auth';
 
 let configured = false;
@@ -64,9 +67,9 @@ export async function getCognitoAccessToken() {
   return session.tokens?.idToken?.toString() || session.tokens?.accessToken?.toString() || null;
 }
 
-export async function signInWithCognito({ email, password }) {
+export async function signInWithCognito({ username, email, password }) {
   return amplifySignIn({
-    username: email,
+    username: username || email,
     password,
   });
 }
@@ -77,4 +80,37 @@ export async function signOutOfCognito() {
 
 export async function confirmCognitoNewPassword({ newPassword }) {
   return amplifyConfirmSignIn({ challengeResponse: newPassword });
+}
+
+export async function signUpWithCognito({ username, email, password, displayName, phoneNumber }) {
+  const userAttributes = {
+    email,
+  };
+  if (displayName) {
+    userAttributes.name = displayName;
+  }
+  if (phoneNumber) {
+    userAttributes.phone_number = phoneNumber;
+  }
+
+  return amplifySignUp({
+    username: username || email,
+    password,
+    options: {
+      userAttributes,
+    },
+  });
+}
+
+export async function confirmSignUpWithCognito({ username, email, confirmationCode }) {
+  return amplifyConfirmSignUp({
+    username: username || email,
+    confirmationCode,
+  });
+}
+
+export async function resendCognitoSignUpCode({ username, email }) {
+  return amplifyResendSignUpCode({
+    username: username || email,
+  });
 }

@@ -1,4 +1,4 @@
-import { LockKeyhole, LogIn } from 'lucide-react';
+import { LockKeyhole, LogIn, MailCheck, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -16,12 +16,24 @@ export default function LoginPage() {
     isConfigured,
     loading,
     confirmNewPassword,
+    confirmSignUp,
+    resendSignUpCode,
     signIn,
+    signUp,
   } = useEvidenceAuth();
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [view, setView] = useState('sign-in');
+  const [form, setForm] = useState({
+    identifier: '',
+    email: '',
+    displayName: '',
+    phoneNumber: '',
+    password: '',
+  });
   const [newPassword, setNewPassword] = useState('');
+  const [confirmationCode, setConfirmationCode] = useState('');
   const [challengeStep, setChallengeStep] = useState(null);
   const [submitError, setSubmitError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const fallbackPath = `/evidence/cases/${defaultCaseId}/dashboard`;
@@ -37,12 +49,71 @@ export default function LoginPage() {
     event.preventDefault();
     setSubmitting(true);
     setSubmitError(null);
+    setNotice(null);
     try {
-      const result = await signIn(form);
+      const result = await signIn({ username: form.identifier, password: form.password });
       const nextStep = result?.nextStep?.signInStep;
       if (nextStep && nextStep !== 'DONE') {
         setChallengeStep(nextStep);
       }
+    } catch (nextError) {
+      setSubmitError(nextError);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSignUpSubmit(event) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError(null);
+    setNotice(null);
+    try {
+      await signUp({
+        username: form.email,
+        email: form.email,
+        password: form.password,
+        displayName: form.displayName,
+        phoneNumber: form.phoneNumber || undefined,
+      });
+      setView('confirm-sign-up');
+      setNotice('Confirmation code sent.');
+    } catch (nextError) {
+      setSubmitError(nextError);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleConfirmSignUpSubmit(event) {
+    event.preventDefault();
+    setSubmitting(true);
+    setSubmitError(null);
+    setNotice(null);
+    try {
+      await confirmSignUp({
+        username: form.email,
+        email: form.email,
+        confirmationCode,
+      });
+      setView('sign-in');
+      setConfirmationCode('');
+      setForm((current) => ({ ...current, identifier: current.email, password: '' }));
+      setNotice('Account confirmed. Sign in to continue.');
+    } catch (nextError) {
+      setSubmitError(nextError);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleResendCode() {
+    setSubmitting(true);
+    setSubmitError(null);
+    setNotice(null);
+    try {
+      await resendSignUpCode({ username: form.email, email: form.email });
+      setNotice('Confirmation code resent.');
     } catch (nextError) {
       setSubmitError(nextError);
     } finally {
@@ -76,6 +147,11 @@ export default function LoginPage() {
         {error || submitError ? (
           <div className="mb-5">
             <ErrorPanel title="Sign in unavailable" error={submitError || error} />
+          </div>
+        ) : null}
+        {notice ? (
+          <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+            {notice}
           </div>
         ) : null}
 
@@ -127,8 +203,8 @@ export default function LoginPage() {
                 {submitting || loading ? 'Updating password' : 'Set password and sign in'}
               </button>
             </form>
-          ) : (
-            <form className="space-y-4" onSubmit={handleSubmit}>
+          ) : view === 'confirm-sign-up' ? (
+            <form className="space-y-4" onSubmit={handleConfirmSignUpSubmit}>
               <label className="block">
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email</span>
                 <input
@@ -136,6 +212,118 @@ export default function LoginPage() {
                   value={form.email}
                   onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
                   autoComplete="email"
+                  required
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Confirmation code</span>
+                <input
+                  type="text"
+                  value={confirmationCode}
+                  onChange={(event) => setConfirmationCode(event.target.value)}
+                  autoComplete="one-time-code"
+                  required
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={submitting || loading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+              >
+                <MailCheck size={16} aria-hidden="true" />
+                {submitting || loading ? 'Confirming' : 'Confirm account'}
+              </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <button
+                  type="button"
+                  onClick={handleResendCode}
+                  disabled={submitting || loading}
+                  className="font-semibold text-sky-700 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-60 dark:text-sky-300 dark:hover:text-sky-100"
+                >
+                  Resend code
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('sign-in')}
+                  className="font-semibold text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
+                >
+                  Sign in
+                </button>
+              </div>
+            </form>
+          ) : view === 'sign-up' ? (
+            <form className="space-y-4" onSubmit={handleSignUpSubmit}>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email</span>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                  autoComplete="email"
+                  required
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Display name</span>
+                <input
+                  type="text"
+                  value={form.displayName}
+                  onChange={(event) => setForm((current) => ({ ...current, displayName: event.target.value }))}
+                  autoComplete="name"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Phone</span>
+                <input
+                  type="tel"
+                  value={form.phoneNumber}
+                  onChange={(event) => setForm((current) => ({ ...current, phoneNumber: event.target.value }))}
+                  autoComplete="tel"
+                  placeholder="+15555555555"
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Password</span>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={submitting || loading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+              >
+                <UserPlus size={16} aria-hidden="true" />
+                {submitting || loading ? 'Creating account' : 'Create account'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('sign-in')}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                Sign in instead
+              </button>
+            </form>
+          ) : (
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Email, username, or phone</span>
+                <input
+                  type="text"
+                  value={form.identifier}
+                  onChange={(event) => setForm((current) => ({ ...current, identifier: event.target.value }))}
+                  autoComplete="username"
                   required
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
@@ -158,6 +346,13 @@ export default function LoginPage() {
               >
                 <LogIn size={16} aria-hidden="true" />
                 {submitting || loading ? 'Signing in' : 'Sign in'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('sign-up')}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                Create account
               </button>
             </form>
           )}
