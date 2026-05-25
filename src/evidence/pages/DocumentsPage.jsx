@@ -1,5 +1,5 @@
 import { ExternalLink, FileText, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
@@ -12,7 +12,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 50;
 
 function formatSummary(summary, fallback, t) {
   const entries = Object.entries(summary || {}).filter(([, count]) => Number(count) > 0);
@@ -104,13 +104,11 @@ export default function DocumentsPage() {
   const [offset, setOffset] = useState(0);
   const [state, setState] = useState({
     loading: true,
-    loadingMore: false,
     error: null,
     documents: [],
     total: 0,
     fingerprint: null,
   });
-  const loadMoreRef = useRef(null);
   const [drawer, setDrawer] = useState({
     open: false,
     loading: false,
@@ -122,8 +120,7 @@ export default function DocumentsPage() {
   const [documentDetails, setDocumentDetails] = useState({});
 
   const loadDocuments = useCallback(async () => {
-    const firstPage = offset === 0;
-    setState((current) => ({ ...current, loading: firstPage, loadingMore: !firstPage, error: null }));
+    setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getDocuments(
@@ -133,27 +130,18 @@ export default function DocumentsPage() {
       );
       recordFingerprint(result, 'Documents list');
       const nextDocuments = result.data?.documents || [];
-      setState((current) => {
-        const documents = firstPage
-          ? nextDocuments
-          : [
-              ...current.documents,
-              ...nextDocuments.filter((next) => !current.documents.some((existing) => existing.file_id === next.file_id)),
-            ];
-        return {
+      setState({
         loading: false,
-        loadingMore: false,
         error: null,
-        documents,
+        documents: nextDocuments,
         total: result.data?.total || 0,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
-        };
       });
     } catch (error) {
-      setState((current) => ({ ...current, loading: false, loadingMore: false, error }));
+      setState((current) => ({ ...current, loading: false, error }));
     }
   }, [appliedQuery, caseId, getAccessToken, offset, recordFingerprint]);
 
@@ -164,6 +152,11 @@ export default function DocumentsPage() {
 
     return () => window.clearTimeout(timerId);
   }, [loadDocuments]);
+
+  useEffect(() => {
+    setExpandedDocuments({});
+    setDocumentDetails({});
+  }, [offset, appliedQuery]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -252,24 +245,8 @@ export default function DocumentsPage() {
 
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil((state.total || 0) / PAGE_SIZE));
-  const canGoNext = state.documents.length < state.total;
-
-  useEffect(() => {
-    const target = loadMoreRef.current;
-    if (!target || !canGoNext || state.loading || state.loadingMore) {
-      return undefined;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setOffset((current) => current + PAGE_SIZE);
-        }
-      },
-      { rootMargin: '500px 0px' },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [canGoNext, state.loading, state.loadingMore]);
+  const canGoPrevious = offset > 0;
+  const canGoNext = offset + PAGE_SIZE < state.total;
 
   const documentColumns = useMemo(() => ([
     {
@@ -368,7 +345,8 @@ export default function DocumentsPage() {
     });
   };
 
-  const loadedCount = state.documents.length;
+  const firstVisibleRow = state.total ? offset + 1 : 0;
+  const lastVisibleRow = Math.min(state.total, offset + state.documents.length);
 
   return (
     <div>
@@ -492,11 +470,11 @@ export default function DocumentsPage() {
         columns={documentColumns}
       />
 
-      <div ref={loadMoreRef} className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
         <span>
           {t('Showing {first}-{last} of {total}; page {page} of {pages}', {
-            first: loadedCount ? 1 : 0,
-            last: loadedCount,
+            first: firstVisibleRow,
+            last: lastVisibleRow,
             total: state.total,
             page: currentPage,
             pages: totalPages,
@@ -505,11 +483,19 @@ export default function DocumentsPage() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setOffset((current) => current + PAGE_SIZE)}
-            disabled={!canGoNext || state.loading || state.loadingMore}
+            onClick={() => setOffset((current) => Math.max(0, current - PAGE_SIZE))}
+            disabled={!canGoPrevious || state.loading}
             className="rounded-md border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            {state.loadingMore ? t('Loading') : t('Load more')}
+            {t('Previous')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOffset((current) => current + PAGE_SIZE)}
+            disabled={!canGoNext || state.loading}
+            className="rounded-md border border-gray-300 bg-white px-3 py-2 font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            {t('Next')}
           </button>
         </div>
       </div>
