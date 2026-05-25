@@ -273,13 +273,13 @@ export default function DocumentsPage() {
             onClick={closeDocumentDrawer}
             className="absolute inset-0 bg-black/50"
           />
-          <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-2xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
+          <div className="absolute bottom-0 right-0 top-0 flex w-screen max-w-full flex-col overflow-x-hidden border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-2xl">
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-gray-950 dark:text-white">
                   {drawer.document?.original_filename || t('Document Preview')}
                 </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{drawer.document?.file_id || t('Loading document')}</div>
+                <div className="truncate text-xs text-gray-500 dark:text-gray-400">{drawer.document?.file_id || t('Loading document')}</div>
               </div>
               <button
                 type="button"
@@ -290,7 +290,7 @@ export default function DocumentsPage() {
               </button>
             </div>
 
-            <div className="h-full overflow-auto p-4">
+            <div className="h-full overflow-auto overflow-x-hidden p-3 sm:p-4">
               {drawer.error ? <div className="mb-4"><ErrorPanel title="Document preview failed" error={drawer.error} /></div> : null}
               {drawer.fingerprint?.id ? (
                 <div className="mb-4">

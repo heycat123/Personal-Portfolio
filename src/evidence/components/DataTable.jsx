@@ -84,7 +84,7 @@ function ColumnHeaderMenu({
       </button>
 
       {isOpen ? (
-        <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border border-gray-200 bg-white p-3 text-sm normal-case tracking-normal text-gray-800 shadow-xl dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100">
+        <div className="absolute left-0 top-full z-40 mt-2 w-[min(18rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-3 text-sm normal-case tracking-normal text-gray-800 shadow-xl dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100">
           {canSort ? (
             <>
               <div className="mb-3 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sort')}</div>
@@ -255,7 +255,7 @@ export default function DataTable({
       return null;
     }
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:hidden">
+      <div className="overflow-x-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:hidden">
         <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sort and filter')}</div>
         <div className="flex flex-wrap gap-2">
           {visibleColumns.filter((column) => column.mobileFilterHidden !== true).map((column) => {
@@ -263,7 +263,7 @@ export default function DataTable({
             const filterValue = String(filterValues?.[id] ?? '');
             const isSorted = sort?.key === id || sort?.id === id;
             return (
-              <div key={id} className="min-w-[150px] flex-1">
+              <div key={id} className="min-w-0 flex-1 basis-[150px]">
                 <ColumnHeaderMenu
                   column={column}
                   filterValue={filterValue}
@@ -449,7 +449,7 @@ export default function DataTable({
             <section
               key={key}
               onClick={(event) => handleRowClick(event, row)}
-              className={`rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] ${onRowSelect ? 'cursor-pointer' : ''} ${selectedRowKey === key ? 'ring-1 ring-sky-500' : ''}`}
+              className={`min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] ${onRowSelect ? 'cursor-pointer' : ''} ${selectedRowKey === key ? 'ring-1 ring-sky-500' : ''}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

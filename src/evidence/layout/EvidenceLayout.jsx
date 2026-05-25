@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { useState } from 'react';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { EVIDENCE_SITE_VERSION } from '../evidenceConfig';
 import EvidenceSidebar from './EvidenceSidebar';
@@ -23,13 +24,19 @@ function EvidenceVersionBadge() {
 }
 
 export default function EvidenceLayout({ darkTheme, setDarkTheme }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   return (
-    <section className="min-h-screen bg-[#f6f7f9] text-gray-900 dark:bg-[#0b0f14] dark:text-gray-100">
+    <section className="min-h-screen overflow-x-hidden bg-[#f6f7f9] text-gray-900 dark:bg-[#0b0f14] dark:text-gray-100">
       <div className="flex min-h-screen flex-col lg:flex-row">
-        <EvidenceSidebar />
-        <div className="min-w-0 flex-1">
-          <EvidenceTopbar darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
-          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6">
+        <EvidenceSidebar open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
+        <div className="min-w-0 flex-1 overflow-x-hidden">
+          <EvidenceTopbar
+            darkTheme={darkTheme}
+            setDarkTheme={setDarkTheme}
+            onOpenMenu={() => setMobileMenuOpen(true)}
+          />
+          <div className="mx-auto w-full min-w-0 max-w-7xl px-3 py-4 sm:px-4 lg:px-6 lg:py-6">
             <Outlet />
           </div>
         </div>

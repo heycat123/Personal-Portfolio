@@ -152,7 +152,7 @@ function QueryMessage({ message, onOpenCitation, t }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[88%] rounded-lg bg-sky-700 px-4 py-3 text-sm text-white shadow-sm">
+        <div className="min-w-0 max-w-[88%] overflow-hidden rounded-lg bg-sky-700 px-4 py-3 text-sm text-white shadow-sm">
           {message.content}
         </div>
       </div>
@@ -164,7 +164,7 @@ function QueryMessage({ message, onOpenCitation, t }) {
   const verified = Boolean(verifier?.verified || verifier?.sufficient);
   return (
     <div className="flex justify-start">
-      <div className="max-w-[92%] rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <div className="min-w-0 max-w-[92%] overflow-hidden rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         {message.running ? (
           <div className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
@@ -222,7 +222,7 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
   const page = drawer.document?.pages?.find((item) => Number(item.page_number) === Number(drawer.page));
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-[#0b1117]">
+      <aside className="h-full w-screen max-w-full overflow-y-auto overflow-x-hidden border-l border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-xl sm:p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Citation')}</div>

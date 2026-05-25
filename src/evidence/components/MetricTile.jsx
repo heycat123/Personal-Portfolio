@@ -10,13 +10,13 @@ export default function MetricTile({ icon: Icon, label, value, detail, tone = 'd
   };
 
   return (
-    <div className={`rounded-lg border p-4 shadow-sm ${toneClasses[tone] || toneClasses.default}`}>
+    <div className={`min-w-0 rounded-lg border p-4 shadow-sm ${toneClasses[tone] || toneClasses.default}`}>
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
             {label}
           </p>
-          <p className="mt-2 text-2xl font-semibold">
+          <p className="mt-2 break-words text-2xl font-semibold">
             {typeof value === 'number' ? formatCount(value) : value}
           </p>
         </div>
@@ -26,7 +26,7 @@ export default function MetricTile({ icon: Icon, label, value, detail, tone = 'd
           </div>
         ) : null}
       </div>
-      {detail ? <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{detail}</p> : null}
+      {detail ? <p className="mt-3 break-words text-sm text-gray-600 dark:text-gray-400">{detail}</p> : null}
     </div>
   );
 }

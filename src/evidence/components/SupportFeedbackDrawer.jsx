@@ -177,7 +177,7 @@ export default function SupportFeedbackDrawer() {
         onClick={() => setMode(null)}
         className="absolute inset-0 bg-black/50"
       />
-      <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
+      <div className="absolute bottom-0 right-0 top-0 flex w-screen max-w-full flex-col overflow-x-hidden border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-xl">
         <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
           <div className="flex min-w-0 items-center gap-2">
             {mode === 'idea' ? <Lightbulb className="shrink-0 text-amber-600 dark:text-amber-300" size={18} aria-hidden="true" /> : <Bug className="shrink-0 text-rose-600 dark:text-rose-300" size={18} aria-hidden="true" />}
@@ -195,7 +195,7 @@ export default function SupportFeedbackDrawer() {
           </button>
         </div>
 
-        <div className="h-full overflow-auto p-4">
+        <div className="h-full overflow-auto overflow-x-hidden p-3 sm:p-4">
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>

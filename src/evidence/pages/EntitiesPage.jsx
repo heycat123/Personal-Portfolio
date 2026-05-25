@@ -678,7 +678,7 @@ export default function EntitiesPage() {
   }), [caseId, openEntityDetail, selectedPersonId, t]);
 
   const renderEntityDetailPanel = (detailEntity, { inDrawer = false } = {}) => (
-    <aside className={inDrawer ? 'h-full overflow-auto p-4' : 'space-y-5'}>
+    <aside className={inDrawer ? 'h-full overflow-auto overflow-x-hidden p-3 sm:p-4' : 'space-y-5'}>
       <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -926,7 +926,7 @@ export default function EntitiesPage() {
             onClick={() => setDetailDrawerOpen(false)}
             className="absolute inset-0 bg-black/50"
           />
-          <div className="absolute bottom-0 right-0 top-0 flex w-full max-w-2xl flex-col border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw]">
+          <div className="absolute bottom-0 right-0 top-0 flex w-screen max-w-full flex-col overflow-x-hidden border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-2xl">
             <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
               <div>
                 <div className="text-sm font-semibold text-gray-950 dark:text-white">{t('Entity Details')}</div>
