@@ -6,6 +6,7 @@ import ErrorPanel from './ErrorPanel';
 import StatusBadge from './StatusBadge';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 function targetDescription(target) {
@@ -19,6 +20,7 @@ export default function AxiomHelpDrawer() {
   const location = useLocation();
   const { activeCase } = useCaseContext();
   const { getAccessToken } = useEvidenceAuth();
+  const { preferences } = useLocaleSettings();
   const [open, setOpen] = useState(false);
   const [guidedHelp, setGuidedHelp] = useState(true);
   const [question, setQuestion] = useState('');
@@ -43,6 +45,8 @@ export default function AxiomHelpDrawer() {
           question: trimmed,
           route: location.pathname,
           guided_help: guidedHelp,
+          response_language: preferences.language,
+          viewer_timezone: preferences.timeZone,
         },
         { token },
       );
@@ -54,7 +58,7 @@ export default function AxiomHelpDrawer() {
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
-  }, [activeCase.caseId, getAccessToken, guidedHelp, location.pathname, question]);
+  }, [activeCase.caseId, getAccessToken, guidedHelp, location.pathname, preferences.language, preferences.timeZone, question]);
 
   const askPageQuestion = async () => {
     const pageQuestion = 'How do I use this page?';

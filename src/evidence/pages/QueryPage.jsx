@@ -7,6 +7,7 @@ import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 const DEFAULT_QUESTION = "what is Tiffany's Brazilian CPF number?";
@@ -24,6 +25,7 @@ export default function QueryPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
+  const { preferences } = useLocaleSettings();
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [state, setState] = useState({
     running: false,
@@ -48,6 +50,8 @@ export default function QueryPage() {
           question: trimmed,
           mode: 'agentic',
           include_trace: true,
+          response_language: preferences.language,
+          viewer_timezone: preferences.timeZone,
         },
         { token },
       );
@@ -64,7 +68,7 @@ export default function QueryPage() {
     } catch (error) {
       setState((current) => ({ ...current, running: false, error }));
     }
-  }, [caseId, getAccessToken, question, recordFingerprint]);
+  }, [caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint]);
 
   const verifier = state.result?.verifier_status;
   const isVerified = Boolean(verifier?.verified || verifier?.sufficient);
@@ -112,6 +116,9 @@ export default function QueryPage() {
               label="Query fingerprint"
             />
           ) : null}
+          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            Answer language: {preferences.language} | Timezone: {preferences.timeZone}
+          </span>
         </div>
       </section>
 

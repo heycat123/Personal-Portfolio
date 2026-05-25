@@ -140,6 +140,8 @@ function casePath(caseId, suffix = '') {
 export const evidenceApi = {
   getHealth: (options) => request('/health', options),
   getMe: (options) => request('/api/v1/me', options),
+  updateMePreferences: (payload, options) =>
+    request('/api/v1/me/preferences', { ...options, method: 'PATCH', body: payload }),
   getAdminUsers: (options) => request('/api/v1/admin/users', options),
   createAdminUser: (payload, options) =>
     request('/api/v1/admin/users', { ...options, method: 'POST', body: payload }),

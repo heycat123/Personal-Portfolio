@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 
 function initialProfile() {
   return {
@@ -24,7 +25,8 @@ function optionalValue(value) {
 }
 
 export default function AccountPage() {
-  const { getUserAttributes, updateProfile, user } = useEvidenceAuth();
+  const { authMode, getUserAttributes, updateProfile, user } = useEvidenceAuth();
+  const { preferences, supportedLanguages, updatePreferences } = useLocaleSettings();
   const [profile, setProfile] = useState(() => initialProfile());
   const [state, setState] = useState({
     loading: true,
@@ -46,8 +48,8 @@ export default function AccountPage() {
           displayName: attributes.name || user?.displayName || '',
           firstName: attributes.given_name || '',
           familyName: attributes.family_name || '',
-          locale: attributes.locale || initialProfile().locale,
-          timeZone: attributes.zoneinfo || initialProfile().timeZone,
+          locale: attributes.locale || preferences.language || initialProfile().locale,
+          timeZone: attributes.zoneinfo || preferences.timeZone || initialProfile().timeZone,
         });
         setState((current) => ({ ...current, loading: false }));
       } catch (error) {
@@ -61,17 +63,23 @@ export default function AccountPage() {
     return () => {
       cancelled = true;
     };
-  }, [getUserAttributes, user?.displayName, user?.email]);
+  }, [getUserAttributes, preferences.language, preferences.timeZone, user?.displayName, user?.email]);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setState((current) => ({ ...current, saving: true, error: null, notice: null }));
     try {
-      await updateProfile({
-        displayName: optionalValue(profile.displayName),
-        firstName: optionalValue(profile.firstName),
-        familyName: optionalValue(profile.familyName),
-        locale: optionalValue(profile.locale),
+      if (authMode === 'cognito') {
+        await updateProfile({
+          displayName: optionalValue(profile.displayName),
+          firstName: optionalValue(profile.firstName),
+          familyName: optionalValue(profile.familyName),
+          locale: optionalValue(profile.locale),
+          timeZone: optionalValue(profile.timeZone),
+        });
+      }
+      await updatePreferences({
+        language: optionalValue(profile.locale),
         timeZone: optionalValue(profile.timeZone),
       });
       setState((current) => ({ ...current, saving: false, notice: 'Account information updated.' }));
@@ -143,13 +151,18 @@ export default function AccountPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Locale</span>
-              <input
-                type="text"
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Default language</span>
+              <select
                 value={profile.locale}
                 onChange={(event) => setProfile((current) => ({ ...current, locale: event.target.value }))}
                 className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              />
+              >
+                {supportedLanguages.map((language) => (
+                  <option key={language.code} value={language.code}>
+                    {language.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="block">
               <span className="text-sm font-medium text-gray-800 dark:text-gray-200">Timezone</span>

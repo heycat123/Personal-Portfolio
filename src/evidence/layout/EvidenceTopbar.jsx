@@ -1,4 +1,4 @@
-import { LogOut, RefreshCw, Shield, UserCircle } from 'lucide-react';
+import { Languages, LogOut, RefreshCw, Shield, UserCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
@@ -7,6 +7,7 @@ import SupportFeedbackDrawer from '../components/SupportFeedbackDrawer';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { EVIDENCE_API_BASE_URL, EVIDENCE_ENVIRONMENT_LABEL } from '../evidenceConfig';
 import { formatDateTime } from '../utils/formatters';
 
@@ -14,6 +15,15 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
   const { status, latestFingerprint, checkApiHealth } = useApiStatus();
   const { user, authMode, signOut } = useEvidenceAuth();
   const { activeCase } = useCaseContext();
+  const { preferences, supportedLanguages, updatePreferences, saving: savingLocale } = useLocaleSettings();
+
+  async function handleLanguageChange(event) {
+    try {
+      await updatePreferences({ language: event.target.value });
+    } catch {
+      // The selector keeps the local display preference even if the profile sync is temporarily unavailable.
+    }
+  }
 
   return (
     <header className="border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-[#101820]/95 lg:px-6">
@@ -39,6 +49,23 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme }) {
           <AxiomHelpDrawer />
           <SupportFeedbackDrawer />
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
+          <label className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5 text-gray-700 dark:border-gray-800 dark:text-gray-300">
+            <Languages size={16} aria-hidden="true" />
+            <span className="sr-only">Language</span>
+            <select
+              value={preferences.language}
+              onChange={handleLanguageChange}
+              disabled={savingLocale}
+              title="Display language"
+              className="bg-transparent text-sm font-semibold outline-none dark:bg-[#101820]"
+            >
+              {supportedLanguages.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.shortLabel}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             onClick={checkApiHealth}

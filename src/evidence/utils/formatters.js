@@ -5,7 +5,22 @@ export function formatCount(value) {
   return new Intl.NumberFormat().format(Number(value));
 }
 
-export function formatDateTime(value) {
+function storedDateTimePreferences() {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem('evidence.locale.preferences') || '{}');
+    return {
+      locale: parsed.language || parsed.locale,
+      timeZone: parsed.timeZone || parsed.timezone,
+    };
+  } catch {
+    return {};
+  }
+}
+
+export function formatDateTime(value, options = {}) {
   if (!value) {
     return 'Not recorded';
   }
@@ -15,10 +30,20 @@ export function formatDateTime(value) {
     return String(value);
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  const preferences = storedDateTimePreferences();
+  const formatOptions = {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(date);
+    ...(options.timeZone || preferences.timeZone ? { timeZone: options.timeZone || preferences.timeZone } : {}),
+  };
+
+  try {
+    return new Intl.DateTimeFormat(options.locale || preferences.locale || undefined, formatOptions).format(date);
+  } catch {
+    const safeOptions = { ...formatOptions };
+    delete safeOptions.timeZone;
+    return new Intl.DateTimeFormat(options.locale || preferences.locale || undefined, safeOptions).format(date);
+  }
 }
 
 export function humanizeKey(value) {
