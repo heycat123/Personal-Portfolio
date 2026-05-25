@@ -1,6 +1,6 @@
-import { AlertTriangle, CheckCircle2, MessageSquare, Send } from 'lucide-react';
-import { useCallback, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Loader2, MessageSquare, Send, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
@@ -21,18 +21,211 @@ function Panel({ title, children }) {
   );
 }
 
+function answerLines(answer) {
+  return String(answer || 'No answer returned.')
+    .split('\n')
+    .map((line, index) => (
+      <span key={`${line}-${index}`}>
+        {line}
+        <br />
+      </span>
+    ));
+}
+
+function citationLabel(citation) {
+  if (typeof citation === 'string') {
+    return citation;
+  }
+  return citation?.citation || `${citation?.source || 'Source'}${citation?.page ? `, p. ${citation.page}` : ''}`;
+}
+
+function CitationList({ citations, onOpenCitation, t }) {
+  if (!citations?.length) {
+    return <p className="text-sm text-gray-600 dark:text-gray-400">{t('No citations returned.')}</p>;
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      {citations.map((citation, index) => {
+        const label = citationLabel(citation);
+        const canOpen = typeof citation !== 'string' && citation.file_id;
+        return canOpen ? (
+          <button
+            type="button"
+            key={`${label}-${index}`}
+            onClick={() => onOpenCitation(citation)}
+            className="inline-flex max-w-full items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-left text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100"
+            title={label}
+          >
+            <FileText size={14} className="shrink-0" aria-hidden="true" />
+            <span className="truncate">{label}</span>
+          </button>
+        ) : (
+          <span
+            key={`${label}-${index}`}
+            className="inline-flex max-w-full items-center rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300"
+            title={label}
+          >
+            <span className="truncate">{label}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function QueryMessage({ message, onOpenCitation, t }) {
+  if (message.role === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[88%] rounded-lg bg-sky-700 px-4 py-3 text-sm text-white shadow-sm">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+
+  const result = message.result;
+  const verifier = result?.verifier_status;
+  const verified = Boolean(verifier?.verified || verifier?.sufficient);
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[92%] rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        {message.running ? (
+          <div className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
+            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            {t('Running')}
+          </div>
+        ) : message.error ? (
+          <ErrorPanel title="Query failed" error={message.error} />
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <StatusBadge
+                status={verified ? 'succeeded' : 'degraded'}
+                label={verified ? t('Verified') : t('Not verified')}
+              />
+              {message.fingerprint?.id ? (
+                <RequestFingerprint
+                  fingerprintId={message.fingerprint.id}
+                  correlationId={message.fingerprint.correlationId}
+                  label="Query fingerprint"
+                />
+              ) : null}
+            </div>
+            <div className="whitespace-pre-wrap leading-6 text-gray-900 dark:text-gray-100">
+              {answerLines(result?.answer)}
+            </div>
+            <div className="mt-4">
+              <CitationList citations={result?.citations || []} onOpenCitation={onOpenCitation} t={t} />
+            </div>
+            <div className="mt-4 grid gap-3 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3">
+              <div>
+                <div className="font-semibold uppercase tracking-normal">{t('Verifier')}</div>
+                <div>{verifier?.failure || (verified ? 'verified' : 'not verified')}</div>
+              </div>
+              <div>
+                <div className="font-semibold uppercase tracking-normal">{t('Confidence')}</div>
+                <div>{verifier?.confidence ?? 0}</div>
+              </div>
+              <div>
+                <div className="font-semibold uppercase tracking-normal">{t('Cost')}</div>
+                <div>${Number(result?.cost?.actual_usd || 0).toFixed(4)}</div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CitationDrawer({ drawer, caseId, onClose, t }) {
+  if (!drawer.open) {
+    return null;
+  }
+  const page = drawer.document?.pages?.find((item) => Number(item.page_number) === Number(drawer.page));
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
+      <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-[#0b1117]">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Citation')}</div>
+            <h2 className="truncate text-lg font-semibold text-gray-950 dark:text-white">{citationLabel(drawer.citation)}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+            aria-label={t('Close')}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        {drawer.error ? <ErrorPanel title="Document preview failed" error={drawer.error} /> : null}
+        {drawer.loading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+            {t('Loading document.')}
+          </div>
+        ) : drawer.document ? (
+          <div className="space-y-4">
+            <div className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+              <div className="font-semibold text-gray-950 dark:text-white">{drawer.document.original_filename || drawer.document.file_id}</div>
+              <div className="mt-1 text-gray-600 dark:text-gray-400">
+                {t('Page')} {drawer.page || 'n/a'} · {drawer.document.source_provider || 'unknown'} · {drawer.document.source_of_truth_mode || 'unknown'}
+              </div>
+              <Link
+                to={`/evidence/cases/${caseId}/documents/${drawer.document.file_id}`}
+                className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300"
+              >
+                <ExternalLink size={15} aria-hidden="true" />
+                {t('Open document details')}
+              </Link>
+            </div>
+
+            <Panel title={`${t('Page')} ${drawer.page || ''}`}>
+              {page?.page_text_preview ? (
+                <pre className="max-h-[520px] whitespace-pre-wrap rounded-md bg-gray-950 p-3 text-xs leading-5 text-gray-100">
+                  {page.page_text_preview}
+                </pre>
+              ) : (
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No page text preview returned.')}</p>
+              )}
+            </Panel>
+          </div>
+        ) : null}
+      </aside>
+    </div>
+  );
+}
+
 export default function QueryPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
+  const [messages, setMessages] = useState([]);
   const [state, setState] = useState({
     running: false,
     error: null,
     result: null,
     fingerprint: null,
   });
+  const [drawer, setDrawer] = useState({
+    open: false,
+    loading: false,
+    error: null,
+    citation: null,
+    page: null,
+    document: null,
+  });
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages]);
 
   const runQuery = useCallback(async () => {
     const trimmed = question.trim();
@@ -41,6 +234,14 @@ export default function QueryPage() {
       return;
     }
 
+    const timestamp = Date.now();
+    const assistantId = `assistant-${timestamp}`;
+    setMessages((current) => [
+      ...current,
+      { id: `user-${timestamp}`, role: 'user', content: trimmed },
+      { id: assistantId, role: 'assistant', running: true },
+    ]);
+    setQuestion('');
     setState((current) => ({ ...current, running: true, error: null }));
     try {
       const token = await getAccessToken();
@@ -56,153 +257,175 @@ export default function QueryPage() {
         { token },
       );
       recordFingerprint(result, 'Case query');
+      const fingerprint = {
+        id: result.requestFingerprintId || result.data?.request_fingerprint_id,
+        correlationId: result.correlationId,
+      };
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                running: false,
+                result: result.data,
+                fingerprint,
+              }
+            : message,
+        ),
+      );
       setState({
         running: false,
         error: null,
         result: result.data,
-        fingerprint: {
-          id: result.requestFingerprintId || result.data?.request_fingerprint_id,
-          correlationId: result.correlationId,
-        },
+        fingerprint,
       });
     } catch (error) {
+      setMessages((current) =>
+        current.map((message) => (message.id === assistantId ? { ...message, running: false, error } : message)),
+      );
       setState((current) => ({ ...current, running: false, error }));
     }
   }, [caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint]);
 
-  const verifier = state.result?.verifier_status;
-  const isVerified = Boolean(verifier?.verified || verifier?.sufficient);
-  const isUnavailable = state.result?.status === 'unavailable';
+  const openCitation = useCallback(
+    async (citation) => {
+      if (!citation?.file_id) {
+        return;
+      }
+      setDrawer({
+        open: true,
+        loading: true,
+        error: null,
+        citation,
+        page: citation.page_number || citation.page,
+        document: null,
+      });
+      try {
+        const token = await getAccessToken();
+        const result = await evidenceApi.getDocument(caseId, citation.file_id, { token });
+        recordFingerprint(result, 'Citation document drawer');
+        setDrawer((current) => ({
+          ...current,
+          loading: false,
+          document: result.data,
+        }));
+      } catch (error) {
+        setDrawer((current) => ({
+          ...current,
+          loading: false,
+          error,
+        }));
+      }
+    },
+    [caseId, getAccessToken, recordFingerprint],
+  );
+
+  const latestVerifier = state.result?.verifier_status;
+  const latestVerified = Boolean(latestVerifier?.verified || latestVerifier?.sufficient);
+  const hasMessages = messages.length > 0;
+  const traceRows = useMemo(() => state.result?.retrieval_trace || [], [state.result?.retrieval_trace]);
 
   return (
-    <div>
+    <div className="flex min-h-[calc(100vh-150px)] flex-col">
       <PageHeader
         title="Query"
-        description="Ask case-scoped evidence questions and inspect answer sufficiency, verified facts, citations, trace, and cost."
+        description="Ask case-scoped evidence questions and inspect answer sufficiency, citations, trace, and cost."
         actions={
           <StatusBadge
-            status={isVerified ? 'succeeded' : state.result ? 'degraded' : 'pending'}
-            label={isVerified ? t('Verified') : state.result ? t('Not verified') : t('Ready')}
+            status={latestVerified ? 'succeeded' : state.result ? 'degraded' : 'pending'}
+            label={latestVerified ? t('Verified') : state.result ? t('Not verified') : t('Ready')}
           />
         }
       />
 
-      {state.error ? <div className="mb-5"><ErrorPanel title="Query failed" error={state.error} /></div> : null}
+      {state.error ? (
+        <div className="mb-5">
+          <ErrorPanel title="Query failed" error={state.error} />
+        </div>
+      ) : null}
 
-      <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-        <label className="block">
-          <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">{t('Question')}</span>
-          <textarea
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            rows={4}
-            className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-          />
-        </label>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={runQuery}
-            disabled={state.running}
-            className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Send size={16} aria-hidden="true" />
-            {state.running ? t('Running') : t('Run Query')}
-          </button>
-          {state.fingerprint?.id ? (
-            <RequestFingerprint
-              fingerprintId={state.fingerprint.id}
-              correlationId={state.fingerprint.correlationId}
-              label="Query fingerprint"
+      <section className="flex min-h-[520px] flex-1 flex-col rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {hasMessages ? (
+            messages.map((message) => <QueryMessage key={message.id} message={message} onOpenCitation={openCitation} t={t} />)
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+              <div className="flex items-center gap-2">
+                <MessageSquare size={18} aria-hidden="true" />
+                {t('Run a question to inspect the structured query response.')}
+              </div>
+            </div>
+          )}
+          <div ref={scrollRef} />
+        </div>
+
+        <div className="border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#101820]">
+          <label className="sr-only" htmlFor="case-query-input">
+            {t('Question')}
+          </label>
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <textarea
+              id="case-query-input"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              rows={2}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                  event.preventDefault();
+                  runQuery();
+                }
+              }}
+              className="min-h-[54px] flex-1 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              placeholder={t('Ask a question about the evidence')}
             />
-          ) : null}
-          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-            {t('Answer language: {language} | Timezone: {timeZone}', { language: preferences.language, timeZone: preferences.timeZone })}
-          </span>
+            <button
+              type="button"
+              onClick={runQuery}
+              disabled={state.running}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 lg:w-36"
+            >
+              <Send size={16} aria-hidden="true" />
+              {state.running ? t('Running') : t('Send')}
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span>{t('Answer language: {language} | Timezone: {timeZone}', { language: preferences.language, timeZone: preferences.timeZone })}</span>
+            {state.fingerprint?.id ? (
+              <RequestFingerprint
+                fingerprintId={state.fingerprint.id}
+                correlationId={state.fingerprint.correlationId}
+                label="Latest query"
+              />
+            ) : null}
+          </div>
         </div>
       </section>
 
       {state.result ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="space-y-5">
-            <Panel title={t('Answer')}>
-              <div className={`mb-3 flex items-start gap-2 rounded-md p-3 text-sm ${isUnavailable ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'bg-gray-50 text-gray-800 dark:bg-black/20 dark:text-gray-200'}`}>
-                {isVerified ? <CheckCircle2 size={18} className="mt-0.5 shrink-0" aria-hidden="true" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />}
-                <div>{state.result.answer || 'No answer returned.'}</div>
-              </div>
-              <div className="grid gap-2 text-sm sm:grid-cols-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Verifier')}</div>
-                  <StatusBadge status={isVerified ? 'succeeded' : 'failed'} label={verifier?.failure || (isVerified ? 'verified' : 'not verified')} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confidence')}</div>
-                  <div className="text-gray-950 dark:text-white">{verifier?.confidence ?? 0}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cost')}</div>
-                  <div className="text-gray-950 dark:text-white">${Number(state.result.cost?.actual_usd || 0).toFixed(4)}</div>
-                </div>
-              </div>
-            </Panel>
+          <Panel title={t('Retrieval Trace')}>
+            {traceRows.length ? (
+              <pre className="max-h-[360px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
+                {JSON.stringify(traceRows, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No trace returned.')}</p>
+            )}
+          </Panel>
 
-            <Panel title={t('Verified Facts')}>
-              {state.result.verified_facts?.length ? (
-                <ul className="list-disc space-y-2 pl-5 text-sm text-gray-800 dark:text-gray-200">
-                  {state.result.verified_facts.map((fact, index) => (
-                    <li key={`${fact}-${index}`}>{typeof fact === 'string' ? fact : JSON.stringify(fact)}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No verified facts returned.')}</p>
-              )}
-            </Panel>
-
-            <Panel title={t('Retrieval Trace')}>
-              {state.result.retrieval_trace?.length ? (
-                <pre className="max-h-[380px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
-                  {JSON.stringify(state.result.retrieval_trace, null, 2)}
-                </pre>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No trace returned.')}</p>
-              )}
-            </Panel>
-          </div>
-
-          <div className="space-y-5">
-            <Panel title={t('Citations')}>
-              {state.result.citations?.length ? (
-                <ul className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
-                  {state.result.citations.map((citation, index) => (
-                    <li key={`${citation.source || citation}-${index}`} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
-                      {typeof citation === 'string' ? citation : `${citation.source || 'Source'}${citation.page ? `, p. ${citation.page}` : ''}`}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No citations returned.')}</p>
-              )}
-            </Panel>
-
-            <Panel title={t('Evidence Packet')}>
-              {state.result.evidence_packet?.length ? (
-                <pre className="max-h-[420px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
-                  {JSON.stringify(state.result.evidence_packet, null, 2)}
-                </pre>
-              ) : (
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No evidence packet returned.')}</p>
-              )}
-            </Panel>
-          </div>
+          <Panel title={t('Evidence Packet')}>
+            {state.result.evidence_packet?.length ? (
+              <pre className="max-h-[360px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
+                {JSON.stringify(state.result.evidence_packet, null, 2)}
+              </pre>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No evidence packet returned.')}</p>
+            )}
+          </Panel>
         </div>
-      ) : (
-        <div className="mt-5 rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-          <div className="flex items-center gap-2">
-            <MessageSquare size={18} aria-hidden="true" />
-            {t('Run a question to inspect the structured query response.')}
-          </div>
-        </div>
-      )}
+      ) : null}
+
+      <CitationDrawer drawer={drawer} caseId={caseId} onClose={() => setDrawer((current) => ({ ...current, open: false }))} t={t} />
     </div>
   );
 }
