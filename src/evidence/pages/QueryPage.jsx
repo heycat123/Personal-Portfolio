@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ExternalLink, FileText, Loader2, MessageSquare, Send, X } from 'lucide-react';
+import { Bot, ExternalLink, FileText, Loader2, MessageSquare, Send, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -73,6 +73,81 @@ function CitationList({ citations, onOpenCitation, t }) {
   );
 }
 
+function agenticPlannerTrace(result) {
+  return result?.retrieval_trace?.find((item) => item.stage === 'web_agentic_tool_planner') || null;
+}
+
+function agenticToolTrace(result) {
+  return result?.retrieval_trace?.find((item) => item.stage === 'web_agentic_tool_execution') || null;
+}
+
+function toolLabel(tool) {
+  return String(tool || '')
+    .replace(/^postgres_/, 'Postgres ')
+    .replace(/^neo4j_/, 'Neo4j ')
+    .replace(/_/g, ' ');
+}
+
+function AgenticSummary({ result, t }) {
+  const plannerTrace = agenticPlannerTrace(result);
+  const toolTrace = agenticToolTrace(result);
+  const plan = plannerTrace?.plan || {};
+  const selectedTools = plan.selected_tools || [];
+  const executedTools = toolTrace?.tools || [];
+  const verifier = result?.verifier_status || {};
+  const verified = Boolean(verifier.verified && verifier.sufficient);
+
+  return (
+    <div className="mt-4 rounded-md border border-sky-100 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
+      <div className="flex flex-wrap items-center gap-2">
+        <Bot size={15} aria-hidden="true" />
+        <span className="font-semibold">{t('Agentic planner')}</span>
+        <StatusBadge status={verified ? 'succeeded' : 'degraded'} label={verified ? t('Verified') : t('Needs review')} />
+      </div>
+      <div className="mt-2 grid gap-2 md:grid-cols-3">
+        <div>
+          <div className="font-semibold uppercase tracking-normal opacity-75">{t('Query type')}</div>
+          <div>{plan.query_type || 'agentic'}</div>
+        </div>
+        <div>
+          <div className="font-semibold uppercase tracking-normal opacity-75">{t('Retrieved rows')}</div>
+          <div>{toolTrace?.final_rows ?? result?.evidence_packet?.length ?? 0}</div>
+        </div>
+        <div>
+          <div className="font-semibold uppercase tracking-normal opacity-75">{t('Verifier')}</div>
+          <div>{verifier.failure || (verified ? 'none' : 'needs_review')}</div>
+        </div>
+      </div>
+      {plan.public_reason ? <p className="mt-2 leading-5">{plan.public_reason}</p> : null}
+      {selectedTools.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {selectedTools.map((tool) => (
+            <span
+              key={tool}
+              className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2 py-1 font-semibold text-sky-900 dark:border-sky-900 dark:bg-black/20 dark:text-sky-100"
+            >
+              <Wrench size={13} aria-hidden="true" />
+              {toolLabel(tool)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {executedTools.length ? (
+        <div className="mt-3 overflow-hidden rounded-md border border-sky-200 bg-white dark:border-sky-900 dark:bg-black/20">
+          {executedTools.map((tool) => (
+            <div key={tool.tool} className="flex items-center justify-between gap-3 border-b border-sky-100 px-2 py-1.5 last:border-b-0 dark:border-sky-900/60">
+              <span className="truncate font-medium">{toolLabel(tool.tool)}</span>
+              <span className="shrink-0 text-sky-700 dark:text-sky-200">
+                {tool.status || 'ok'} - {tool.rows ?? 0} rows
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function QueryMessage({ message, onOpenCitation, t }) {
   if (message.role === 'user') {
     return (
@@ -115,6 +190,7 @@ function QueryMessage({ message, onOpenCitation, t }) {
             <div className="whitespace-pre-wrap leading-6 text-gray-900 dark:text-gray-100">
               {answerLines(result?.answer)}
             </div>
+            <AgenticSummary result={result} t={t} />
             <div className="mt-4">
               <CitationList citations={result?.citations || []} onOpenCitation={onOpenCitation} t={t} />
             </div>
@@ -328,8 +404,8 @@ export default function QueryPage() {
   return (
     <div className="flex min-h-[calc(100vh-150px)] flex-col">
       <PageHeader
-        title="Query"
-        description="Ask case-scoped evidence questions and inspect answer sufficiency, citations, trace, and cost."
+        title="Agentic Query"
+        description="Ask case-scoped evidence questions through the agentic planner and inspect tools, sufficiency, citations, trace, and cost."
         actions={
           <StatusBadge
             status={latestVerified ? 'succeeded' : state.result ? 'degraded' : 'pending'}
@@ -352,7 +428,7 @@ export default function QueryPage() {
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
               <div className="flex items-center gap-2">
                 <MessageSquare size={18} aria-hidden="true" />
-                {t('Run a question to inspect the structured query response.')}
+                {t('Run a question to inspect the agentic planner response.')}
               </div>
             </div>
           )}
