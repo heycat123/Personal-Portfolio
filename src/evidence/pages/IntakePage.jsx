@@ -77,6 +77,7 @@ export default function IntakePage() {
     action: null,
     searchText: '',
     lastSearch: '',
+    scanJob: null,
   });
 
   const activeGoogleConnection = useMemo(() => {
@@ -358,6 +359,42 @@ export default function IntakePage() {
     }
   }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken, loadDriveWatchItems]);
 
+  const queueDriveScan = useCallback(async () => {
+    if (!activeGoogleConnection?.source_connection_id) {
+      return;
+    }
+
+    setDriveBrowser((current) => ({ ...current, action: 'scan-drive', error: null, scanJob: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createJob(
+        caseId,
+        {
+          job_type: 'source_connector_scan',
+          input_json: {
+            source_connection_id: activeGoogleConnection.source_connection_id,
+            provider: 'google_drive',
+            recursive: true,
+            import_new: true,
+            queue_registration: true,
+            max_files: 50,
+          },
+          priority: 0,
+        },
+        { token },
+      );
+      addFingerprint(result, 'Queue Google Drive scan');
+      setDriveBrowser((current) => ({
+        ...current,
+        scanJob: result.data,
+      }));
+    } catch (error) {
+      setDriveBrowser((current) => ({ ...current, error }));
+    } finally {
+      setDriveBrowser((current) => ({ ...current, action: null }));
+    }
+  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken]);
+
   useEffect(() => {
     if (!activeGoogleConnection?.source_connection_id) {
       setDriveBrowser((current) => ({
@@ -580,12 +617,28 @@ export default function IntakePage() {
                     <CheckCircle2 size={15} aria-hidden="true" />
                     {t('Resolve')}
                   </button>
+                  <button
+                    type="button"
+                    onClick={queueDriveScan}
+                    disabled={Boolean(driveBrowser.action) || !activeWatchItems.length}
+                    className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <UploadCloud size={15} aria-hidden="true" />
+                    {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Scan for new files')}
+                  </button>
                 </div>
               </div>
 
               {driveBrowser.error ? (
                 <div className="mb-4">
                   <ErrorPanel title="Google Drive selector failed" error={driveBrowser.error} />
+                </div>
+              ) : null}
+              {driveBrowser.scanJob ? (
+                <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+                  <div className="font-semibold">{t('Google Drive scan queued')}</div>
+                  <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
+                  <div className="mt-2 text-xs">{t('The worker will mirror new Drive files to S3 and queue registration jobs.')}</div>
                 </div>
               ) : null}
 
