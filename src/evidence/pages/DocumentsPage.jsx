@@ -12,7 +12,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 5000;
 
 function formatSummary(summary, fallback, t) {
   const entries = Object.entries(summary || {}).filter(([, count]) => Number(count) > 0);
@@ -32,6 +32,64 @@ function formatTranslationTargets(targets, t) {
     return accumulator;
   }, {});
   return Object.entries(counts).map(([language, count]) => `${language}: ${count}`).join(', ');
+}
+
+function statusText(status) {
+  return String(status || 'pending').replace(/_/g, ' ');
+}
+
+function StorageSyncBadge({ document }) {
+  const status = document?.canonical_storage_status || 'unknown';
+  const label = status === 'canonical'
+    ? 'Synced to S3'
+    : status === 'pending_verification'
+      ? 'S3 pending'
+      : status === 'needs_s3_sync'
+        ? 'Needs S3 sync'
+        : statusText(status);
+  return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
+}
+
+function PipelineDot({ label, status, colorClass }) {
+  const active = status === 'complete';
+  const partial = status === 'partial';
+  const className = active || partial ? colorClass : 'bg-gray-300 dark:bg-gray-700';
+  const opacity = partial ? 'opacity-70' : '';
+  return (
+    <span className="inline-flex items-center gap-1" title={`${label}: ${statusText(status)}`}>
+      <span className={`h-3 w-3 rounded-full ${className} ${opacity} ring-1 ring-black/10 dark:ring-white/10`} aria-hidden="true" />
+      <span className="sr-only">{`${label}: ${statusText(status)}`}</span>
+    </span>
+  );
+}
+
+function PipelineDots({ document, showLabels = false }) {
+  const statuses = document?.pipeline_status || {};
+  const items = [
+    { key: 'postgres', label: 'Postgres', status: statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
+    { key: 'vector', label: 'Vector', status: statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
+    { key: 'graph', label: 'Graph', status: statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
+  ];
+  if (!showLabels) {
+    return (
+      <div className="inline-flex items-center gap-2">
+        {items.map((item) => <PipelineDot key={item.key} {...item} />)}
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2">
+      {items.map((item) => (
+        <div key={item.key} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2 text-sm dark:bg-black/20">
+          <span className="inline-flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
+            <PipelineDot {...item} />
+            {item.label}
+          </span>
+          <span className="capitalize text-gray-600 dark:text-gray-300">{statusText(item.status)}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function DocumentsPage() {
@@ -58,6 +116,8 @@ export default function DocumentsPage() {
     document: null,
     fingerprint: null,
   });
+  const [expandedDocuments, setExpandedDocuments] = useState({});
+  const [documentDetails, setDocumentDetails] = useState({});
 
   const loadDocuments = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -138,6 +198,45 @@ export default function DocumentsPage() {
     setDrawer((current) => ({ ...current, open: false }));
   };
 
+  const loadDocumentDetail = useCallback(async (document) => {
+    if (!document?.file_id) {
+      return null;
+    }
+    if (documentDetails[document.file_id]?.document) {
+      return documentDetails[document.file_id].document;
+    }
+    setDocumentDetails((current) => ({
+      ...current,
+      [document.file_id]: { loading: true, error: null, document: current[document.file_id]?.document || document },
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getDocument(caseId, document.file_id, { token });
+      recordFingerprint(result, 'Document expanded detail');
+      setDocumentDetails((current) => ({
+        ...current,
+        [document.file_id]: { loading: false, error: null, document: result.data || document },
+      }));
+      return result.data || document;
+    } catch (error) {
+      setDocumentDetails((current) => ({
+        ...current,
+        [document.file_id]: { loading: false, error, document },
+      }));
+      return null;
+    }
+  }, [caseId, documentDetails, getAccessToken, recordFingerprint]);
+
+  const toggleExpandedDocument = useCallback((document) => {
+    if (!document?.file_id) {
+      return;
+    }
+    setExpandedDocuments((current) => ({ ...current, [document.file_id]: !current[document.file_id] }));
+    if (!documentDetails[document.file_id]?.document) {
+      loadDocumentDetail(document);
+    }
+  }, [documentDetails, loadDocumentDetail]);
+
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil((state.total || 0) / PAGE_SIZE));
   const canGoPrevious = offset > 0;
@@ -177,12 +276,20 @@ export default function DocumentsPage() {
     },
     {
       key: 'canonical_storage_label',
-      header: t('Storage'),
+      header: t('S3 Sync'),
       headerClassName: 'w-[14%]',
-      help: t('Whether Evidence AI has an S3 canonical copy or this is still a legacy local import that needs S3 sync.'),
-      render: (document) => document.canonical_storage_label || 'unknown',
+      help: t('Whether Evidence AI has a canonical copy of this raw file in S3.'),
+      render: (document) => <StorageSyncBadge document={document} />,
     },
-    { key: 'status', header: t('Status'), headerClassName: 'w-[9%]', render: (document) => <StatusBadge status={document.status} /> },
+    {
+      key: 'pipeline_status',
+      header: t('Propagation'),
+      headerClassName: 'w-[10%]',
+      filterable: false,
+      sortable: false,
+      help: t('Processing coverage: blue is Postgres, green is vector, purple is graph. Lit dots mean that domain has processed this document.'),
+      render: (document) => <PipelineDots document={document} />,
+    },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[7%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
     { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[12%]', render: (document) => formatDateTime(document.updated_at || document.created_at) },
   ]), [caseId, t]);
@@ -308,12 +415,49 @@ export default function DocumentsPage() {
             {document.original_filename || document.file_id}
           </Link>
         )}
-        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${document.evidence_type_label || 'Document'} | ${document.status || 'unknown'}`}
+        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${document.evidence_type_label || 'Document'} | ${document.canonical_storage_label || 'unknown'}`}
         mobileActions={(document) => (
           <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open document detail page')}>
             <ExternalLink size={15} aria-hidden="true" />
           </Link>
         )}
+        expandedRows={expandedDocuments}
+        onToggleRow={toggleExpandedDocument}
+        renderDetailPanel={(document) => {
+          const detailState = documentDetails[document.file_id];
+          const detail = detailState?.document;
+          const pages = detail?.pages || [];
+          if (detailState?.error) {
+            return <ErrorPanel title="Document sub-document load failed" error={detailState.error} />;
+          }
+          if (detailState?.loading) {
+            return <div className="text-sm text-gray-600 dark:text-gray-400">{t('Loading sub-documents...')}</div>;
+          }
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sub-documents')}</div>
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    {pages.length ? t('{size} page extraction rows', { size: pages.length }) : t('No page extraction rows are available yet.')}
+                  </div>
+                </div>
+                <PipelineDots document={detail || document} />
+              </div>
+              {pages.length ? (
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {pages.slice(0, 12).map((page) => (
+                    <div key={`${page.page_number}-${page.text_source}`} className="rounded-md border border-gray-200 bg-white p-3 text-sm dark:border-gray-800 dark:bg-[#101820]">
+                      <div className="font-semibold text-gray-950 dark:text-white">{t('Page')} {page.page_number}</div>
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{page.text_source || t('unknown source')} | {page.page_text_chars ?? 0} {t('characters')}</div>
+                      <p className="mt-2 line-clamp-3 text-gray-700 dark:text-gray-300">{page.page_text_preview || t('No preview text.')}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        }}
         columns={documentColumns}
       />
 
@@ -405,6 +549,10 @@ export default function DocumentsPage() {
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.canonical_storage_label || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Propagation')}</div>
+                    <div className="mt-2"><PipelineDots document={drawer.document} /></div>
+                  </div>
+                  <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Language')}</div>
                     <div className="break-words text-gray-950 dark:text-white">
                       {formatSummary(drawer.document?.language_summary, 'No language detection yet', t)}
@@ -431,6 +579,11 @@ export default function DocumentsPage() {
                     </div>
                   ))}
                 </dl>
+
+                <div className="mt-4">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing Domains')}</div>
+                  <PipelineDots document={drawer.document} showLabels />
+                </div>
 
                 <Link
                   to={`/evidence/cases/${caseId}/documents/${drawer.document?.file_id}`}
