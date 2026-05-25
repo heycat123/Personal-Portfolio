@@ -71,6 +71,14 @@ export default function DashboardPage() {
 
   const counts = state.summary?.counts || state.health?.summary?.counts || {};
   const latestJobs = state.jobs?.jobs || [];
+  const graph = state.health?.graph || {};
+  const vectorCoverage = graph.chunk_embedding_coverage || {};
+  const parentGaps = graph.child_parent_link_gaps || {};
+  const childChunks = vectorCoverage.child_chunks || 0;
+  const embeddedChildChunks = vectorCoverage.embedded_child_chunks || 0;
+  const missingChildEmbeddings = vectorCoverage.missing_child_embeddings || 0;
+  const missingParentEdges = parentGaps.missing_parent_edges || 0;
+  const vectorOk = Boolean(graph.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
 
   return (
     <div>
@@ -115,6 +123,20 @@ export default function DashboardPage() {
           value={state.health?.storage?.ok ? 'Configured' : state.loading ? 'Checking' : 'Unknown'}
           tone={state.health?.storage?.ok ? 'good' : 'warn'}
           detail={state.health?.storage?.bucket || state.health?.storage?.reason || 'No storage payload'}
+        />
+        <MetricTile
+          icon={Activity}
+          label="Graph"
+          value={graph.ok ? 'Online' : state.loading ? 'Checking' : 'Unknown'}
+          tone={graph.ok ? 'good' : graph.configured ? 'bad' : 'warn'}
+          detail={graph.ok ? `${graph.case_totals?.nodes || 0} case nodes` : graph.error_message || graph.reason || 'No graph payload'}
+        />
+        <MetricTile
+          icon={Activity}
+          label="Vectors"
+          value={vectorOk ? 'Covered' : graph.ok ? 'Review' : 'Unknown'}
+          tone={vectorOk ? 'good' : graph.ok ? 'warn' : 'default'}
+          detail={graph.ok ? `${embeddedChildChunks}/${childChunks} child chunks embedded` : 'Graph connection required'}
         />
       </div>
 

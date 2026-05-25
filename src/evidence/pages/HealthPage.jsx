@@ -25,6 +25,7 @@ export default function HealthPage() {
     error: null,
     caseHealth: null,
     storageHealth: null,
+    graphHealth: null,
     rawParity: null,
     smokeResult: null,
     smokeError: null,
@@ -39,11 +40,12 @@ export default function HealthPage() {
       evidenceApi.getCaseHealth(caseId, { token }),
       evidenceApi.getStorageHealth(caseId, { token }),
       evidenceApi.getRawParity(caseId, { token }),
+      evidenceApi.getGraphHealth(caseId, { token }),
     ]);
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case health', 'Storage health', 'Raw parity'];
+        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health'];
         recordFingerprint(result.value, labels[index]);
       }
     });
@@ -56,6 +58,7 @@ export default function HealthPage() {
       caseHealth: fulfilledValue(results[0])?.data || null,
       storageHealth: fulfilledValue(results[1])?.data || null,
       rawParity: fulfilledValue(results[2])?.data || null,
+      graphHealth: fulfilledValue(results[3])?.data || null,
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
@@ -97,6 +100,17 @@ export default function HealthPage() {
 
   const database = state.caseHealth?.database;
   const storage = state.storageHealth || state.caseHealth?.storage;
+  const graph = state.graphHealth || state.caseHealth?.graph;
+  const graphError = graph?.error_message || graph?.reason;
+  const graphCaseTotals = graph?.case_totals || {};
+  const vectorCoverage = graph?.chunk_embedding_coverage || {};
+  const parentGaps = graph?.child_parent_link_gaps || {};
+  const vectorIndexes = graph?.vector_indexes || [];
+  const childChunks = vectorCoverage.child_chunks || 0;
+  const embeddedChildChunks = vectorCoverage.embedded_child_chunks || 0;
+  const missingChildEmbeddings = vectorCoverage.missing_child_embeddings || 0;
+  const missingParentEdges = parentGaps.missing_parent_edges || 0;
+  const vectorOk = Boolean(graph?.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
   const rawTables = state.rawParity?.tables || [];
 
   return (
@@ -147,14 +161,34 @@ export default function HealthPage() {
         <MetricTile
           icon={Activity}
           label="Graph"
-          value={<StatusBadge status="unknown" label="Pending route" />}
-          detail="Neo4j health route is planned for later Phase 7."
+          value={
+            <StatusBadge
+              status={graph?.ok ? 'online' : graph?.configured ? 'offline' : 'unknown'}
+              label={graph?.ok ? 'Online' : graph?.configured ? 'Offline' : 'Not configured'}
+            />
+          }
+          detail={
+            graph?.ok
+              ? `${graphCaseTotals.nodes || 0} case nodes, ${graphCaseTotals.relationships || 0} case relationships`
+              : graphError || 'No Neo4j payload returned'
+          }
+          tone={graph?.ok ? 'good' : graph?.configured ? 'bad' : 'warn'}
         />
         <MetricTile
           icon={Activity}
           label="Vectors"
-          value={<StatusBadge status="unknown" label="Pending route" />}
-          detail="Vector coverage route is planned for later Phase 7."
+          value={
+            <StatusBadge
+              status={vectorOk ? 'online' : graph?.ok ? 'degraded' : 'unknown'}
+              label={vectorOk ? 'Covered' : graph?.ok ? 'Check coverage' : 'Waiting'}
+            />
+          }
+          detail={
+            graph?.ok
+              ? `${embeddedChildChunks}/${childChunks} child chunks embedded; ${missingParentEdges} missing parent edges; ${vectorIndexes.length} vector index row(s)`
+              : 'Connect Neo4j before vector coverage can be shown.'
+          }
+          tone={vectorOk ? 'good' : graph?.ok ? 'warn' : 'default'}
         />
       </div>
 

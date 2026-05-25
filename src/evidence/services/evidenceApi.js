@@ -186,6 +186,8 @@ export const evidenceApi = {
   getCaseHealth: (caseId, options) => request(casePath(caseId, '/health'), options),
   getStorageHealth: (caseId, options) =>
     request(casePath(caseId, '/storage/health'), options),
+  getGraphHealth: (caseId, options) =>
+    request(casePath(caseId, '/graph/health'), options),
   runStorageSmoke: (caseId, options) =>
     request(casePath(caseId, '/storage/smoke'), { ...options, method: 'POST' }),
   getJobs: (caseId, params = {}, options = {}) =>
