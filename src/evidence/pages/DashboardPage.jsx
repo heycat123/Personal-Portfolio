@@ -101,7 +101,7 @@ export default function DashboardPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile icon={FileText} label={t('Documents')} value={counts.evidence_files || 0} detail={t('Evidence file records')} />
+        <MetricTile icon={FileText} label={t('Documents')} value={counts.document_files || counts.document_extractions || 0} detail={t('Unique extracted source files')} />
         <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" />
         <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail="Communication rows" />
         <MetricTile

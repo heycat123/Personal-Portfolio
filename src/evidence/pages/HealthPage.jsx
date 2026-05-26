@@ -335,8 +335,26 @@ export default function HealthPage() {
               rows={alignmentRows}
               rowKey={(row) => row.name}
               emptyTitle={t('No source alignment rows returned')}
+              toolbar={(
+                <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+                  {t('Each row compares a reference hash set to a target hash set. Missing means the hash exists in the reference but not the target. Extra means the hash exists in the target but not the reference. Hover the Missing or Extra number for row-specific meaning.')}
+                </div>
+              )}
               columns={[
-                { key: 'name', header: t('Comparison'), render: (row) => row.name.replaceAll('_', ' ') },
+                {
+                  key: 'name',
+                  header: t('Comparison'),
+                  render: (row) => (
+                    <div className="space-y-1">
+                      <div className="font-semibold text-gray-950 dark:text-white">{t(row.label || row.name.replaceAll('_', ' '))}</div>
+                      <div className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        {t('Reference')}: {t(row.reference_label || 'Reference hash set')}
+                        {' | '}
+                        {t('Compared to')}: {t(row.target_label || 'Target hash set')}
+                      </div>
+                    </div>
+                  ),
+                },
                 {
                   key: 'ok',
                   header: t('Status'),
@@ -347,8 +365,24 @@ export default function HealthPage() {
                     />
                   ),
                 },
-                { key: 'missing_count', header: t('Missing'), render: (row) => row.missing_count ?? '-' },
-                { key: 'extra_count', header: t('Extra'), render: (row) => row.extra_count ?? '-' },
+                {
+                  key: 'missing_count',
+                  header: t('Missing'),
+                  render: (row) => (
+                    <span title={t(row.missing_meaning || 'Hash exists in the reference set but not the target set.')}>
+                      {row.missing_count ?? '-'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'extra_count',
+                  header: t('Extra'),
+                  render: (row) => (
+                    <span title={t(row.extra_meaning || 'Hash exists in the target set but not the reference set.')}>
+                      {row.extra_count ?? '-'}
+                    </span>
+                  ),
+                },
               ]}
             />
           </div>

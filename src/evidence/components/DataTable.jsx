@@ -415,13 +415,13 @@ export default function DataTable({
               <X size={12} aria-hidden="true" />
             </button>
           ))}
-          {activeFilterLabels.length && onClearAllFilters ? (
+          {(sortLabel || activeFilterLabels.length) && onClearAllFilters ? (
             <button
               type="button"
               onClick={onClearAllFilters}
               className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
             >
-              {t('Clear filters')}
+              {t('Reset table')}
             </button>
           ) : null}
         </div>
@@ -457,7 +457,10 @@ export default function DataTable({
                         <td className="px-2 py-2 align-top">
                           <button
                             type="button"
-                            onClick={() => onToggleRow?.(row, key)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onToggleRow?.(row, key);
+                            }}
                             className="rounded-md p-1 hover:bg-gray-100 dark:hover:bg-white/10"
                             title="Expand row details"
                           >
@@ -527,7 +530,10 @@ export default function DataTable({
                 <>
                   <button
                     type="button"
-                    onClick={() => onToggleRow?.(row, key)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleRow?.(row, key);
+                    }}
                     className="mt-3 inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                   >
                     {isExpanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}

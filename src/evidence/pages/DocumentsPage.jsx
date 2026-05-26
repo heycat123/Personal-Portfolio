@@ -13,6 +13,27 @@ import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
+const DEFAULT_SORT = { key: 'updated_at', desc: true };
+
+function documentsTableStorageKey(caseId) {
+  return `evidence.documents.table.${caseId || 'default'}`;
+}
+
+function readStoredDocumentsTableState(caseId) {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(documentsTableStorageKey(caseId));
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 function formatSummary(summary, fallback, t) {
   const entries = Object.entries(summary || {}).filter(([, count]) => Number(count) > 0);
@@ -109,14 +130,15 @@ function selectedPipelineDomains(value) {
 
 export default function DocumentsPage() {
   const { caseId } = useParams();
+  const initialTableState = readStoredDocumentsTableState(caseId);
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const [queryDraft, setQueryDraft] = useState('');
-  const [appliedQuery, setAppliedQuery] = useState('');
-  const [filterValues, setFilterValues] = useState({});
-  const [sort, setSort] = useState({ key: 'updated_at', desc: true });
-  const [offset, setOffset] = useState(0);
+  const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
+  const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
+  const [filterValues, setFilterValues] = useState(initialTableState.filterValues || {});
+  const [sort, setSort] = useState(initialTableState.sort || DEFAULT_SORT);
+  const [offset, setOffset] = useState(Number(initialTableState.offset || 0));
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -150,6 +172,18 @@ export default function DocumentsPage() {
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
   }), [appliedQuery, filterValues, offset, sort]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(documentsTableStorageKey(caseId), JSON.stringify({
+      appliedQuery,
+      filterValues,
+      sort,
+      offset,
+    }));
+  }, [appliedQuery, caseId, filterValues, offset, sort]);
 
   const loadDocuments = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -200,6 +234,14 @@ export default function DocumentsPage() {
   const clearSearch = () => {
     setQueryDraft('');
     setAppliedQuery('');
+    setOffset(0);
+  };
+
+  const resetTable = () => {
+    setQueryDraft('');
+    setAppliedQuery('');
+    setFilterValues({});
+    setSort(DEFAULT_SORT);
     setOffset(0);
   };
 
@@ -436,10 +478,7 @@ export default function DocumentsPage() {
           setFilterValues((current) => ({ ...current, [columnId]: value }));
         }}
         onClearFilter={clearColumnFilter}
-        onClearAllFilters={() => {
-          setOffset(0);
-          setFilterValues({});
-        }}
+        onClearAllFilters={resetTable}
         onSort={(columnId, desc) => {
           setOffset(0);
           setSort({ key: columnId, desc });
