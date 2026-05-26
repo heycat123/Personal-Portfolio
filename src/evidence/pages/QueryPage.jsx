@@ -493,7 +493,7 @@ function ConversationList({
   t,
 }) {
   return (
-    <aside className="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:min-h-[520px]">
+    <aside className="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:h-full">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <History size={17} className="shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
@@ -519,7 +519,7 @@ function ConversationList({
         </div>
       </div>
       {error ? <ErrorPanel title="Conversation history failed" error={error} /> : null}
-      <div className="flex max-w-full gap-2 overflow-x-auto pb-1 xl:max-h-[470px] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
+      <div className="flex max-w-full gap-2 overflow-x-auto pb-1 xl:max-h-[calc(100%_-_3.25rem)] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
         {conversations.length ? (
           conversations.map((conversation) => {
             const active = conversation.conversation_id === activeConversationId;
@@ -788,7 +788,7 @@ export default function QueryPage() {
   const traceRows = useMemo(() => state.result?.retrieval_trace || [], [state.result?.retrieval_trace]);
 
   return (
-    <div className="flex min-h-[calc(100vh-150px)] w-full min-w-0 max-w-full flex-col overflow-x-hidden">
+    <div className="flex w-full min-w-0 max-w-full flex-col overflow-x-hidden">
       <PageHeader
         title="Agentic Query"
         description="Ask case-scoped evidence questions through the agentic planner and inspect tools, sufficiency, citations, trace, and cost."
@@ -806,7 +806,7 @@ export default function QueryPage() {
         </div>
       ) : null}
 
-      <div className="grid w-full min-w-0 max-w-full flex-1 gap-4 overflow-x-hidden xl:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid h-[calc(100dvh_-_290px)] min-h-[360px] w-full min-w-0 max-w-full gap-4 overflow-hidden sm:h-[calc(100dvh_-_260px)] sm:min-h-[420px] lg:h-[calc(100dvh_-_240px)] xl:grid-cols-[300px_minmax(0,1fr)]">
         <ConversationList
           conversations={conversationState.conversations}
           activeConversationId={activeConversationId}
@@ -818,8 +818,8 @@ export default function QueryPage() {
           t={t}
         />
 
-        <section className="flex min-h-[520px] min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
-        <div className="min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
+        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
+        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain p-3 sm:p-4">
           {hasMessages ? (
             messages.map((message) => (
               <QueryMessage
@@ -857,7 +857,7 @@ export default function QueryPage() {
                   runQuery();
                 }
               }}
-              className="min-h-[54px] min-w-0 flex-1 resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              className="min-h-[54px] min-w-0 flex-1 resize-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               placeholder={t('Ask a question about the evidence')}
             />
             <button
