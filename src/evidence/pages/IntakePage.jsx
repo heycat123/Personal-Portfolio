@@ -431,7 +431,7 @@ export default function IntakePage() {
       const result = await evidenceApi.reviewGoogleDriveNativeFiles(
         caseId,
         activeGoogleConnection.source_connection_id,
-        { recursive: true, max_files: 500, max_folders: 500 },
+        { recursive: false, max_files: 250, max_folders: 50 },
         { token },
       );
       addFingerprint(result, 'Review Google native files');
@@ -798,7 +798,7 @@ export default function IntakePage() {
                             count: driveReview.summary.total || 0,
                             pending: driveReview.summary.needs_review || 0,
                           })
-                          : t('Scanning selected folders for native Google files.')}
+                          : t('Scanning the selected top-level folders for native Google files.')}
                       </p>
                     </div>
                     <button
