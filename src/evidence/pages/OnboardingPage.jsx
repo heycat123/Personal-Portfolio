@@ -43,6 +43,13 @@ const ACTIVE_STAGES = ['Filed', 'Waiting for service', 'Service completed', 'Dis
 const PRECASE_STAGES = ['No case filed', 'Considering filing', 'Gathering documents', 'Waiting for attorney review', 'Demand letter stage', 'Settlement discussion', 'Agency complaint pending', 'Unsure'];
 const EVIDENCE_GOALS = ['Build a timeline', 'Prove communication attempts', 'Identify contradictions', 'Prepare for attorney review', 'Organize documents', 'Find missing evidence'];
 const DOCUMENT_SOURCES = ['Manual uploads', 'Google Drive', 'Gmail', 'Text messages', 'Photos and videos', 'Financial records', 'School records', 'Medical records'];
+const LEGAL_ISSUES = ['Custody', 'Timesharing', 'Relocation', 'Child support', 'Contempt', 'Enforcement', 'Modification', 'Damages', 'Debt collection', 'Employment termination', 'Contract breach', 'Immigration status'];
+const EVIDENCE_CATEGORIES = ['Court filings', 'Court orders', 'Emails', 'Text messages', 'Chat messages', 'Photos', 'Videos', 'Financial records', 'School records', 'Medical records', 'Police reports', 'Travel records', 'Contracts', 'Personal notes'];
+const SENSITIVE_MATERIALS = ['Attorney-client communications', 'Settlement negotiations', 'Minor child information', 'Medical information', 'School records', 'Financial disclosures', 'Sealed records', 'Confidential addresses', 'Domestic violence or safety-sensitive information', 'Immigration records'];
+const ENTITY_TYPES = ['People', 'Children', 'Parents', 'Attorneys', 'Courts', 'Agencies', 'Schools', 'Employers', 'Doctors', 'Addresses', 'Phone numbers', 'Email accounts', 'Case numbers', 'Orders', 'Documents', 'Events', 'Payments', 'Locations'];
+const RELATIONSHIP_TYPES = ['Parent of', 'Represented by', 'Employed by', 'Enrolled at', 'Lives at', 'Sent message to', 'Failed to respond', 'Filed document', 'Served document', 'Ordered by court', 'Violated order', 'Paid', 'Owed', 'Moved from', 'Moved to'];
+const FACT_PRIORITIES = ['Timeline of events', 'Missed communication', 'Denied contact', 'Payments', 'Contradictions', 'Location history', 'School history', 'Medical events', 'Threats', 'Deadlines', 'Court order violations', 'Damages', 'Witnesses', 'Evidence gaps'];
+const ACCESS_ROLES = ['Owner', 'Attorney', 'Paralegal', 'Co-party', 'Expert', 'Witness', 'Viewer', 'Document uploader'];
 
 function splitList(value) {
   return String(value || '')
@@ -62,6 +69,35 @@ function Field({ label, children }) {
 
 function inputClass() {
   return 'w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 dark:border-gray-700 dark:bg-[#0b1117] dark:text-white dark:focus:border-sky-500 dark:focus:ring-sky-900/50';
+}
+
+function ChipGroup({ title, values, selectedValues, onToggle, tone = 'sky' }) {
+  const activeClass =
+    tone === 'emerald'
+      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-100'
+      : 'border-sky-600 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100';
+  return (
+    <div>
+      <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</p>
+      <div className="flex flex-wrap gap-2">
+        {values.map((item) => (
+          <button
+            type="button"
+            key={item}
+            onClick={() => onToggle(item)}
+            className={[
+              'rounded-full border px-3 py-1.5 text-sm font-medium',
+              selectedValues.includes(item)
+                ? activeClass
+                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10',
+            ].join(' ')}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function OnboardingPage() {
@@ -98,6 +134,16 @@ export default function OnboardingPage() {
     parties: '',
     evidence_goals: [],
     document_sources: [],
+    legal_issues: [],
+    known_laws_rules_orders: '',
+    existing_orders_agreements: '',
+    important_dates: '',
+    evidence_categories: [],
+    sensitive_materials: [],
+    entity_types: ['People', 'Documents', 'Events'],
+    relationship_types: [],
+    fact_extraction_priorities: [],
+    access_roles: ['Owner'],
   });
 
   const selectPath = (id) => {
@@ -283,48 +329,37 @@ export default function OnboardingPage() {
                 />
               </Field>
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div>
-                  <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">Evidence goals</p>
-                  <div className="flex flex-wrap gap-2">
-                    {EVIDENCE_GOALS.map((item) => (
-                      <button
-                        type="button"
-                        key={item}
-                        onClick={() => toggle('evidence_goals', item)}
-                        className={[
-                          'rounded-full border px-3 py-1.5 text-sm font-medium',
-                          form.evidence_goals.includes(item)
-                            ? 'border-sky-600 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100'
-                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10',
-                        ].join(' ')}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
+              <section className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-[#0b1117]">
+                <div className="mb-4">
+                  <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">Case intelligence setup</p>
+                  <h3 className="mt-1 text-base font-semibold text-gray-950 dark:text-white">Guide extraction before documents are processed</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    These choices become workspace metadata that later ingestion, graphing, timeline, entity resolution, and quality checks can use.
+                  </p>
                 </div>
-                <div>
-                  <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">Expected document sources</p>
-                  <div className="flex flex-wrap gap-2">
-                    {DOCUMENT_SOURCES.map((item) => (
-                      <button
-                        type="button"
-                        key={item}
-                        onClick={() => toggle('document_sources', item)}
-                        className={[
-                          'rounded-full border px-3 py-1.5 text-sm font-medium',
-                          form.document_sources.includes(item)
-                            ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-100'
-                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10',
-                        ].join(' ')}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <ChipGroup title="Legal issues" values={LEGAL_ISSUES} selectedValues={form.legal_issues} onToggle={(item) => toggle('legal_issues', item)} />
+                  <ChipGroup title="Evidence goals" values={EVIDENCE_GOALS} selectedValues={form.evidence_goals} onToggle={(item) => toggle('evidence_goals', item)} />
+                  <ChipGroup title="Expected document sources" values={DOCUMENT_SOURCES} selectedValues={form.document_sources} onToggle={(item) => toggle('document_sources', item)} tone="emerald" />
+                  <ChipGroup title="Evidence categories" values={EVIDENCE_CATEGORIES} selectedValues={form.evidence_categories} onToggle={(item) => toggle('evidence_categories', item)} tone="emerald" />
+                  <ChipGroup title="Sensitive or privileged material" values={SENSITIVE_MATERIALS} selectedValues={form.sensitive_materials} onToggle={(item) => toggle('sensitive_materials', item)} />
+                  <ChipGroup title="Entity types to track" values={ENTITY_TYPES} selectedValues={form.entity_types} onToggle={(item) => toggle('entity_types', item)} />
+                  <ChipGroup title="Relationship types to track" values={RELATIONSHIP_TYPES} selectedValues={form.relationship_types} onToggle={(item) => toggle('relationship_types', item)} />
+                  <ChipGroup title="Fact extraction priorities" values={FACT_PRIORITIES} selectedValues={form.fact_extraction_priorities} onToggle={(item) => toggle('fact_extraction_priorities', item)} />
+                  <ChipGroup title="Expected access roles" values={ACCESS_ROLES} selectedValues={form.access_roles} onToggle={(item) => toggle('access_roles', item)} />
                 </div>
-              </div>
+                <div className="mt-5 grid gap-4 lg:grid-cols-3">
+                  <Field label="Known laws, rules, orders, or standards">
+                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.known_laws_rules_orders} onChange={(event) => update('known_laws_rules_orders', event.target.value)} placeholder="Optional. The user can say they do not know." />
+                  </Field>
+                  <Field label="Existing orders or agreements">
+                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.existing_orders_agreements} onChange={(event) => update('existing_orders_agreements', event.target.value)} placeholder="Court orders, contracts, agreements, agency decisions." />
+                  </Field>
+                  <Field label="Important dates">
+                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.important_dates} onChange={(event) => update('important_dates', event.target.value)} placeholder="Filing dates, incidents, deadlines, move dates, hearing dates." />
+                  </Field>
+                </div>
+              </section>
 
               <div className="flex flex-wrap items-center gap-3">
                 <button
