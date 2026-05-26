@@ -4,29 +4,60 @@ import { DEFAULT_EVIDENCE_CASE, EVIDENCE_CASES } from '../evidenceConfig';
 
 const CaseContext = createContext(null);
 
+function normalizeCase(item) {
+  const caseId = item?.caseId || item?.case_id;
+  if (!caseId) {
+    return null;
+  }
+  return {
+    tenantId: item.tenantId || item.tenant_id || DEFAULT_EVIDENCE_CASE.tenantId,
+    organizationId: item.organizationId || item.organization_id || DEFAULT_EVIDENCE_CASE.organizationId,
+    caseId,
+    tenantName: item.tenantName || item.tenant_name || DEFAULT_EVIDENCE_CASE.tenantName,
+    organizationName: item.organizationName || item.organization_name || DEFAULT_EVIDENCE_CASE.organizationName,
+    caseName: item.caseName || item.case_name || caseId,
+    status: item.status || 'active',
+    environment: item.environment,
+  };
+}
+
+function mergeCases(currentCases, nextCases) {
+  const merged = new Map(currentCases.map((item) => [item.caseId, item]));
+  nextCases.map(normalizeCase).filter(Boolean).forEach((item) => {
+    merged.set(item.caseId, { ...(merged.get(item.caseId) || {}), ...item });
+  });
+  return Array.from(merged.values());
+}
+
 export function CaseProvider({ children }) {
   const [activeCaseId, setActiveCaseIdState] = useState(DEFAULT_EVIDENCE_CASE.caseId);
+  const [knownCases, setKnownCases] = useState(EVIDENCE_CASES);
 
   const setActiveCaseId = useCallback((caseId) => {
-    const nextCase = EVIDENCE_CASES.find((item) => item.caseId === caseId);
+    const nextCase = knownCases.find((item) => item.caseId === caseId);
     if (nextCase) {
       setActiveCaseIdState(nextCase.caseId);
     }
+  }, [knownCases]);
+
+  const registerCases = useCallback((cases) => {
+    setKnownCases((current) => mergeCases(current, cases || []));
   }, []);
 
   const value = useMemo(() => {
     const activeCase =
-      EVIDENCE_CASES.find((item) => item.caseId === activeCaseId) || DEFAULT_EVIDENCE_CASE;
+      knownCases.find((item) => item.caseId === activeCaseId) || knownCases[0] || DEFAULT_EVIDENCE_CASE;
 
     return {
       activeCase,
       activeCaseId: activeCase.caseId,
-      cases: EVIDENCE_CASES,
+      cases: knownCases,
       defaultCaseId: DEFAULT_EVIDENCE_CASE.caseId,
-      isKnownCase: (caseId) => EVIDENCE_CASES.some((item) => item.caseId === caseId),
+      isKnownCase: (caseId) => knownCases.some((item) => item.caseId === caseId),
+      registerCases,
       setActiveCaseId,
     };
-  }, [activeCaseId, setActiveCaseId]);
+  }, [activeCaseId, knownCases, registerCases, setActiveCaseId]);
 
   return <CaseContext.Provider value={value}>{children}</CaseContext.Provider>;
 }

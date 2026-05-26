@@ -1,0 +1,119 @@
+import { ArrowRight, Briefcase, FolderPlus } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import EmptyState from '../components/EmptyState';
+import ErrorPanel from '../components/ErrorPanel';
+import PageHeader from '../components/PageHeader';
+import StatusBadge from '../components/StatusBadge';
+import { useEvidenceAuth } from '../context/AuthContext';
+import { useCaseContext } from '../context/CaseContext';
+import { evidenceApi } from '../services/evidenceApi';
+
+function caseName(item) {
+  return item.caseName || item.case_name || item.caseId || item.case_id;
+}
+
+function caseId(item) {
+  return item.caseId || item.case_id;
+}
+
+export default function CaseSelectorPage() {
+  const { getAccessToken } = useEvidenceAuth();
+  const { registerCases } = useCaseContext();
+  const [state, setState] = useState({
+    loading: true,
+    error: null,
+    cases: [],
+  });
+
+  const loadCases = useCallback(async () => {
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getCases({ token });
+      const cases = result.data?.cases || [];
+      registerCases(cases);
+      setState({
+        loading: false,
+        error: null,
+        cases,
+      });
+    } catch (error) {
+      setState((current) => ({ ...current, loading: false, error }));
+    }
+  }, [getAccessToken, registerCases]);
+
+  useEffect(() => {
+    loadCases();
+  }, [loadCases]);
+
+  return (
+    <div>
+      <PageHeader
+        title="My Cases"
+        description="Choose a case or start onboarding if this account does not have access to a workspace yet."
+        actions={
+          <Link
+            to="/evidence/onboarding"
+            className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+          >
+            <FolderPlus size={16} aria-hidden="true" />
+            Start onboarding
+          </Link>
+        }
+      />
+
+      {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadCases} /></div> : null}
+
+      {state.loading ? (
+        <EmptyState title="Loading cases" description="Checking the workspaces available to this account." />
+      ) : state.cases.length ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {state.cases.map((item) => {
+            const id = caseId(item);
+            return (
+              <Link
+                key={id}
+                to={`/evidence/cases/${encodeURIComponent(id)}/dashboard`}
+                className="group rounded-lg border border-gray-200 bg-white p-5 shadow-sm hover:border-sky-300 hover:bg-sky-50/40 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-800 dark:hover:bg-sky-950/20"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-2 text-sky-700 dark:border-gray-800 dark:bg-[#0b1117] dark:text-sky-300">
+                    <Briefcase size={22} aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="break-words text-base font-semibold text-gray-950 group-hover:text-sky-800 dark:text-white dark:group-hover:text-sky-200">
+                        {caseName(item)}
+                      </h3>
+                      <StatusBadge status={item.status || 'active'} />
+                    </div>
+                    <p className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{id}</p>
+                    <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                      {item.environment ? `Environment: ${item.environment}` : 'Case workspace'}
+                    </p>
+                  </div>
+                  <ArrowRight className="mt-1 text-gray-400 group-hover:text-sky-700 dark:group-hover:text-sky-300" size={18} aria-hidden="true" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          title="No cases yet"
+          description="This account does not currently have access to a case or workspace. Start onboarding, join with an invitation, or request access from a case owner."
+          action={
+            <Link
+              to="/evidence/onboarding"
+              className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+            >
+              Start onboarding
+              <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          }
+        />
+      )}
+    </div>
+  );
+}
