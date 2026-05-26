@@ -16,6 +16,7 @@ import EntityDetailPage from './pages/EntityDetailPage';
 import EntitiesPage from './pages/EntitiesPage';
 import HealthPage from './pages/HealthPage';
 import IntakePage from './pages/IntakePage';
+import InvitationsPage from './pages/InvitationsPage';
 import JobDetailPage from './pages/JobDetailPage';
 import JobsPage from './pages/JobsPage';
 import LoginPage from './pages/LoginPage';
@@ -34,6 +35,7 @@ function EvidenceIndex() {
     loading: true,
     error: null,
     cases: [],
+    pendingInvitations: [],
   });
 
   const loadCases = useCallback(async () => {
@@ -42,8 +44,9 @@ function EvidenceIndex() {
       const token = await getAccessToken();
       const result = await evidenceApi.getCases({ token });
       const cases = result.data?.cases || [];
+      const pendingInvitations = result.data?.pending_invitations || [];
       registerCases(cases);
-      setState({ loading: false, error: null, cases });
+      setState({ loading: false, error: null, cases, pendingInvitations });
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
@@ -78,6 +81,10 @@ function EvidenceIndex() {
 
   if (state.cases.length > 1) {
     return <Navigate to="cases" replace />;
+  }
+
+  if (state.pendingInvitations.length > 0) {
+    return <Navigate to="invitations" replace />;
   }
 
   return <Navigate to="onboarding" replace />;
@@ -128,6 +135,12 @@ function UnknownCasePage() {
               Start new workspace
             </Link>
             <Link
+              to="/evidence/invitations"
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              Enter invite code
+            </Link>
+            <Link
               to="/evidence/onboarding?intent=precase"
               className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100 dark:hover:bg-sky-900/40"
             >
@@ -175,6 +188,7 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
           <Route index element={<EvidenceIndex />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="cases" element={<CaseSelectorPage />} />
+          <Route path="invitations" element={<InvitationsPage />} />
           <Route path="onboarding" element={<OnboardingPage />} />
           <Route path="cases/:caseId" element={<CaseScope />}>
             <Route index element={<Navigate to="dashboard" replace />} />

@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
+import { useCaseContext } from '../context/CaseContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 const OPTIONS = [
@@ -104,11 +105,14 @@ export default function OnboardingPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
+  const { registerCases } = useCaseContext();
   const initialIntent = searchParams.get('intent') || null;
+  const initialInviteCode = searchParams.get('invite_code') || '';
   const [selected, setSelected] = useState(initialIntent);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [unsure, setUnsure] = useState({ filed: '', invited: '', preparing: '' });
+  const [joinForm, setJoinForm] = useState({ invite_code: initialInviteCode });
   const [form, setForm] = useState({
     workspace_name:
       initialIntent === 'precase'
@@ -201,6 +205,27 @@ export default function OnboardingPage() {
       selectPath('active-case');
     } else {
       selectPath('precase');
+    }
+  };
+
+  const acceptInvitation = async (event) => {
+    event.preventDefault();
+    const inviteCode = joinForm.invite_code.trim();
+    if (!inviteCode) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.acceptInvitation({ invite_code: inviteCode }, { token });
+      const casesResult = await evidenceApi.getCases({ token });
+      registerCases(casesResult.data?.cases || []);
+      navigate(`/evidence/cases/${encodeURIComponent(result.data.case_id)}/dashboard`, { replace: true });
+    } catch (requestError) {
+      setError(requestError);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -378,19 +403,33 @@ export default function OnboardingPage() {
           ) : null}
 
           {selected === 'join' ? (
-            <div className="space-y-4">
+            <form className="space-y-4" onSubmit={acceptInvitation}>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Invitation acceptance is the next backend slice. For now this screen preserves the product path and avoids sending invited users into a dead-end case error.
+                Paste an invitation code from a case owner, attorney, or admin. The email on the invitation must match this account.
               </p>
               <div className="grid gap-4 lg:grid-cols-2">
                 <Field label="Invite code">
-                  <input className={inputClass()} placeholder="Paste invite code" />
+                  <input
+                    className={inputClass()}
+                    value={joinForm.invite_code}
+                    onChange={(event) => setJoinForm({ invite_code: event.target.value })}
+                    placeholder="case_xxxxxxxxxx_xxxxxxxxxx"
+                    required
+                  />
                 </Field>
                 <Field label="Inviter email">
-                  <input className={inputClass()} placeholder="Optional" />
+                  <input className={inputClass()} placeholder="Optional reference only" disabled />
                 </Field>
               </div>
-            </div>
+              <button
+                type="submit"
+                disabled={submitting || !joinForm.invite_code.trim()}
+                className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+              >
+                {submitting ? 'Accepting invitation...' : 'Accept invitation'}
+                <CheckCircle2 size={16} aria-hidden="true" />
+              </button>
+            </form>
           ) : null}
 
           {selected === 'unsure' ? (

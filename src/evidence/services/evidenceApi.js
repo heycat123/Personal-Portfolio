@@ -236,6 +236,9 @@ export const evidenceApi = {
   getCases: (options) => request('/api/v1/cases', options),
   createOnboardingWorkspace: (payload, options) =>
     request('/api/v1/onboarding/workspaces', { ...options, method: 'POST', body: payload }),
+  getPendingInvitations: (options) => request('/api/v1/invitations/pending', options),
+  acceptInvitation: (payload, options) =>
+    request('/api/v1/invitations/accept', { ...options, method: 'POST', body: payload }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
@@ -317,6 +320,14 @@ export const evidenceApi = {
       method: 'POST',
     }),
   getCaseMemberships: (caseId, options) => request(casePath(caseId, '/memberships'), options),
+  getCaseInvitations: (caseId, options) => request(casePath(caseId, '/invitations'), options),
+  createCaseInvitation: (caseId, payload, options) =>
+    request(casePath(caseId, '/invitations'), { ...options, method: 'POST', body: payload }),
+  cancelCaseInvitation: (caseId, invitationId, options) =>
+    request(casePath(caseId, `/invitations/${encodeURIComponent(invitationId)}/cancel`), {
+      ...options,
+      method: 'POST',
+    }),
   getRawParity: (caseId, options) => request(casePath(caseId, '/raw-parity'), options),
   getCaseHealth: (caseId, options) => request(casePath(caseId, '/health'), options),
   getStorageHealth: (caseId, options) =>

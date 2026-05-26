@@ -23,8 +23,10 @@ export default function AdminPage() {
     saving: false,
     users: [],
     memberships: [],
+    invitations: [],
     error: null,
     result: null,
+    invitationResult: null,
     fingerprint: null,
   });
   const [form, setForm] = useState({
@@ -35,23 +37,31 @@ export default function AdminPage() {
     send_email: true,
     temporary_password: '',
   });
+  const [inviteForm, setInviteForm] = useState({
+    email: '',
+    role: 'viewer',
+    message: '',
+  });
 
   const loadAdmin = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const [usersResult, membershipsResult] = await Promise.all([
+      const [usersResult, membershipsResult, invitationsResult] = await Promise.all([
         evidenceApi.getAdminUsers({ token }),
         evidenceApi.getCaseMemberships(caseId, { token }),
+        evidenceApi.getCaseInvitations(caseId, { token }),
       ]);
       recordFingerprint(usersResult, 'Admin users');
       recordFingerprint(membershipsResult, 'Case memberships');
+      recordFingerprint(invitationsResult, 'Case invitations');
       setState((current) => ({
         ...current,
         loading: false,
         users: usersResult.data?.users || [],
         memberships: membershipsResult.data?.memberships || [],
-        fingerprint: membershipsResult.requestFingerprintId || usersResult.requestFingerprintId,
+        invitations: invitationsResult.data?.invitations || [],
+        fingerprint: invitationsResult.requestFingerprintId || membershipsResult.requestFingerprintId || usersResult.requestFingerprintId,
       }));
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -91,6 +101,40 @@ export default function AdminPage() {
       await loadAdmin();
     } catch (error) {
       setState((current) => ({ ...current, saving: false, error }));
+    }
+  }
+
+  async function handleCreateInvitation(event) {
+    event.preventDefault();
+    setState((current) => ({ ...current, saving: true, error: null, invitationResult: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createCaseInvitation(caseId, inviteForm, { token });
+      recordFingerprint(result, 'Create invitation');
+      setInviteForm({ email: '', role: 'viewer', message: '' });
+      setState((current) => ({
+        ...current,
+        saving: false,
+        invitationResult: result.data,
+        fingerprint: result.requestFingerprintId,
+      }));
+      await loadAdmin();
+    } catch (error) {
+      setState((current) => ({ ...current, saving: false, error }));
+    }
+  }
+
+  async function cancelInvitation(invitationId) {
+    setState((current) => ({ ...current, saving: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.cancelCaseInvitation(caseId, invitationId, { token });
+      recordFingerprint(result, 'Cancel invitation');
+      await loadAdmin();
+    } catch (error) {
+      setState((current) => ({ ...current, saving: false, error }));
+    } finally {
+      setState((current) => ({ ...current, saving: false }));
     }
   }
 
@@ -225,6 +269,62 @@ export default function AdminPage() {
               {t('Temporary password')}: <span className="font-mono">{state.result.cognito.temporary_password}</span>
             </div>
           ) : null}
+
+          <div className="my-6 border-t border-gray-200 dark:border-gray-800" />
+
+          <div className="mb-4">
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Invite to Case')}</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {t('Create an invitation code. Email delivery will be handled by a later SES integration.')}
+            </p>
+          </div>
+
+          <form className="space-y-4" onSubmit={handleCreateInvitation}>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Email')}</span>
+              <input
+                type="email"
+                value={inviteForm.email}
+                onChange={(event) => setInviteForm((current) => ({ ...current, email: event.target.value }))}
+                required
+                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Case role')}</span>
+              <select
+                value={inviteForm.role}
+                onChange={(event) => setInviteForm((current) => ({ ...current, role: event.target.value }))}
+                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              >
+                {CASE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Message')}</span>
+              <textarea
+                value={inviteForm.message}
+                onChange={(event) => setInviteForm((current) => ({ ...current, message: event.target.value }))}
+                className="mt-1 min-h-20 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={state.saving}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <UserPlus size={16} aria-hidden="true" />
+              {state.saving ? t('Saving') : t('Create Invitation')}
+            </button>
+          </form>
+
+          {state.invitationResult?.invitation?.invite_code ? (
+            <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+              <div className="font-semibold">{t('Invite code')}</div>
+              <div className="mt-1 break-all font-mono">{state.invitationResult.invitation.invite_code}</div>
+              <div className="mt-2 text-xs">{state.invitationResult.invite_url}</div>
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -307,6 +407,40 @@ export default function AdminPage() {
               <RequestFingerprint fingerprintId={state.fingerprint} label={t('Admin latest')} />
             </div>
           ) : null}
+
+          <div className="mt-8">
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Pending Invitations')}</h3>
+            <div className="space-y-2">
+              {state.invitations.length ? (
+                state.invitations.map((invitation) => (
+                  <div key={invitation.invitation_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-gray-950 dark:text-white">{invitation.invited_email}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                          <StatusBadge status={invitation.status} />
+                          <span>{invitation.role}</span>
+                          <span>{formatDateTime(invitation.created_at)}</span>
+                        </div>
+                        <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{invitation.invite_code}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => cancelInvitation(invitation.invitation_id)}
+                        disabled={state.saving || invitation.status !== 'pending'}
+                        className="inline-flex items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                      >
+                        <UserX size={13} aria-hidden="true" />
+                        {t('Cancel')}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No invitations yet.')}</p>
+              )}
+            </div>
+          </div>
         </section>
       </div>
     </div>

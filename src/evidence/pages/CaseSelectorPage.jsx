@@ -104,13 +104,21 @@ export default function CaseSelectorPage() {
           title="No cases yet"
           description="This account does not currently have access to a case or workspace. Start onboarding, join with an invitation, or request access from a case owner."
           action={
-            <Link
-              to="/evidence/onboarding"
-              className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
-            >
-              Start onboarding
-              <ArrowRight size={16} aria-hidden="true" />
-            </Link>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link
+                to="/evidence/onboarding"
+                className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+              >
+                Start onboarding
+                <ArrowRight size={16} aria-hidden="true" />
+              </Link>
+              <Link
+                to="/evidence/invitations"
+                className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100 dark:hover:bg-sky-900/40"
+              >
+                Enter invite code
+              </Link>
+            </div>
           }
         />
       )}
