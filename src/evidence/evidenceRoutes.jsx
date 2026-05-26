@@ -16,6 +16,7 @@ import EntityDetailPage from './pages/EntityDetailPage';
 import EntitiesPage from './pages/EntitiesPage';
 import HealthPage from './pages/HealthPage';
 import IntakePage from './pages/IntakePage';
+import InvitationSplashPage from './pages/InvitationSplashPage';
 import InvitationsPage from './pages/InvitationsPage';
 import JobDetailPage from './pages/JobDetailPage';
 import JobsPage from './pages/JobsPage';
@@ -90,9 +91,14 @@ function EvidenceIndex() {
   return <Navigate to="onboarding" replace />;
 }
 
-function ProtectedEvidenceRoute() {
+function ProtectedEvidenceRoute({ darkTheme, setDarkTheme }) {
   const location = useLocation();
   const { loading, isAuthenticated } = useEvidenceAuth();
+  const searchParams = new URLSearchParams(location.search);
+  const isInviteOnboardingLink =
+    location.pathname.endsWith('/evidence/onboarding') &&
+    searchParams.get('intent') === 'join' &&
+    Boolean(searchParams.get('invite_code'));
 
   if (loading) {
     return (
@@ -103,6 +109,9 @@ function ProtectedEvidenceRoute() {
   }
 
   if (!isAuthenticated) {
+    if (isInviteOnboardingLink) {
+      return <InvitationSplashPage darkTheme={darkTheme} setDarkTheme={setDarkTheme} />;
+    }
     return <Navigate to="/evidence/login" replace state={{ from: location }} />;
   }
 
@@ -183,7 +192,7 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
   return (
     <Routes>
       <Route path="login" element={<LoginPage darkTheme={darkTheme} setDarkTheme={setDarkTheme} />} />
-      <Route element={<ProtectedEvidenceRoute />}>
+      <Route element={<ProtectedEvidenceRoute darkTheme={darkTheme} setDarkTheme={setDarkTheme} />}>
         <Route element={<EvidenceLayout darkTheme={darkTheme} setDarkTheme={setDarkTheme} />}>
           <Route index element={<EvidenceIndex />} />
           <Route path="account" element={<AccountPage />} />

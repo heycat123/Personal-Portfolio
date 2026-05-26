@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Briefcase, CheckCircle2, FolderPlus, HelpCircle, UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
@@ -111,6 +111,7 @@ export default function OnboardingPage() {
   const [selected, setSelected] = useState(initialIntent);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [autoAcceptAttempted, setAutoAcceptAttempted] = useState(false);
   const [unsure, setUnsure] = useState({ filed: '', invited: '', preparing: '' });
   const [joinForm, setJoinForm] = useState({ invite_code: initialInviteCode });
   const [form, setForm] = useState({
@@ -208,9 +209,8 @@ export default function OnboardingPage() {
     }
   };
 
-  const acceptInvitation = async (event) => {
-    event.preventDefault();
-    const inviteCode = joinForm.invite_code.trim();
+  const acceptInviteCode = useCallback(async (rawInviteCode) => {
+    const inviteCode = String(rawInviteCode || '').trim();
     if (!inviteCode) {
       return;
     }
@@ -227,6 +227,19 @@ export default function OnboardingPage() {
     } finally {
       setSubmitting(false);
     }
+  }, [getAccessToken, navigate, registerCases]);
+
+  useEffect(() => {
+    if (selected !== 'join' || !initialInviteCode || autoAcceptAttempted) {
+      return;
+    }
+    setAutoAcceptAttempted(true);
+    acceptInviteCode(initialInviteCode);
+  }, [acceptInviteCode, autoAcceptAttempted, initialInviteCode, selected]);
+
+  const acceptInvitation = async (event) => {
+    event.preventDefault();
+    await acceptInviteCode(joinForm.invite_code);
   };
 
   const selectedOption = OPTIONS.find((option) => option.id === selected);

@@ -54,7 +54,7 @@ export default function LoginPage({ darkTheme, setDarkTheme }) {
     signIn,
     signUp,
   } = useEvidenceAuth();
-  const [view, setView] = useState('sign-in');
+  const [view, setView] = useState(location.state?.preferredView || 'sign-in');
   const [form, setForm] = useState({
     identifier: '',
     email: '',
@@ -70,7 +70,10 @@ export default function LoginPage({ darkTheme, setDarkTheme }) {
   const [submitting, setSubmitting] = useState(false);
 
   const fallbackPath = `/evidence/cases/${defaultCaseId}/dashboard`;
-  const destination = location.state?.from?.pathname || fallbackPath;
+  const fromLocation = location.state?.from;
+  const destination = fromLocation
+    ? `${fromLocation.pathname || ''}${fromLocation.search || ''}${fromLocation.hash || ''}`
+    : fallbackPath;
 
   if (!loading && isAuthenticated) {
     return <Navigate to={destination} replace />;

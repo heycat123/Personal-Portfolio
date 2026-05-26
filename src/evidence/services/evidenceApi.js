@@ -236,6 +236,8 @@ export const evidenceApi = {
   getCases: (options) => request('/api/v1/cases', options),
   createOnboardingWorkspace: (payload, options) =>
     request('/api/v1/onboarding/workspaces', { ...options, method: 'POST', body: payload }),
+  previewInvitation: (inviteCode, options) =>
+    request('/api/v1/invitations/preview', { ...options, query: { invite_code: inviteCode } }),
   getPendingInvitations: (options) => request('/api/v1/invitations/pending', options),
   acceptInvitation: (payload, options) =>
     request('/api/v1/invitations/accept', { ...options, method: 'POST', body: payload }),

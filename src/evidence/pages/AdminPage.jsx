@@ -11,7 +11,8 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
-const CASE_ROLES = ['owner', 'admin', 'lawyer', 'client', 'viewer'];
+const GLOBAL_ROLES = ['root_admin', 'admin', 'member'];
+const CASE_ROLES = ['owner', 'admin', 'lawyer', 'contributor', 'client', 'viewer'];
 
 export default function AdminPage() {
   const { caseId } = useParams();
@@ -218,8 +219,7 @@ export default function AdminPage() {
                   onChange={(event) => setForm((current) => ({ ...current, global_role: event.target.value }))}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 >
-                  <option value="member">member</option>
-                  <option value="admin">admin</option>
+                  {GLOBAL_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
                 </select>
               </label>
               <label className="block">
