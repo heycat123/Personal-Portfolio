@@ -32,14 +32,13 @@ function InfoButton({ label }) {
     return null;
   }
   return (
-    <button
-      type="button"
+    <span
       title={label}
       aria-label={label}
       className="inline-flex shrink-0 rounded-full text-gray-400 hover:text-sky-700 dark:hover:text-sky-300"
     >
       <HelpCircle size={14} aria-hidden="true" />
-    </button>
+    </span>
   );
 }
 
@@ -255,7 +254,7 @@ export default function DataTable({
       return null;
     }
     return (
-      <div className="overflow-x-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:hidden">
+      <div className="overflow-visible rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:hidden">
         <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sort and filter')}</div>
         <div className="flex flex-wrap gap-2">
           {visibleColumns.filter((column) => column.mobileFilterHidden !== true).map((column) => {
@@ -383,7 +382,7 @@ export default function DataTable({
               <tr>
                 {hasDetailPanel ? <th className="w-10 px-2 py-2" /> : null}
                 {visibleColumns.map((column) => (
-                  <th key={columnId(column)} className={`overflow-hidden px-2 py-2 align-top ${column.headerClassName || ''}`}>
+                  <th key={columnId(column)} className={`${enableHeaderMenus ? 'overflow-visible' : 'overflow-hidden'} px-2 py-2 align-top ${column.headerClassName || ''}`}>
                     {renderDesktopHeader(column)}
                   </th>
                 ))}
