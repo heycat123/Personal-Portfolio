@@ -157,6 +157,8 @@ export const evidenceApi = {
       method: 'POST',
     }),
   getCases: (options) => request('/api/v1/cases', options),
+  createOnboardingWorkspace: (payload, options) =>
+    request('/api/v1/onboarding/workspaces', { ...options, method: 'POST', body: payload }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
