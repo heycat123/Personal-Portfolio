@@ -5,6 +5,22 @@
 html,
 body,
 #root {
+  min-height: 100%;
   min-width: 0;
   overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+}
+
+html.dark body,
+html.dark #root {
+  background: #0b0f14;
+}
+
+html.light body,
+html.light #root {
+  background: #f6f7f9;
 }

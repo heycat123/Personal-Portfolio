@@ -119,13 +119,26 @@ export default function DocumentsPage() {
   const [expandedDocuments, setExpandedDocuments] = useState({});
   const [documentDetails, setDocumentDetails] = useState({});
 
+  const documentQuery = useMemo(() => ({
+    limit: PAGE_SIZE,
+    offset,
+    q: appliedQuery,
+    file_name: filterValues.original_filename,
+    origin: filterValues.origin_label,
+    evidence_type: filterValues.evidence_type_label,
+    storage_status: filterValues.canonical_storage_label,
+    min_pages: filterValues.page_count,
+    sort_by: sort?.key || 'updated_at',
+    sort_dir: sort?.desc ? 'desc' : 'asc',
+  }), [appliedQuery, filterValues, offset, sort]);
+
   const loadDocuments = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getDocuments(
         caseId,
-        { limit: PAGE_SIZE, offset, q: appliedQuery },
+        documentQuery,
         { token },
       );
       recordFingerprint(result, 'Documents list');
@@ -143,7 +156,7 @@ export default function DocumentsPage() {
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
-  }, [appliedQuery, caseId, getAccessToken, offset, recordFingerprint]);
+  }, [caseId, documentQuery, getAccessToken, recordFingerprint]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -156,7 +169,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     setExpandedDocuments({});
     setDocumentDetails({});
-  }, [offset, appliedQuery]);
+  }, [documentQuery]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -255,6 +268,7 @@ export default function DocumentsPage() {
       headerClassName: 'w-[36%]',
       className: 'min-w-0',
       help: t('The file name recorded for this evidence item. Click the name for the document detail page; click the row for the drawer.'),
+      filterPlaceholder: t('Filename or hash'),
       render: (document) => (
         <Link
           to={`/evidence/cases/${caseId}/documents/${document.file_id}`}
@@ -271,6 +285,7 @@ export default function DocumentsPage() {
       header: t('Origin'),
       headerClassName: 'w-[14%]',
       help: t('Where the item originally came from, such as Google Drive, web upload, or a communication export.'),
+      filterPlaceholder: t('Google Drive, upload, SMS'),
       render: (document) => document.origin_label || 'unknown',
     },
     {
@@ -278,6 +293,7 @@ export default function DocumentsPage() {
       header: t('Evidence Type'),
       headerClassName: 'w-[14%]',
       help: t('What kind of evidence this is. This is separate from where the file came from.'),
+      filterPlaceholder: t('Document or communication'),
       render: (document) => document.evidence_type_label || 'Document',
     },
     {
@@ -285,6 +301,7 @@ export default function DocumentsPage() {
       header: t('S3 Sync'),
       headerClassName: 'w-[14%]',
       help: t('Whether Evidence AI has a canonical copy of this raw file in S3.'),
+      filterPlaceholder: t('Synced, pending, legacy'),
       render: (document) => <StorageSyncBadge document={document} />,
     },
     {
@@ -297,37 +314,8 @@ export default function DocumentsPage() {
       render: (document) => <PipelineDots document={document} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[7%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
-    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[12%]', render: (document) => formatDateTime(document.updated_at || document.created_at) },
+    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[12%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
   ]), [caseId, t]);
-
-  const filteredDocuments = useMemo(() => {
-    const activeFilters = Object.entries(filterValues || {}).filter(([, value]) => String(value || '').trim());
-    const rows = state.documents.filter((document) =>
-      activeFilters.every(([key, value]) => {
-        const needle = String(value || '').trim().toLowerCase();
-        if (!needle) {
-          return true;
-        }
-        const raw = document[key];
-        if (key === 'page_count') {
-          return Number(raw || 0) >= Number(value || 0);
-        }
-        return String(raw ?? '').toLowerCase().includes(needle);
-      }),
-    );
-    const sortKey = sort?.key;
-    if (!sortKey) {
-      return rows;
-    }
-    return [...rows].sort((left, right) => {
-      const leftValue = left[sortKey] ?? '';
-      const rightValue = right[sortKey] ?? '';
-      if (sortKey === 'page_count') {
-        return (Number(leftValue || 0) - Number(rightValue || 0)) * (sort.desc ? -1 : 1);
-      }
-      return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * (sort.desc ? -1 : 1);
-    });
-  }, [filterValues, sort, state.documents]);
 
   const appliedFilters = useMemo(() =>
     Object.entries(filterValues || {})
@@ -338,6 +326,7 @@ export default function DocumentsPage() {
       }), [documentColumns, filterValues]);
 
   const clearColumnFilter = (columnId) => {
+    setOffset(0);
     setFilterValues((current) => {
       const next = { ...current };
       delete next[columnId];
@@ -401,17 +390,26 @@ export default function DocumentsPage() {
       </div>
 
       <DataTable
-        rows={filteredDocuments}
+        rows={state.documents}
         rowKey={(document) => document.file_id}
         loading={state.loading}
         emptyTitle={state.loading ? t('Loading documents') : t('No documents matched')}
         enableHeaderMenus
         filterValues={filterValues}
         sort={sort}
-        onFilterChange={(columnId, value) => setFilterValues((current) => ({ ...current, [columnId]: value }))}
+        onFilterChange={(columnId, value) => {
+          setOffset(0);
+          setFilterValues((current) => ({ ...current, [columnId]: value }));
+        }}
         onClearFilter={clearColumnFilter}
-        onClearAllFilters={() => setFilterValues({})}
-        onSort={(columnId, desc) => setSort({ key: columnId, desc })}
+        onClearAllFilters={() => {
+          setOffset(0);
+          setFilterValues({});
+        }}
+        onSort={(columnId, desc) => {
+          setOffset(0);
+          setSort({ key: columnId, desc });
+        }}
         appliedFilters={appliedFilters}
         sortLabel={sort?.key ? `${t('Sorted by')} ${documentColumns.find((column) => column.key === sort.key)?.header || sort.key} (${sort.desc ? t('Descending') : t('Ascending')})` : null}
         selectedRowKey={drawer.open ? drawer.document?.file_id : null}
