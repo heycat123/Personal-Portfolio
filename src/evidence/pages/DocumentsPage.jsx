@@ -145,6 +145,7 @@ export default function DocumentsPage() {
     documents: [],
     total: 0,
     facets: {},
+    inventorySummary: {},
     fingerprint: null,
   });
   const [drawer, setDrawer] = useState({
@@ -202,6 +203,7 @@ export default function DocumentsPage() {
         documents: nextDocuments,
         total: result.data?.total || 0,
         facets: result.data?.facets || {},
+        inventorySummary: result.data?.inventory_summary || {},
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -412,12 +414,18 @@ export default function DocumentsPage() {
 
   const firstVisibleRow = state.total ? offset + 1 : 0;
   const lastVisibleRow = Math.min(state.total, offset + state.documents.length);
+  const inventorySummary = state.inventorySummary || {};
+  const extractedFiles = inventorySummary.extracted_files || 0;
+  const s3SyncedFiles = inventorySummary.extracted_files_synced_to_s3 || 0;
+  const missingS3Files = inventorySummary.extracted_files_missing_s3 || 0;
+  const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
+  const s3SyncedRecords = inventorySummary.s3_synced_records || 0;
 
   return (
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} ${t('document records')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}.`}
+        description={`${state.total} ${t('inventory rows')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('extracted files')}; ${s3SyncedFiles} ${t('matched to S3')}; ${missingS3Files} ${t('still need S3 mirror proof')}.`}
         actions={
           <button
             type="button"
@@ -430,6 +438,29 @@ export default function DocumentsPage() {
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
+
+      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Extracted Files')}</div>
+          <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{extractedFiles}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Unique file hashes in Postgres extraction')}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('S3 Synced')}</div>
+          <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{s3SyncedFiles}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('stored S3 intake records')}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs S3 Sync')}</div>
+          <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">{missingS3Files}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Extracted files without S3 mirror proof')}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('S3 Only')}</div>
+          <div className="mt-1 text-2xl font-semibold text-sky-700 dark:text-sky-300">{s3OnlyFiles}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Mirrored files not extracted yet')}</div>
+        </div>
+      </div>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">

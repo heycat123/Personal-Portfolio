@@ -81,6 +81,10 @@ export default function DashboardPage() {
   const missingChildEmbeddings = vectorCoverage.missing_child_embeddings || 0;
   const missingParentEdges = parentGaps.missing_parent_edges || 0;
   const vectorOk = Boolean(graph.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
+  const documentFiles = counts.document_files || counts.document_extractions || 0;
+  const syncedExtractedFiles = counts.extracted_files_synced_to_s3 || 0;
+  const missingS3Files = counts.extracted_files_missing_s3 || 0;
+  const s3CoverageOk = Boolean(documentFiles > 0 && missingS3Files === 0);
 
   return (
     <div>
@@ -101,8 +105,15 @@ export default function DashboardPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile icon={FileText} label={t('Documents')} value={counts.document_files || counts.document_extractions || 0} detail={t('Unique extracted source files')} />
+        <MetricTile icon={FileText} label={t('Documents')} value={documentFiles} detail={t('Unique extracted source files')} />
         <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" />
+        <MetricTile
+          icon={Activity}
+          label="S3 Coverage"
+          value={`${syncedExtractedFiles}/${documentFiles}`}
+          tone={s3CoverageOk ? 'good' : documentFiles ? 'warn' : 'default'}
+          detail={documentFiles ? `${missingS3Files} extracted files still need S3 mirror proof` : 'No extracted files counted yet'}
+        />
         <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail="Communication rows" />
         <MetricTile
           icon={Users}
