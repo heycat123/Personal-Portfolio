@@ -241,6 +241,8 @@ export const evidenceApi = {
   getPendingInvitations: (options) => request('/api/v1/invitations/pending', options),
   acceptInvitation: (payload, options) =>
     request('/api/v1/invitations/accept', { ...options, method: 'POST', body: payload }),
+  updateCase: (caseId, payload, options) =>
+    request(casePath(caseId), { ...options, method: 'PATCH', body: payload }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),

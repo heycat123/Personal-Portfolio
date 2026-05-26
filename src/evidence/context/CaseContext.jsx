@@ -16,6 +16,11 @@ function normalizeCase(item) {
     tenantName: item.tenantName || item.tenant_name || DEFAULT_EVIDENCE_CASE.tenantName,
     organizationName: item.organizationName || item.organization_name || DEFAULT_EVIDENCE_CASE.organizationName,
     caseName: item.caseName || item.case_name || caseId,
+    workspaceType: item.workspaceType || item.workspace_type || null,
+    matterType: item.matterType || item.matter_type || null,
+    caseSubtype: item.caseSubtype || item.case_subtype || null,
+    role: item.role || null,
+    canRename: Boolean(item.canRename ?? item.can_rename),
     status: item.status || 'active',
     environment: item.environment,
   };
