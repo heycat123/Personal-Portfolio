@@ -133,6 +133,83 @@ async function request(path, options = {}) {
   return result;
 }
 
+async function requestBlob(path, options = {}) {
+  const {
+    method = 'GET',
+    query,
+    token,
+    signal,
+  } = options;
+  const correlationId = createCorrelationId();
+  const headers = {
+    Accept: 'application/pdf,application/octet-stream',
+    'X-Correlation-ID': correlationId,
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  let response;
+  try {
+    response = await fetch(apiUrl(path, query), {
+      method,
+      headers,
+      signal,
+    });
+  } catch (error) {
+    emitApiError({
+      message: error.message || 'Evidence API request failed.',
+      path,
+      status: null,
+      requestFingerprintId: null,
+      correlationId,
+      capturedAt: new Date().toISOString(),
+    });
+    throw new EvidenceApiError(error.message || 'Evidence API request failed.', {
+      correlationId,
+    });
+  }
+
+  const requestFingerprintId = response.headers.get('X-Request-Fingerprint-ID') || null;
+  const result = {
+    blob: response.ok ? await response.blob() : null,
+    status: response.status,
+    requestFingerprintId,
+    correlationId: response.headers.get('X-Correlation-ID') || correlationId,
+    contentType: response.headers.get('Content-Type') || null,
+    fileName: response.headers.get('Content-Disposition') || null,
+  };
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      payload = text ? { raw: text } : null;
+    }
+    const detail = payload?.detail || payload?.error_message || response.statusText;
+    emitApiError({
+      message: detail || 'Evidence API returned an error.',
+      path,
+      status: response.status,
+      payload,
+      requestFingerprintId,
+      correlationId: result.correlationId,
+      capturedAt: new Date().toISOString(),
+    });
+    throw new EvidenceApiError(detail || 'Evidence API returned an error.', {
+      status: response.status,
+      payload,
+      requestFingerprintId,
+      correlationId: result.correlationId,
+    });
+  }
+
+  return result;
+}
+
 function casePath(caseId, suffix = '') {
   return `/api/v1/cases/${encodeURIComponent(caseId)}${suffix}`;
 }
@@ -200,6 +277,16 @@ export const evidenceApi = {
     request(
       casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/search`),
       { ...options, query: params },
+    ),
+  reviewGoogleDriveNativeFiles: (caseId, sourceConnectionId, params = {}, options = {}) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/review-native-files`),
+      { ...options, query: params },
+    ),
+  previewGoogleDriveFile: (caseId, sourceConnectionId, driveFileId, options = {}) =>
+    requestBlob(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/files/${encodeURIComponent(driveFileId)}/preview`),
+      options,
     ),
   importGoogleDriveFile: (caseId, sourceConnectionId, payload, options) =>
     request(

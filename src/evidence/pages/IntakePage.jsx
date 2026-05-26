@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronRight, FileText, FileUp, Folder, FolderOpen, Link2, MinusCircle, PlusCircle, RefreshCw, Search, Unlink, UploadCloud } from 'lucide-react';
+import { CheckCircle2, ChevronRight, ExternalLink, Eye, FileText, FileUp, Folder, FolderOpen, Link2, MinusCircle, PlusCircle, RefreshCw, Search, Unlink, UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -21,6 +21,29 @@ function DetailRow({ label, value }) {
 }
 
 const GOOGLE_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+const GOOGLE_WORKSPACE_MIME_TYPES = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+  'application/vnd.google-apps.drawing',
+]);
+
+function isGoogleWorkspaceFile(item) {
+  return GOOGLE_WORKSPACE_MIME_TYPES.has(item?.mimeType || item?.mime_type);
+}
+
+function googleWorkspaceLabel(mimeType) {
+  if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+    return 'Google Sheet';
+  }
+  if (mimeType === 'application/vnd.google-apps.presentation') {
+    return 'Google Slides';
+  }
+  if (mimeType === 'application/vnd.google-apps.drawing') {
+    return 'Google Drawing';
+  }
+  return 'Google Doc';
+}
 
 function formatBytes(value) {
   const numeric = Number(value || 0);
@@ -79,11 +102,30 @@ export default function IntakePage() {
     lastSearch: '',
     scanJob: null,
   });
+  const [driveReview, setDriveReview] = useState({
+    loading: false,
+    error: null,
+    items: [],
+    summary: null,
+    selected: null,
+    previewLoading: false,
+    previewUrl: null,
+    previewError: null,
+  });
 
   const activeGoogleConnection = useMemo(() => {
     const google = state.connectors.find((provider) => provider.provider === 'google_drive');
     return google?.connections?.find((connection) => connection.status === 'active') || null;
   }, [state.connectors]);
+
+  useEffect(() => {
+    const url = driveReview.previewUrl;
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [driveReview.previewUrl]);
 
   const addFingerprint = useCallback((result, label) => {
     recordFingerprint(result, label);
@@ -351,6 +393,25 @@ export default function IntakePage() {
         upload: { ok: Boolean(result.data?.storage?.ok), status: result.status },
         register: result.data?.registration,
       }));
+      if (isGoogleWorkspaceFile(driveItem)) {
+        setDriveReview((current) => {
+          const updatedItems = current.items.map((item) => (
+            item.drive_file_id === driveItem.id
+              ? {
+                ...item,
+                already_mirrored: true,
+                upload_id: result.data?.upload?.upload_id,
+                upload_status: result.data?.upload?.status,
+                s3_key: result.data?.storage?.key,
+              }
+              : item
+          ));
+          const selected = current.selected?.drive_file_id === driveItem.id
+            ? updatedItems.find((item) => item.drive_file_id === driveItem.id) || current.selected
+            : current.selected;
+          return { ...current, items: updatedItems, selected };
+        });
+      }
       await loadDriveWatchItems(activeGoogleConnection.source_connection_id);
     } catch (error) {
       setDriveBrowser((current) => ({ ...current, error }));
@@ -358,6 +419,67 @@ export default function IntakePage() {
       setDriveBrowser((current) => ({ ...current, action: null }));
     }
   }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken, loadDriveWatchItems]);
+
+  const reviewGoogleWorkspaceFiles = useCallback(async () => {
+    if (!activeGoogleConnection?.source_connection_id) {
+      return;
+    }
+
+    setDriveReview((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.reviewGoogleDriveNativeFiles(
+        caseId,
+        activeGoogleConnection.source_connection_id,
+        { recursive: true, max_files: 500, max_folders: 500 },
+        { token },
+      );
+      addFingerprint(result, 'Review Google native files');
+      const items = result.data?.native_files || [];
+      setDriveReview((current) => ({
+        ...current,
+        loading: false,
+        items,
+        summary: result.data,
+        selected: current.selected && items.some((item) => item.drive_file_id === current.selected.drive_file_id)
+          ? current.selected
+          : items[0] || null,
+      }));
+    } catch (error) {
+      setDriveReview((current) => ({ ...current, loading: false, error }));
+    }
+  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken]);
+
+  const previewGoogleWorkspaceFile = useCallback(async (reviewItem) => {
+    if (!activeGoogleConnection?.source_connection_id || !reviewItem?.drive_file_id) {
+      return;
+    }
+
+    setDriveReview((current) => ({
+      ...current,
+      selected: reviewItem,
+      previewLoading: true,
+      previewError: null,
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.previewGoogleDriveFile(
+        caseId,
+        activeGoogleConnection.source_connection_id,
+        reviewItem.drive_file_id,
+        { token },
+      );
+      addFingerprint(result, 'Preview Google native file');
+      const nextUrl = URL.createObjectURL(result.blob);
+      setDriveReview((current) => ({
+        ...current,
+        previewLoading: false,
+        previewUrl: nextUrl,
+      }));
+    } catch (error) {
+      setDriveReview((current) => ({ ...current, previewLoading: false, previewError: error }));
+    }
+  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken]);
 
   const queueDriveScan = useCallback(async () => {
     if (!activeGoogleConnection?.source_connection_id) {
@@ -405,6 +527,16 @@ export default function IntakePage() {
         pathStack: [{ id: 'root', name: 'My Drive' }],
         loading: false,
         watchLoading: false,
+      }));
+      setDriveReview((current) => ({
+        ...current,
+        loading: false,
+        items: [],
+        summary: null,
+        selected: null,
+        previewLoading: false,
+        previewUrl: null,
+        previewError: null,
       }));
       return;
     }
@@ -626,6 +758,15 @@ export default function IntakePage() {
                     <UploadCloud size={15} aria-hidden="true" />
                     {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Scan for new files')}
                   </button>
+                  <button
+                    type="button"
+                    onClick={reviewGoogleWorkspaceFiles}
+                    disabled={driveReview.loading || Boolean(driveBrowser.action) || !activeWatchItems.length}
+                    className="inline-flex items-center gap-2 rounded-md border border-violet-300 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:text-violet-200 dark:hover:bg-violet-950/40"
+                  >
+                    <Eye size={15} aria-hidden="true" />
+                    {driveReview.loading ? t('Reviewing') : t('Review Google Docs')}
+                  </button>
                 </div>
               </div>
 
@@ -638,7 +779,137 @@ export default function IntakePage() {
                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
                   <div className="font-semibold">{t('Google Drive scan queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
-                  <div className="mt-2 text-xs">{t('The worker will mirror new Drive files to S3 and queue registration jobs.')}</div>
+                  <div className="mt-2 text-xs">{t('The worker will mirror ordinary Drive files to S3. Native Google Docs and Sheets are held for review before export.')}</div>
+                </div>
+              ) : null}
+              {driveReview.error ? (
+                <div className="mb-4">
+                  <ErrorPanel title="Google Docs review failed" error={driveReview.error} />
+                </div>
+              ) : null}
+              {driveReview.items.length || driveReview.loading ? (
+                <div className="mb-5 rounded-md border border-violet-200 bg-violet-50/50 p-3 dark:border-violet-900/50 dark:bg-violet-950/20">
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Google Docs and Sheets Review')}</h4>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {driveReview.summary
+                          ? t('{count} native file(s); {pending} need import review.', {
+                            count: driveReview.summary.total || 0,
+                            pending: driveReview.summary.needs_review || 0,
+                          })
+                          : t('Scanning selected folders for native Google files.')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={reviewGoogleWorkspaceFiles}
+                      disabled={driveReview.loading}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-violet-300 px-3 py-2 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:text-violet-100 dark:hover:bg-violet-950/40"
+                    >
+                      <RefreshCw size={13} aria-hidden="true" />
+                      {t('Refresh review')}
+                    </button>
+                  </div>
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+                    <div className="max-h-[440px] overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-[#0b1117]">
+                      {driveReview.loading ? (
+                        <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('Loading Google Docs review.')}</div>
+                      ) : driveReview.items.length ? (
+                        driveReview.items.map((item) => {
+                          const selected = driveReview.selected?.drive_file_id === item.drive_file_id;
+                          return (
+                            <button
+                              key={item.drive_file_id}
+                              type="button"
+                              onClick={() => previewGoogleWorkspaceFile(item)}
+                              className={`block w-full border-b border-gray-100 p-3 text-left last:border-0 dark:border-gray-800 ${selected ? 'bg-violet-50 dark:bg-violet-950/30' : 'hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-gray-950 dark:text-white">{item.name}</div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <span>{t(googleWorkspaceLabel(item.mimeType))}</span>
+                                    <span>{item.already_mirrored ? t('Already mirrored') : t('Needs review')}</span>
+                                  </div>
+                                </div>
+                                <StatusBadge status={item.already_mirrored ? 'succeeded' : 'pending'} label={item.already_mirrored ? 'S3' : 'review'} />
+                              </div>
+                              {item.relative_path ? <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{item.relative_path}</div> : null}
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('No native Google files returned.')}</div>
+                      )}
+                    </div>
+                    <div className="min-h-[360px] rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-[#0b1117]">
+                      {driveReview.selected ? (
+                        <div className="flex h-full min-h-[360px] flex-col">
+                          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-gray-950 dark:text-white">{driveReview.selected.name}</div>
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                {t(googleWorkspaceLabel(driveReview.selected.mimeType))} | {driveReview.selected.export_extension} {t('export')}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {driveReview.selected.webViewLink ? (
+                                <a
+                                  href={driveReview.selected.webViewLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                                >
+                                  <ExternalLink size={13} aria-hidden="true" />
+                                  {t('Open in Drive')}
+                                </a>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => previewGoogleWorkspaceFile(driveReview.selected)}
+                                disabled={driveReview.previewLoading}
+                                className="inline-flex items-center gap-1 rounded-md border border-violet-300 px-2 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:text-violet-200 dark:hover:bg-violet-950/40"
+                              >
+                                <Eye size={13} aria-hidden="true" />
+                                {driveReview.previewLoading ? t('Loading') : t('Preview')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => importDriveFile({
+                                  id: driveReview.selected.drive_file_id,
+                                  name: driveReview.selected.name,
+                                  mimeType: driveReview.selected.mimeType,
+                                })}
+                                disabled={Boolean(driveBrowser.action)}
+                                className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+                              >
+                                <UploadCloud size={13} aria-hidden="true" />
+                                {t('Import export')}
+                              </button>
+                            </div>
+                          </div>
+                          {driveReview.previewError ? (
+                            <ErrorPanel title="Preview failed" error={driveReview.previewError} />
+                          ) : driveReview.previewUrl ? (
+                            <iframe
+                              title={driveReview.selected.name}
+                              src={driveReview.previewUrl}
+                              className="min-h-[420px] flex-1 rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                            />
+                          ) : (
+                            <div className="flex min-h-[300px] flex-1 items-center justify-center rounded-md border border-dashed border-gray-300 p-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+                              {t('Select Preview to render the exported PDF before importing it to S3.')}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex min-h-[300px] items-center justify-center text-sm text-gray-600 dark:text-gray-400">
+                          {t('Select a Google Doc or Sheet to review.')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
