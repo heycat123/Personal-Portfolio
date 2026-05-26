@@ -92,6 +92,21 @@ function PipelineDots({ document, showLabels = false }) {
   );
 }
 
+function facetOptions(facets, key) {
+  return (facets?.[key] || []).map((item) => ({
+    value: item.value,
+    label: item.label || item.value,
+    count: item.count,
+  }));
+}
+
+function selectedPipelineDomains(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export default function DocumentsPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -107,6 +122,7 @@ export default function DocumentsPage() {
     error: null,
     documents: [],
     total: 0,
+    facets: {},
     fingerprint: null,
   });
   const [drawer, setDrawer] = useState({
@@ -128,6 +144,9 @@ export default function DocumentsPage() {
     evidence_type: filterValues.evidence_type_label,
     storage_status: filterValues.canonical_storage_label,
     min_pages: filterValues.page_count,
+    require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
+    require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
+    require_graph: selectedPipelineDomains(filterValues.pipeline_status).includes('graph'),
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
   }), [appliedQuery, filterValues, offset, sort]);
@@ -148,6 +167,7 @@ export default function DocumentsPage() {
         error: null,
         documents: nextDocuments,
         total: result.data?.total || 0,
+        facets: result.data?.facets || {},
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -285,6 +305,7 @@ export default function DocumentsPage() {
       header: t('Origin'),
       headerClassName: 'w-[14%]',
       help: t('Where the item originally came from, such as Google Drive, web upload, or a communication export.'),
+      filterOptions: facetOptions(state.facets, 'origin_label'),
       filterPlaceholder: t('Google Drive, upload, SMS'),
       render: (document) => document.origin_label || 'unknown',
     },
@@ -293,6 +314,7 @@ export default function DocumentsPage() {
       header: t('Evidence Type'),
       headerClassName: 'w-[14%]',
       help: t('What kind of evidence this is. This is separate from where the file came from.'),
+      filterOptions: facetOptions(state.facets, 'evidence_type_label'),
       filterPlaceholder: t('Document or communication'),
       render: (document) => document.evidence_type_label || 'Document',
     },
@@ -301,6 +323,7 @@ export default function DocumentsPage() {
       header: t('S3 Sync'),
       headerClassName: 'w-[14%]',
       help: t('Whether Evidence AI has a canonical copy of this raw file in S3.'),
+      filterOptions: facetOptions(state.facets, 'canonical_storage_label'),
       filterPlaceholder: t('Synced, pending, legacy'),
       render: (document) => <StorageSyncBadge document={document} />,
     },
@@ -308,22 +331,33 @@ export default function DocumentsPage() {
       key: 'pipeline_status',
       header: t('Propagation'),
       headerClassName: 'w-[10%]',
-      filterable: false,
+      filterable: true,
       sortable: false,
+      filterMulti: true,
+      filterOptions: facetOptions(state.facets, 'pipeline_status'),
+      filterLabel: t('Require completed domains'),
+      filterHint: t('Selected propagation filters are combined with AND.'),
       help: t('Processing coverage: blue is Postgres, green is vector, purple is graph. Lit dots mean that domain has processed this document.'),
       render: (document) => <PipelineDots document={document} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[7%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
     { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[12%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
-  ]), [caseId, t]);
+  ]), [caseId, state.facets, t]);
 
   const appliedFilters = useMemo(() =>
     Object.entries(filterValues || {})
       .filter(([, value]) => String(value || '').trim())
       .map(([key, value]) => {
         const column = documentColumns.find((candidate) => candidate.key === key);
-        return { id: key, label: `${column?.header || key}: ${value}` };
-      }), [documentColumns, filterValues]);
+        if (key === 'pipeline_status') {
+          const labels = selectedPipelineDomains(value)
+            .map((domain) => (column?.filterOptions || []).find((option) => option.value === domain)?.label || domain)
+            .join(` ${t('AND')} `);
+          return { id: key, label: `${column?.header || key}: ${labels}` };
+        }
+        const optionLabel = (column?.filterOptions || []).find((option) => option.value === value)?.label || value;
+        return { id: key, label: `${column?.header || key}: ${optionLabel}` };
+      }), [documentColumns, filterValues, t]);
 
   const clearColumnFilter = (columnId) => {
     setOffset(0);

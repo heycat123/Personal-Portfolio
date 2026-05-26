@@ -58,6 +58,25 @@ function ColumnHeaderMenu({
   const header = columnHeader(column);
   const canFilter = column.filterable !== false;
   const canSort = column.sortable !== false;
+  const filterOptions = column.filterOptions || [];
+  const selectedOptions = String(filterValue || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const toggleOption = (value) => {
+    if (!column.filterMulti) {
+      onFilterChange(id, value);
+      return;
+    }
+    const next = new Set(selectedOptions);
+    if (next.has(value)) {
+      next.delete(value);
+    } else {
+      next.add(value);
+    }
+    onFilterChange(id, Array.from(next).join(','));
+  };
 
   return (
     <div className="relative">
@@ -114,7 +133,42 @@ function ColumnHeaderMenu({
             </>
           ) : null}
 
-          {canFilter ? (
+          {canFilter && filterOptions.length ? (
+            <div>
+              <div className="mb-1 block text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
+                {t(column.filterLabel || 'Filter')}
+              </div>
+              <div className="max-h-56 space-y-1 overflow-auto pr-1">
+                {filterOptions.map((option) => {
+                  const value = String(option.value ?? option.label ?? option);
+                  const label = String(option.label ?? option.value ?? option);
+                  const checked = selectedOptions.includes(value);
+                  return (
+                    <label
+                      key={value}
+                      className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-white/10"
+                    >
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <input
+                          type={column.filterMulti ? 'checkbox' : 'radio'}
+                          checked={checked}
+                          onChange={() => toggleOption(value)}
+                          className="h-4 w-4 accent-sky-700"
+                        />
+                        <span className="truncate">{t(label)}</span>
+                      </span>
+                      {option.count !== undefined ? (
+                        <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-black/30 dark:text-gray-300">
+                          {option.count}
+                        </span>
+                      ) : null}
+                    </label>
+                  );
+                })}
+              </div>
+              {column.filterHint ? <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{t(column.filterHint)}</p> : null}
+            </div>
+          ) : canFilter ? (
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
                 {t(column.filterLabel || (column.filterType === 'number' ? 'Minimum value' : 'Filter contains'))}
