@@ -12,7 +12,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 
 function formatSummary(summary, fallback, t) {
   const entries = Object.entries(summary || {}).filter(([, count]) => Number(count) > 0);
