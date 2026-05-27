@@ -308,6 +308,11 @@ export const evidenceApi = {
       casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/import-file`),
       { ...options, method: 'POST', body: payload },
     ),
+  syncGoogleDriveSource: (caseId, sourceConnectionId, payload = {}, options = {}) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/sync`),
+      { ...options, method: 'POST', body: payload },
+    ),
   getSourceWatchItems: (caseId, sourceConnectionId, options) =>
     request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/watch-items`), options),
   addSourceWatchItem: (caseId, sourceConnectionId, payload, options) =>

@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronRight, ExternalLink, Eye, FileText, FileUp, Folder, FolderOpen, Link2, MinusCircle, PlusCircle, RefreshCw, Search, Unlink, UploadCloud } from 'lucide-react';
+import { CheckCircle2, ChevronRight, ExternalLink, Eye, FileText, FileUp, Folder, FolderOpen, Link2, Lock, MinusCircle, PlusCircle, RefreshCw, Search, Unlink, UploadCloud } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -123,7 +123,7 @@ export default function IntakePage() {
 
   const activeGoogleConnection = useMemo(() => {
     const google = state.connectors.find((provider) => provider.provider === 'google_drive');
-    return google?.connections?.find((connection) => connection.status === 'active') || null;
+    return google?.connections?.find((connection) => connection.status === 'active' && (connection.can_browse || connection.owned_by_current_user)) || null;
   }, [state.connectors]);
 
   useEffect(() => {
@@ -519,26 +519,23 @@ export default function IntakePage() {
     setDriveBrowser((current) => ({ ...current, action: 'scan-drive', error: null, scanJob: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.createJob(
+      const result = await evidenceApi.syncGoogleDriveSource(
         caseId,
+        activeGoogleConnection.source_connection_id,
         {
-          job_type: 'source_connector_scan',
-          input_json: {
-            source_connection_id: activeGoogleConnection.source_connection_id,
-            provider: 'google_drive',
-            recursive: true,
-            import_new: true,
-            queue_registration: true,
-            max_files: 50,
-          },
-          priority: 0,
+          recursive: true,
+          import_new: true,
+          queue_registration: true,
+          include_google_workspace_exports: true,
+          max_files: 5000,
+          max_folders: 5000,
         },
         { token },
       );
-      addFingerprint(result, 'Queue Google Drive scan');
+      addFingerprint(result, 'Queue Google Drive sync');
       setDriveBrowser((current) => ({
         ...current,
-        scanJob: result.data,
+        scanJob: result.data?.job || result.data,
       }));
     } catch (error) {
       setDriveBrowser((current) => ({ ...current, error }));
@@ -676,7 +673,7 @@ export default function IntakePage() {
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source Connectors')}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Google Drive, OneDrive, and Dropbox account connections. Each person can only browse and disconnect their own connected account.')}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Connected accounts are visible to case members. Only the connected-account owner can browse, select folders, or sync that account; case owners/admins can disconnect a source if needed.')}</p>
                 </div>
               </div>
               <button
@@ -724,22 +721,40 @@ export default function IntakePage() {
 
                       {activeConnections.length ? (
                         <div className="mt-3 space-y-2">
-                          {activeConnections.map((connection) => (
-                            <div key={connection.source_connection_id} className="flex flex-col gap-2 rounded-md bg-gray-50 p-2 text-sm dark:bg-black/20 sm:flex-row sm:items-center sm:justify-between">
-                              <span className="break-all text-gray-700 dark:text-gray-300">
-                                {connection.external_account_email || connection.display_name || connection.source_connection_id}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => disconnectConnection(connection)}
-                                disabled={Boolean(state.connectorAction)}
-                                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-                              >
-                                <Unlink size={13} aria-hidden="true" />
-                                {t('Disconnect')}
-                              </button>
-                            </div>
-                          ))}
+                          {activeConnections.map((connection) => {
+                            const isOwned = Boolean(connection.owned_by_current_user);
+                            const canDisconnect = Boolean(connection.can_disconnect);
+                            return (
+                              <div key={connection.source_connection_id} className="flex flex-col gap-2 rounded-md bg-gray-50 p-2 text-sm dark:bg-black/20 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="break-all text-gray-700 dark:text-gray-300">
+                                    {connection.external_account_email || connection.display_name || connection.source_connection_id}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                    <span className="rounded-full border border-gray-300 px-2 py-0.5 dark:border-gray-700">
+                                      {isOwned ? t('Your connection') : t('Case connection')}
+                                    </span>
+                                    {!connection.can_browse ? (
+                                      <span className="inline-flex items-center gap-1 rounded-full border border-gray-300 px-2 py-0.5 dark:border-gray-700">
+                                        <Lock size={11} aria-hidden="true" />
+                                        {t('Browsing locked')}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => disconnectConnection(connection)}
+                                  disabled={Boolean(state.connectorAction) || !canDisconnect}
+                                  className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                                  title={canDisconnect ? t('Disconnect source') : t('Only the source owner or case owner/admin can disconnect this source.')}
+                                >
+                                  <Unlink size={13} aria-hidden="true" />
+                                  {canDisconnect ? t('Disconnect') : t('Locked')}
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : null}
                     </div>
@@ -762,7 +777,8 @@ export default function IntakePage() {
                   </div>
                   <div>
                     <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Google Drive Selector')}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select folders/files and mirror new Drive files into controlled cloud copy storage.')}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-500">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -791,7 +807,7 @@ export default function IntakePage() {
                     className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <UploadCloud size={15} aria-hidden="true" />
-                    {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Scan for new files')}
+                    {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Sync Drive to Cloud Copy')}
                   </button>
                   <button
                     type="button"
@@ -812,9 +828,9 @@ export default function IntakePage() {
               ) : null}
               {driveBrowser.scanJob ? (
                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
-                  <div className="font-semibold">{t('Google Drive scan queued')}</div>
+                  <div className="font-semibold">{t('Google Drive sync queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
-                  <div className="mt-2 text-xs">{t('The worker will copy ordinary Drive files into controlled cloud storage. Native Google Docs and Sheets are held for review before export.')}</div>
+                  <div className="mt-2 text-xs">{t('The worker will mirror selected Drive files, including supported Google Docs exports, into controlled cloud copy storage and queue new files for registration.')}</div>
                 </div>
               ) : null}
               {driveReview.error ? (

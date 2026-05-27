@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Search, X } from 'lucide-react';
+import { Download, ExternalLink, FileText, Info, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -528,6 +528,21 @@ export default function DocumentsPage() {
           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Mirrored files not extracted yet')}</div>
         </div>
       </div>
+
+      <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+        <div className="flex items-start gap-3">
+          <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+          <div className="space-y-1">
+            <h3 className="font-semibold">{t('Statute Lens is a review aid, not a final legal conclusion.')}</h3>
+            <p>
+              {t('The factor filter uses legal-factor mappings extracted during graph processing to help counsel find candidate evidence for Florida Statutes 61.13001 and 61.13. Treat broad matches as leads to review; export only the filtered set you want counsel to inspect.')}
+            </p>
+            <p className="text-xs text-sky-800 dark:text-sky-200">
+              {t('Next tightening step: require stronger support signals before a document appears in a factor view, so weak background references do not crowd out documents that directly support a statutory factor.')}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
