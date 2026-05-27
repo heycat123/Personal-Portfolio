@@ -118,10 +118,10 @@ export default function DashboardPage() {
         <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" />
         {canSeeOperations ? <MetricTile
           icon={Activity}
-          label="S3 Coverage"
+          label="Cloud Copy Coverage"
           value={`${syncedExtractedFiles}/${documentFiles}`}
           tone={s3CoverageOk ? 'good' : documentFiles ? 'warn' : 'default'}
-          detail={documentFiles ? `${missingS3Files} extracted files still need S3 mirror proof` : 'No extracted files counted yet'}
+          detail={documentFiles ? `${missingS3Files} extracted files still need cloud-copy proof` : 'No extracted files counted yet'}
         /> : null}
         <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail="Communication rows" />
         <MetricTile
@@ -141,7 +141,7 @@ export default function DashboardPage() {
         /> : null}
         {canSeeOperations ? <MetricTile
           icon={Activity}
-          label="S3 Storage"
+          label="Cloud Storage"
           value={state.health?.storage?.ok ? 'Configured' : state.loading ? 'Checking' : 'Unknown'}
           tone={state.health?.storage?.ok ? 'good' : 'warn'}
           detail={state.health?.storage?.bucket || state.health?.storage?.reason || 'No storage payload'}

@@ -142,7 +142,7 @@ async function requestBlob(path, options = {}) {
   } = options;
   const correlationId = createCorrelationId();
   const headers = {
-    Accept: 'application/pdf,application/octet-stream',
+    Accept: 'application/zip,application/pdf,application/octet-stream',
     'X-Correlation-ID': correlationId,
   };
 
@@ -252,6 +252,8 @@ export const evidenceApi = {
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
+  exportDocuments: (caseId, params = {}, options = {}) =>
+    requestBlob(casePath(caseId, '/documents/export.zip'), { ...options, query: params }),
   getDocument: (caseId, fileId, options) =>
     request(casePath(caseId, `/documents/${encodeURIComponent(fileId)}`), options),
   getEntities: (caseId, params = {}, options = {}) =>
@@ -324,10 +326,11 @@ export const evidenceApi = {
       casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/watch-items/${encodeURIComponent(sourceWatchItemId)}/deactivate`),
       { ...options, method: 'POST' },
     ),
-  disconnectSourceConnector: (caseId, sourceConnectionId, options) =>
+  disconnectSourceConnector: (caseId, sourceConnectionId, payload = {}, options = {}) =>
     request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/disconnect`), {
       ...options,
       method: 'POST',
+      body: payload,
     }),
   getCaseMemberships: (caseId, options) => request(casePath(caseId, '/memberships'), options),
   getCaseInvitations: (caseId, options) => request(casePath(caseId, '/invitations'), options),

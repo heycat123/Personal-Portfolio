@@ -185,10 +185,16 @@ export default function IntakePage() {
   }, [caseId, getAccessToken, recordFingerprint]);
 
   const disconnectConnection = useCallback(async (sourceConnectionId) => {
+    const severOnly = window.confirm(
+      t('Disconnect this source? This only severs future access to the connected account. Documents already copied into the case stay available until a separate document removal review is run.'),
+    );
+    if (!severOnly) {
+      return;
+    }
     setState((current) => ({ ...current, connectorAction: sourceConnectionId, connectorError: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.disconnectSourceConnector(caseId, sourceConnectionId, { token });
+      const result = await evidenceApi.disconnectSourceConnector(caseId, sourceConnectionId, { remove_imported_files: false }, { token });
       recordFingerprint(result, 'Disconnect source');
       await loadConnectors();
     } catch (error) {
@@ -196,7 +202,7 @@ export default function IntakePage() {
     } finally {
       setState((current) => ({ ...current, connectorAction: null }));
     }
-  }, [caseId, getAccessToken, loadConnectors, recordFingerprint]);
+  }, [caseId, getAccessToken, loadConnectors, recordFingerprint, t]);
 
   const loadDriveWatchItems = useCallback(async (sourceConnectionId = activeGoogleConnection?.source_connection_id) => {
     if (!sourceConnectionId) {
@@ -588,7 +594,7 @@ export default function IntakePage() {
       });
 
       if (!uploadResponse.ok) {
-        throw new Error(`S3 upload failed with HTTP ${uploadResponse.status}. Check bucket CORS and presigned URL settings.`);
+        throw new Error(`Cloud upload failed with HTTP ${uploadResponse.status}. Check storage CORS and presigned URL settings.`);
       }
 
       setState((current) => ({ ...current, step: 'registering', upload: { ok: true, status: uploadResponse.status } }));
@@ -644,7 +650,7 @@ export default function IntakePage() {
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source Connectors')}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Google Drive, OneDrive, and Dropbox source connection status.')}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Google Drive, OneDrive, and Dropbox account connections. Each person can only browse and disconnect their own connected account.')}</p>
                 </div>
               </div>
               <button
@@ -782,7 +788,7 @@ export default function IntakePage() {
                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
                   <div className="font-semibold">{t('Google Drive scan queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
-                  <div className="mt-2 text-xs">{t('The worker will mirror ordinary Drive files to S3. Native Google Docs and Sheets are held for review before export.')}</div>
+                  <div className="mt-2 text-xs">{t('The worker will copy ordinary Drive files into controlled cloud storage. Native Google Docs and Sheets are held for review before export.')}</div>
                 </div>
               ) : null}
               {driveReview.error ? (
@@ -836,7 +842,7 @@ export default function IntakePage() {
                                     <span>{item.already_mirrored ? t('Already mirrored') : t('Needs review')}</span>
                                   </div>
                                 </div>
-                                <StatusBadge status={item.already_mirrored ? 'succeeded' : 'pending'} label={item.already_mirrored ? 'S3' : 'review'} />
+                                <StatusBadge status={item.already_mirrored ? 'succeeded' : 'pending'} label={item.already_mirrored ? 'cloud copy' : 'review'} />
                               </div>
                               {item.relative_path ? <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{item.relative_path}</div> : null}
                             </button>
@@ -902,7 +908,7 @@ export default function IntakePage() {
                             />
                           ) : (
                             <div className="flex min-h-[300px] flex-1 items-center justify-center rounded-md border border-dashed border-gray-300 p-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
-                              {t('Select Preview to render the exported PDF before importing it to S3.')}
+                              {t('Select Preview to render the exported PDF before adding it to controlled cloud storage.')}
                             </div>
                           )}
                         </div>
@@ -1146,7 +1152,7 @@ export default function IntakePage() {
             <DetailRow label="Step" value={state.step} />
             <DetailRow label="Upload" value={state.upload?.ok ? t('Uploaded') : null} />
             {showDiagnostics ? <DetailRow label="Upload ID" value={upload?.upload_id} /> : null}
-            {showDiagnostics ? <DetailRow label="S3 Key" value={state.presign?.presign?.key} /> : null}
+            {showDiagnostics ? <DetailRow label="Cloud Storage Key" value={state.presign?.presign?.key} /> : null}
             {showDiagnostics ? <DetailRow label="Register Job" value={job?.job_id} /> : null}
             {showDiagnostics && job ? (
               <div className="mt-3">

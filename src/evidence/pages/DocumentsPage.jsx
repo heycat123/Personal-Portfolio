@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, Search, X } from 'lucide-react';
+import { Download, ExternalLink, FileText, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -14,6 +14,23 @@ import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
+const STATUTE_FACTOR_OPTIONS = [
+  { value: '7a', label: '61.13001(7)(a) - relationship and involvement' },
+  { value: '7b', label: '61.13001(7)(b) - age and developmental needs' },
+  { value: '7c', label: '61.13001(7)(c) - preserving relationship with nonrelocating parent' },
+  { value: '7d', label: '61.13001(7)(d) - child preference' },
+  { value: '7e', label: '61.13001(7)(e) - quality of life' },
+  { value: '7f', label: '61.13001(7)(f) - reasons and good faith' },
+  { value: '7g', label: '61.13001(7)(g) - employment and economic circumstances' },
+  { value: '7h', label: '61.13001(7)(h) - good-faith compliance' },
+  { value: '7i', label: '61.13001(7)(i) - career and other opportunities' },
+  { value: '7j', label: '61.13001(7)(j) - domestic violence or substance abuse' },
+  { value: '7k', label: '61.13001(7)(k) - other best-interest factors' },
+  ...'abcdefghijklmnopqrst'.split('').map((letter) => ({
+    value: `3${letter}`,
+    label: `61.13(3)(${letter}) - parenting-plan best-interest factor`,
+  })),
+];
 
 function documentsTableStorageKey(caseId) {
   return `evidence.documents.table.${caseId || 'default'}`;
@@ -62,11 +79,11 @@ function statusText(status) {
 function StorageSyncBadge({ document }) {
   const status = document?.canonical_storage_status || 'unknown';
   const label = status === 'canonical'
-    ? 'Synced to S3'
+    ? 'Cloud copy complete'
     : status === 'pending_verification'
-      ? 'S3 pending'
+      ? 'Cloud copy pending'
       : status === 'needs_s3_sync'
-        ? 'Needs S3 sync'
+        ? 'Needs cloud copy'
         : statusText(status);
   return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
 }
@@ -157,6 +174,11 @@ export default function DocumentsPage() {
   });
   const [expandedDocuments, setExpandedDocuments] = useState({});
   const [documentDetails, setDocumentDetails] = useState({});
+  const [exportState, setExportState] = useState({
+    busy: false,
+    error: null,
+    fingerprint: null,
+  });
 
   const documentQuery = useMemo(() => ({
     limit: PAGE_SIZE,
@@ -166,6 +188,7 @@ export default function DocumentsPage() {
     origin: filterValues.origin_label,
     evidence_type: filterValues.evidence_type_label,
     storage_status: filterValues.canonical_storage_label,
+    factor_code: filterValues.legal_factor_code,
     min_pages: filterValues.page_count,
     require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
     require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
@@ -226,6 +249,34 @@ export default function DocumentsPage() {
     setExpandedDocuments({});
     setDocumentDetails({});
   }, [documentQuery]);
+
+  const exportCurrentView = useCallback(async () => {
+    setExportState({ busy: true, error: null, fingerprint: null });
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.exportDocuments(caseId, documentQuery, { token });
+      recordFingerprint(result, 'Documents export');
+      const url = URL.createObjectURL(result.blob);
+      const activeFactor = String(filterValues.legal_factor_code || '').toUpperCase() || 'documents';
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `evidence-export-${activeFactor}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 500);
+      setExportState({
+        busy: false,
+        error: null,
+        fingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      });
+    } catch (error) {
+      setExportState({ busy: false, error, fingerprint: null });
+    }
+  }, [caseId, documentQuery, filterValues.legal_factor_code, getAccessToken, recordFingerprint]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -329,7 +380,7 @@ export default function DocumentsPage() {
     {
       key: 'original_filename',
       header: t('File'),
-      headerClassName: 'w-[36%]',
+      headerClassName: 'w-[26%]',
       className: 'min-w-0',
       help: t('The file name recorded for this evidence item. Click the name for the document detail page; click the row for the drawer.'),
       filterPlaceholder: t('Filename or hash'),
@@ -347,7 +398,7 @@ export default function DocumentsPage() {
     {
       key: 'origin_label',
       header: t('Origin'),
-      headerClassName: 'w-[14%]',
+      headerClassName: 'w-[11%]',
       help: t('Where the item originally came from, such as Google Drive, web upload, or a communication export.'),
       filterOptions: facetOptions(state.facets, 'origin_label'),
       filterPlaceholder: t('Google Drive, upload, SMS'),
@@ -356,17 +407,30 @@ export default function DocumentsPage() {
     {
       key: 'evidence_type_label',
       header: t('Evidence Type'),
-      headerClassName: 'w-[14%]',
+      headerClassName: 'w-[11%]',
       help: t('What kind of evidence this is. This is separate from where the file came from.'),
       filterOptions: facetOptions(state.facets, 'evidence_type_label'),
       filterPlaceholder: t('Document or communication'),
       render: (document) => document.evidence_type_label || 'Document',
     },
     {
+      key: 'legal_factor_code',
+      header: t('Statute Lens'),
+      headerClassName: 'w-[18%]',
+      sortable: false,
+      filterOptions: facetOptions(state.facets, 'legal_factor_code').length ? facetOptions(state.facets, 'legal_factor_code') : STATUTE_FACTOR_OPTIONS,
+      filterPlaceholder: t('7a, 7b, 3a'),
+      help: t('Filter documents by Florida statutory factor mappings from the graph. Use this to view and export documents supporting a specific factor.'),
+      render: () => {
+        const selected = STATUTE_FACTOR_OPTIONS.find((item) => item.value === filterValues.legal_factor_code);
+        return selected ? selected.label : t('Select a factor');
+      },
+    },
+    {
       key: 'canonical_storage_label',
-      header: t('S3 Sync'),
-      headerClassName: 'w-[14%]',
-      help: t('Whether Evidence AI has a canonical copy of this raw file in S3.'),
+      header: t('Cloud Copy'),
+      headerClassName: 'w-[12%]',
+      help: t('Whether Evidence AI has a controlled cloud copy of this raw file.'),
       filterOptions: facetOptions(state.facets, 'canonical_storage_label'),
       filterPlaceholder: t('Synced, pending, legacy'),
       render: (document) => <StorageSyncBadge document={document} />,
@@ -374,7 +438,7 @@ export default function DocumentsPage() {
     {
       key: 'pipeline_status',
       header: t('Propagation'),
-      headerClassName: 'w-[10%]',
+      headerClassName: 'w-[9%]',
       filterable: true,
       sortable: false,
       filterMulti: true,
@@ -384,9 +448,9 @@ export default function DocumentsPage() {
       help: t('Processing coverage: blue is Postgres, green is vector, purple is graph. Lit dots mean that domain has processed this document.'),
       render: (document) => <PipelineDots document={document} />,
     },
-    { key: 'page_count', header: t('Pages'), headerClassName: 'w-[7%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
-    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[12%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
-  ]), [caseId, state.facets, t]);
+    { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
+    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[10%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
+  ]), [caseId, filterValues.legal_factor_code, state.facets, t]);
 
   const appliedFilters = useMemo(() =>
     Object.entries(filterValues || {})
@@ -425,19 +489,22 @@ export default function DocumentsPage() {
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} ${t('inventory rows')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('extracted files')}; ${s3SyncedFiles} ${t('matched to S3')}; ${missingS3Files} ${t('still need S3 mirror proof')}.`}
+        description={`${state.total} ${t('inventory rows')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('extracted files')}; ${s3SyncedFiles} ${t('matched to controlled cloud copies')}; ${missingS3Files} ${t('still need cloud-copy proof')}.`}
         actions={
           <button
             type="button"
-            disabled
-            className="cursor-not-allowed rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500"
+            onClick={exportCurrentView}
+            disabled={exportState.busy || state.loading || !state.total}
+            className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {t('Upload locked')}
+            <Download size={16} aria-hidden="true" />
+            {exportState.busy ? t('Exporting') : t('Export current view')}
           </button>
         }
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
+      {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
 
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -446,17 +513,17 @@ export default function DocumentsPage() {
           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Unique file hashes in Postgres extraction')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('S3 Synced')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cloud Copied')}</div>
           <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{s3SyncedFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('stored S3 intake records')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('stored cloud intake records')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs S3 Sync')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs Cloud Copy')}</div>
           <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">{missingS3Files}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Extracted files without S3 mirror proof')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Extracted files without cloud-copy proof')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('S3 Only')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cloud Only')}</div>
           <div className="mt-1 text-2xl font-semibold text-sky-700 dark:text-sky-300">{s3OnlyFiles}</div>
           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Mirrored files not extracted yet')}</div>
         </div>
@@ -493,6 +560,9 @@ export default function DocumentsPage() {
         </form>
         {state.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
+        ) : null}
+        {exportState.fingerprint?.id ? (
+          <RequestFingerprint fingerprintId={exportState.fingerprint.id} correlationId={exportState.fingerprint.correlationId} label={t('Export fingerprint')} />
         ) : null}
       </div>
 
