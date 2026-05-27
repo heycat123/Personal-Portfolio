@@ -222,6 +222,12 @@ export const evidenceApi = {
   getAdminUsers: (options) => request('/api/v1/admin/users', options),
   createAdminUser: (payload, options) =>
     request('/api/v1/admin/users', { ...options, method: 'POST', body: payload }),
+  updateAdminUser: (userId, payload, options) =>
+    request(`/api/v1/admin/users/${encodeURIComponent(userId)}`, { ...options, method: 'PATCH', body: payload }),
+  deleteAdminUser: (userId, options) =>
+    request(`/api/v1/admin/users/${encodeURIComponent(userId)}`, { ...options, method: 'DELETE' }),
+  getAdminUserCaseMemberships: (userId, options) =>
+    request(`/api/v1/admin/users/${encodeURIComponent(userId)}/case-memberships`, options),
   grantCaseMembership: (userId, payload, options) =>
     request(`/api/v1/admin/users/${encodeURIComponent(userId)}/case-memberships`, {
       ...options,
