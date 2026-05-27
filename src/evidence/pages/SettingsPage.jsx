@@ -179,6 +179,9 @@ export default function SettingsPage() {
             <div>
               <dt className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{t('Case ID')}</dt>
               <dd className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{caseId}</dd>
+              <dd className="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-400">
+                {t('The URL uses this stable case ID. Renaming the case changes the display name only.')}
+              </dd>
             </div>
           </dl>
 
