@@ -9,6 +9,7 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 const DEFAULT_FORMS = {
@@ -98,6 +99,8 @@ export default function SupportFeedbackDrawer() {
   const { getAccessToken } = useEvidenceAuth();
   const { latestFingerprint, recordFingerprint, status } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const showDiagnostics = canSeeOperations || debugEnabled;
   const [mode, setMode] = useState(null);
   const [form, setForm] = useState(DEFAULT_FORMS.issue);
   const [saving, setSaving] = useState(false);
@@ -203,21 +206,25 @@ export default function SupportFeedbackDrawer() {
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                   {mode === 'idea'
                     ? t('Ideas are stored without evidence content unless you explicitly describe it.')
-                    : t('Issue reports attach route, browser context, and the latest request fingerprint when available.')}
+                    : showDiagnostics
+                      ? t('Issue reports attach route, browser context, and diagnostic context when available.')
+                      : t('Describe what happened and what you expected. Support context will be attached automatically.')}
                 </p>
               </div>
-              <StatusBadge status="configured" label="Stage 7.10" />
+              {showDiagnostics ? <StatusBadge status="configured" label="Stage 7.10" /> : null}
             </div>
 
             {mode === 'issue' && activeError ? (
               <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
-                <div className="font-semibold">{t('Latest API error will be attached')}</div>
+                <div className="font-semibold">{showDiagnostics ? t('Latest API error will be attached') : t('Recent problem detected')}</div>
                 <div className="mt-1">{activeError.message || String(activeError)}</div>
-                <RequestFingerprint
-                  fingerprintId={activeError.requestFingerprintId || activeError.request_fingerprint_id}
-                  correlationId={activeError.correlationId || activeError.correlation_id}
-                  compact
-                />
+                {debugEnabled ? (
+                  <RequestFingerprint
+                    fingerprintId={activeError.requestFingerprintId || activeError.request_fingerprint_id}
+                    correlationId={activeError.correlationId || activeError.correlation_id}
+                    compact
+                  />
+                ) : null}
               </div>
             ) : null}
 

@@ -10,6 +10,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, sumCounts, truncateMiddle } from '../utils/formatters';
 
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -34,26 +36,33 @@ export default function DashboardPage() {
   const loadDashboard = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     const token = await getAccessToken();
-    const results = await Promise.allSettled([
-      evidenceApi.getCaseSummary(caseId, { token }),
-      evidenceApi.getCaseHealth(caseId, { token }),
-      evidenceApi.getJobs(caseId, { limit: 5, offset: 0 }, { token }),
-    ]);
+    const requests = [
+      { key: 'summary', label: 'Case summary', promise: evidenceApi.getCaseSummary(caseId, { token }) },
+    ];
+    if (canSeeOperations) {
+      requests.push(
+        { key: 'health', label: 'Case health', promise: evidenceApi.getCaseHealth(caseId, { token }) },
+        { key: 'jobs', label: 'Latest jobs', promise: evidenceApi.getJobs(caseId, { limit: 5, offset: 0 }, { token }) },
+      );
+    }
+    const results = await Promise.allSettled(requests.map((request) => request.promise));
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case summary', 'Case health', 'Latest jobs'];
-        recordFingerprint(result.value, labels[index]);
+        recordFingerprint(result.value, requests[index].label);
       }
     });
+    const fulfilledByKey = Object.fromEntries(
+      requests.map((request, index) => [request.key, fulfilledValue(results[index])?.data || null]),
+    );
 
     const firstError = results.find((result) => result.status === 'rejected')?.reason || null;
     setState({
       loading: false,
       error: firstError,
-      summary: fulfilledValue(results[0])?.data || null,
-      health: fulfilledValue(results[1])?.data || null,
-      jobs: fulfilledValue(results[2])?.data || null,
+      summary: fulfilledByKey.summary || null,
+      health: fulfilledByKey.health || null,
+      jobs: fulfilledByKey.jobs || null,
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
@@ -61,7 +70,7 @@ export default function DashboardPage() {
           correlationId: result.value.correlationId,
         })),
     });
-  }, [caseId, getAccessToken, recordFingerprint]);
+  }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -90,7 +99,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Case Dashboard"
-        description="Live read-only case status from the Evidence API."
+        description={canSeeOperations ? 'Live case status from the Evidence API.' : 'Search, review, and organize the evidence available in this case.'}
         actions={
           <button
             type="button"
@@ -107,13 +116,13 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile icon={FileText} label={t('Documents')} value={documentFiles} detail={t('Unique extracted source files')} />
         <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" />
-        <MetricTile
+        {canSeeOperations ? <MetricTile
           icon={Activity}
           label="S3 Coverage"
           value={`${syncedExtractedFiles}/${documentFiles}`}
           tone={s3CoverageOk ? 'good' : documentFiles ? 'warn' : 'default'}
           detail={documentFiles ? `${missingS3Files} extracted files still need S3 mirror proof` : 'No extracted files counted yet'}
-        />
+        /> : null}
         <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail="Communication rows" />
         <MetricTile
           icon={Users}
@@ -121,39 +130,40 @@ export default function DashboardPage() {
           value={sumCounts(counts, ['canonical_people', 'person_aliases', 'entity_mentions'])}
           detail={t('People, aliases, and mentions')}
         />
-        <MetricTile icon={Activity} label={t('API Requests')} value={counts.api_requests || 0} detail="Logged fingerprints" />
-        <MetricTile icon={Briefcase} label={t('Jobs')} value={state.jobs?.total || 0} detail={t('Case-scoped background work')} />
-        <MetricTile
+        {canSeeOperations ? <MetricTile icon={Activity} label={t('API Requests')} value={counts.api_requests || 0} detail="Logged fingerprints" /> : null}
+        {canSeeOperations ? <MetricTile icon={Briefcase} label={t('Jobs')} value={state.jobs?.total || 0} detail={t('Case-scoped background work')} /> : null}
+        {canSeeOperations ? <MetricTile
           icon={Database}
           label={t('Database')}
           value={state.health?.database?.ok ? 'Online' : state.loading ? 'Checking' : 'Unknown'}
           tone={state.health?.database?.ok ? 'good' : 'warn'}
           detail={state.health?.database?.database_name || 'No database payload'}
-        />
-        <MetricTile
+        /> : null}
+        {canSeeOperations ? <MetricTile
           icon={Activity}
           label="S3 Storage"
           value={state.health?.storage?.ok ? 'Configured' : state.loading ? 'Checking' : 'Unknown'}
           tone={state.health?.storage?.ok ? 'good' : 'warn'}
           detail={state.health?.storage?.bucket || state.health?.storage?.reason || 'No storage payload'}
-        />
-        <MetricTile
+        /> : null}
+        {canSeeOperations ? <MetricTile
           icon={Activity}
           label={t('Graph')}
           value={graph.ok ? 'Online' : state.loading ? 'Checking' : 'Unknown'}
           tone={graph.ok ? 'good' : graph.configured ? 'bad' : 'warn'}
           detail={graph.ok ? `${graph.case_totals?.nodes || 0} case nodes` : graph.error_message || graph.reason || 'No graph payload'}
-        />
-        <MetricTile
+        /> : null}
+        {canSeeOperations ? <MetricTile
           icon={Activity}
           label={t('Vectors')}
           value={vectorOk ? 'Covered' : graph.ok ? 'Review' : 'Unknown'}
           tone={vectorOk ? 'good' : graph.ok ? 'warn' : 'default'}
           detail={graph.ok ? `${embeddedChildChunks}/${childChunks} child chunks embedded` : 'Graph connection required'}
-        />
+        /> : null}
       </div>
 
-      <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {canSeeOperations || debugEnabled ? <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        {canSeeOperations ? (
         <div>
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Latest Jobs')}</h3>
@@ -185,8 +195,9 @@ export default function DashboardPage() {
             ]}
           />
         </div>
+        ) : null}
 
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        {debugEnabled ? <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Request Fingerprints')}</h3>
           <div className="mt-3 space-y-2">
             {state.fingerprints.length ? (
@@ -202,8 +213,8 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400">{t('No successful request fingerprint captured yet.')}</p>
             )}
           </div>
-        </div>
-      </div>
+        </div> : null}
+      </div> : null}
     </div>
   );
 }

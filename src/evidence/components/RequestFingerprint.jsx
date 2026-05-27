@@ -1,13 +1,15 @@
 import { Check, Copy, Fingerprint } from 'lucide-react';
 import { useState } from 'react';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { truncateMiddle } from '../utils/formatters';
 
 export default function RequestFingerprint({ fingerprintId, correlationId, label = 'Request fingerprint', compact = false }) {
   const { t } = useLocaleSettings();
+  const { debugEnabled } = useOperatorMode();
   const [copied, setCopied] = useState(false);
 
-  if (!fingerprintId && !correlationId) {
+  if (!debugEnabled || (!fingerprintId && !correlationId)) {
     return null;
   }
 

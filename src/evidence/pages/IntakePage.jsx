@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 function DetailRow({ label, value }) {
@@ -72,6 +73,8 @@ export default function IntakePage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const showDiagnostics = canSeeOperations || debugEnabled;
   const [file, setFile] = useState(null);
   const [sourceMode, setSourceMode] = useState('web_upload');
   const [state, setState] = useState({
@@ -1141,11 +1144,11 @@ export default function IntakePage() {
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Intake Status')}</h3>
             <DetailRow label="Step" value={state.step} />
-            <DetailRow label="Upload ID" value={upload?.upload_id} />
-            <DetailRow label="S3 Key" value={state.presign?.presign?.key} />
-            <DetailRow label="Upload" value={state.upload?.ok ? `HTTP ${state.upload.status}` : null} />
-            <DetailRow label="Register Job" value={job?.job_id} />
-            {job ? (
+            <DetailRow label="Upload" value={state.upload?.ok ? t('Uploaded') : null} />
+            {showDiagnostics ? <DetailRow label="Upload ID" value={upload?.upload_id} /> : null}
+            {showDiagnostics ? <DetailRow label="S3 Key" value={state.presign?.presign?.key} /> : null}
+            {showDiagnostics ? <DetailRow label="Register Job" value={job?.job_id} /> : null}
+            {showDiagnostics && job ? (
               <div className="mt-3">
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
@@ -1158,7 +1161,7 @@ export default function IntakePage() {
             ) : null}
           </section>
 
-          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          {debugEnabled ? <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Fingerprints')}</h3>
             <div className="space-y-2">
               {state.fingerprints.length ? (
@@ -1175,7 +1178,7 @@ export default function IntakePage() {
                 <p className="text-sm text-gray-600 dark:text-gray-400">{t('No intake request fingerprint yet.')}</p>
               )}
             </div>
-          </section>
+          </section> : null}
         </aside>
       </div>
     </div>

@@ -9,6 +9,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
 
@@ -33,6 +34,9 @@ export default function SupportPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const showDiagnostics = canSeeOperations || debugEnabled;
+  const showFingerprints = debugEnabled;
   const [filters, setFilters] = useState({
     record_type: '',
     status: '',
@@ -80,7 +84,7 @@ export default function SupportPage() {
     {
       id: 'record_type',
       header: t('Type'),
-      className: 'w-[8%]',
+      className: showDiagnostics ? 'w-[8%]' : 'w-[10%]',
       render: (row) => <StatusBadge status={row.record_type} />,
     },
     {
@@ -115,22 +119,22 @@ export default function SupportPage() {
     {
       id: 'route',
       header: t('Route'),
-      className: 'w-[18%]',
+      className: showDiagnostics ? 'w-[18%]' : 'w-[22%]',
       render: (row) => <span title={row.route || ''}>{truncateMiddle(row.route || '-', 44)}</span>,
     },
-    {
+    showFingerprints ? {
       id: 'request_fingerprint_id',
       header: t('Fingerprint'),
       className: 'w-[14%]',
       render: (row) => row.request_fingerprint_id ? truncateMiddle(row.request_fingerprint_id, 30) : '-',
-    },
+    } : null,
     {
       id: 'created_at',
       header: t('Created'),
       className: 'w-[12%]',
       render: (row) => formatDateTime(row.created_at),
     },
-  ], [t]);
+  ].filter(Boolean), [showDiagnostics, showFingerprints, t]);
 
   const rows = state.payload?.records || [];
   const scope = state.payload?.scope || 'own';
@@ -139,7 +143,9 @@ export default function SupportPage() {
     <div>
       <PageHeader
         title="Support"
-        description="Ideas and issue reports captured with case, route, browser, and request-fingerprint context."
+        description={showDiagnostics
+          ? 'Ideas and issue reports captured with diagnostic context for support follow-up.'
+          : 'Submit ideas or report issues for this case workspace.'}
         actions={(
           <button
             type="button"
@@ -211,20 +217,24 @@ export default function SupportPage() {
                 </>
               ) : null}
             </div>
-            <div className="space-y-4">
-              <div>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Fingerprint')}</div>
-                <RequestFingerprint fingerprintId={row.request_fingerprint_id} compact />
+            {showDiagnostics ? (
+              <div className="space-y-4">
+                {showFingerprints ? (
+                  <div>
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Fingerprint')}</div>
+                    <RequestFingerprint fingerprintId={row.request_fingerprint_id} compact />
+                  </div>
+                ) : null}
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Initial triage')}</div>
+                  <JsonBlock value={row.triage_json || {}} />
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Context')}</div>
+                  <JsonBlock value={row.context_json || {}} />
+                </div>
               </div>
-              <div>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Initial triage')}</div>
-                <JsonBlock value={row.triage_json || {}} />
-              </div>
-              <div>
-                <div className="mb-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Context')}</div>
-                <JsonBlock value={row.context_json || {}} />
-              </div>
-            </div>
+            ) : null}
           </div>
         )}
         mobileTitle={(row) => row.title}
@@ -232,8 +242,8 @@ export default function SupportPage() {
         mobileMetrics={(row) => [
           { id: 'severity', header: t('Severity'), render: () => <StatusBadge status={row.severity} /> },
           { id: 'status', header: t('Status'), render: () => <StatusBadge status={row.status} /> },
-          { id: 'fingerprint', header: t('Fingerprint'), render: () => truncateMiddle(row.request_fingerprint_id || '-', 28) },
-        ]}
+          showFingerprints ? { id: 'fingerprint', header: t('Fingerprint'), render: () => truncateMiddle(row.request_fingerprint_id || '-', 28) } : null,
+        ].filter(Boolean)}
       />
 
       {state.fingerprint ? (

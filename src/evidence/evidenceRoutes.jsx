@@ -5,6 +5,7 @@ import ErrorPanel from './components/ErrorPanel';
 import PageHeader from './components/PageHeader';
 import { useEvidenceAuth } from './context/AuthContext';
 import { useCaseContext } from './context/CaseContext';
+import { useOperatorMode } from './context/OperatorModeContext';
 import EvidenceLayout from './layout/EvidenceLayout';
 import DashboardPage from './pages/DashboardPage';
 import AccountPage from './pages/AccountPage';
@@ -162,6 +163,41 @@ function UnknownCasePage() {
   );
 }
 
+function RestrictedFeaturePage() {
+  return (
+    <div>
+      <PageHeader title="Feature Not Available" description="This page is limited to case administrators and system operators." />
+      <EmptyState
+        title="Use the case workspace"
+        description="You can still search, review documents, add evidence, and use support from the main case navigation."
+        action={
+          <Link
+            to="/evidence/cases"
+            className="rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+          >
+            My cases
+          </Link>
+        }
+      />
+    </div>
+  );
+}
+
+function OperationsRoute({ children }) {
+  const { canSeeOperations } = useOperatorMode();
+  return canSeeOperations ? children : <RestrictedFeaturePage />;
+}
+
+function ContributorRoute({ children }) {
+  const { canContribute } = useOperatorMode();
+  return canContribute ? children : <RestrictedFeaturePage />;
+}
+
+function AdminRoute({ children }) {
+  const { canSeeAdmin } = useOperatorMode();
+  return canSeeAdmin ? children : <RestrictedFeaturePage />;
+}
+
 function CaseScope() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -253,18 +289,18 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="documents/:fileId" element={<DocumentDetailPage />} />
-            <Route path="intake" element={<IntakePage />} />
-            <Route path="jobs" element={<JobsPage />} />
-            <Route path="jobs/:jobId" element={<JobDetailPage />} />
+            <Route path="intake" element={<ContributorRoute><IntakePage /></ContributorRoute>} />
+            <Route path="jobs" element={<OperationsRoute><JobsPage /></OperationsRoute>} />
+            <Route path="jobs/:jobId" element={<OperationsRoute><JobDetailPage /></OperationsRoute>} />
             <Route path="query" element={<QueryPage />} />
-            <Route path="system-query" element={<SystemQueryPage />} />
-            <Route path="health" element={<HealthPage />} />
+            <Route path="system-query" element={<OperationsRoute><SystemQueryPage /></OperationsRoute>} />
+            <Route path="health" element={<OperationsRoute><HealthPage /></OperationsRoute>} />
             <Route path="entities" element={<EntitiesPage />} />
             <Route path="entities/:personId" element={<EntityDetailPage />} />
-            <Route path="tests" element={<TestsPage />} />
+            <Route path="tests" element={<OperationsRoute><TestsPage /></OperationsRoute>} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="support" element={<SupportPage />} />
-            <Route path="admin" element={<AdminPage />} />
+            <Route path="admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           </Route>
           <Route path="*" element={<NotFoundPage />} />
         </Route>

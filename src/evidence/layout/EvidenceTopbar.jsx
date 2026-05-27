@@ -8,6 +8,7 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { EVIDENCE_API_BASE_URL, EVIDENCE_ENVIRONMENT_LABEL } from '../evidenceConfig';
 import { formatDateTime } from '../utils/formatters';
 
@@ -16,6 +17,18 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
   const { user, authMode, signOut } = useEvidenceAuth();
   const { activeCase } = useCaseContext();
   const { preferences, supportedLanguages, t, updatePreferences, saving: savingLocale } = useLocaleSettings();
+  const {
+    canSeeOperations,
+    debugEnabled,
+    effectiveCaseRole,
+    isPreviewing,
+    isRootAdmin,
+    openPreviewTab,
+    previewRole,
+    previewRoles,
+    setPreviewRole,
+  } = useOperatorMode();
+  const showOperatorChrome = canSeeOperations || debugEnabled;
 
   async function handleLanguageChange(event) {
     try {
@@ -40,8 +53,9 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
           </button>
           <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Evidence Control Plane')}</h1>
+            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">{t(showOperatorChrome ? 'Evidence Control Plane' : 'Evidence Workspace')}</h1>
             <StatusBadge status={activeCase.status} />
+            {isPreviewing ? <StatusBadge status="running" label={t('Preview: {role}', { role: effectiveCaseRole })} /> : null}
           </div>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
             {activeCase.tenantName} / {activeCase.caseName}
@@ -50,13 +64,34 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
         </div>
 
         <div className="flex max-w-full flex-wrap items-center gap-2 text-sm">
-          <div className="rounded-md border border-gray-200 px-2 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 sm:px-3">
+          {showOperatorChrome ? <div className="rounded-md border border-gray-200 px-2 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 sm:px-3">
             {EVIDENCE_ENVIRONMENT_LABEL}
-          </div>
-          <div className="hidden max-w-xs truncate rounded-md border border-gray-200 px-3 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 md:block">
+          </div> : null}
+          {showOperatorChrome ? <div className="hidden max-w-xs truncate rounded-md border border-gray-200 px-3 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 md:block">
             {EVIDENCE_API_BASE_URL}
-          </div>
-          <StatusBadge status={status.state} />
+          </div> : null}
+          {showOperatorChrome ? <StatusBadge status={status.state} /> : null}
+          {isRootAdmin ? (
+            <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              <span className="text-xs font-semibold">{t('View as')}</span>
+              <select
+                value={previewRole}
+                onChange={(event) => setPreviewRole(event.target.value)}
+                className="bg-transparent text-xs font-semibold outline-none dark:bg-amber-950"
+                title={t('Preview lower case role')}
+              >
+                <option value="">{t('Root admin')}</option>
+                {previewRoles.map((role) => <option key={role} value={role}>{role}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => openPreviewTab(previewRole || 'contributor')}
+                className="rounded border border-amber-300 px-2 py-1 text-xs font-semibold hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/50"
+              >
+                {t('New tab')}
+              </button>
+            </div>
+          ) : null}
           <AxiomHelpDrawer />
           <SupportFeedbackDrawer />
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
@@ -77,7 +112,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
               ))}
             </select>
           </label>
-          <button
+          {showOperatorChrome ? <button
             type="button"
             onClick={checkApiHealth}
             title={t('Refresh')}
@@ -85,11 +120,11 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
             className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
           >
             <RefreshCw size={16} aria-hidden="true" />
-          </button>
+          </button> : null}
           <div className="flex min-w-0 max-w-[11rem] items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 sm:max-w-xs sm:px-3">
             <Shield size={16} aria-hidden="true" />
             <span className="truncate">{user?.displayName || t('Evidence User')}</span>
-            <span className="hidden text-xs text-gray-500 sm:inline">({authMode})</span>
+            {showOperatorChrome ? <span className="hidden text-xs text-gray-500 sm:inline">({authMode})</span> : null}
           </div>
           <Link
             to="/evidence/account"
@@ -111,10 +146,10 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-500">
+      {showOperatorChrome ? <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-500">
         {status.checkedAt ? <span>{t('API checked {time}', { time: formatDateTime(status.checkedAt) })}</span> : null}
-        {latestFingerprint ? <span>{t('Last fingerprint {id}', { id: latestFingerprint.id })}</span> : null}
-      </div>
+        {debugEnabled && latestFingerprint ? <span>{t('Last fingerprint {id}', { id: latestFingerprint.id })}</span> : null}
+      </div> : null}
     </header>
   );
 }

@@ -17,27 +17,41 @@ import {
 import { NavLink } from 'react-router-dom';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 
 const NAV_ITEMS = [
   { label: 'My Cases', to: '/evidence/cases', icon: Briefcase },
   { label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
   { label: 'Documents', path: 'documents', icon: FileText },
-  { label: 'Intake', path: 'intake', icon: Upload },
-  { label: 'Jobs', path: 'jobs', icon: Briefcase },
+  { label: 'Intake', path: 'intake', icon: Upload, requiresContribute: true },
   { label: 'Query', path: 'query', icon: MessageSquare },
-  { label: 'System Query', path: 'system-query', icon: Search },
-  { label: 'Health', path: 'health', icon: Activity },
   { label: 'Entities', path: 'entities', icon: Network },
-  { label: 'Tests', path: 'tests', icon: ClipboardCheck },
   { label: 'Settings', path: 'settings', icon: Settings },
   { label: 'Support', path: 'support', icon: LifeBuoy },
-  { label: 'Admin', path: 'admin', icon: ShieldCheck },
+  { label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
+  { label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
+  { label: 'Health', path: 'health', icon: Activity, requiresOperations: true },
+  { label: 'Tests', path: 'tests', icon: ClipboardCheck, requiresOperations: true },
+  { label: 'Admin', path: 'admin', icon: ShieldCheck, requiresAdmin: true },
 ];
 
 export default function EvidenceSidebar({ open = false, onClose }) {
   const { activeCase } = useCaseContext();
   const { t } = useLocaleSettings();
+  const { canContribute, canSeeAdmin, canSeeOperations, isPreviewing, effectiveCaseRole } = useOperatorMode();
   const basePath = `/evidence/cases/${activeCase.caseId}`;
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.requiresAdmin) {
+      return canSeeAdmin;
+    }
+    if (item.requiresOperations) {
+      return canSeeOperations;
+    }
+    if (item.requiresContribute) {
+      return canContribute;
+    }
+    return true;
+  });
 
   return (
     <>
@@ -61,6 +75,11 @@ export default function EvidenceSidebar({ open = false, onClose }) {
             {t('Evidence')}
           </div>
           <p className="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-400">{activeCase.caseName}</p>
+          {isPreviewing ? (
+            <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+              {t('Previewing {role}', { role: effectiveCaseRole })}
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -73,7 +92,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink

@@ -20,6 +20,8 @@ function normalizeCase(item) {
     matterType: item.matterType || item.matter_type || null,
     caseSubtype: item.caseSubtype || item.case_subtype || null,
     role: item.role || null,
+    globalRole: item.globalRole || item.global_role || null,
+    userStatus: item.userStatus || item.user_status || null,
     canRename: Boolean(item.canRename ?? item.can_rename),
     status: item.status || 'active',
     environment: item.environment,
