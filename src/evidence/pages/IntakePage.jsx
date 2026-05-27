@@ -88,6 +88,7 @@ export default function IntakePage() {
     connectorLoading: true,
     connectorAction: null,
     connectorError: null,
+    connectorMessage: null,
     fingerprints: [],
   });
   const [driveBrowser, setDriveBrowser] = useState({
@@ -114,6 +115,10 @@ export default function IntakePage() {
     previewLoading: false,
     previewUrl: null,
     previewError: null,
+  });
+  const [disconnectDialog, setDisconnectDialog] = useState({
+    open: false,
+    connection: null,
   });
 
   const activeGoogleConnection = useMemo(() => {
@@ -184,25 +189,41 @@ export default function IntakePage() {
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
-  const disconnectConnection = useCallback(async (sourceConnectionId) => {
-    const severOnly = window.confirm(
-      t('Disconnect this source? This only severs future access to the connected account. Documents already copied into the case stay available until a separate document removal review is run.'),
-    );
-    if (!severOnly) {
+  const disconnectConnection = useCallback((connection) => {
+    setDisconnectDialog({ open: true, connection });
+  }, []);
+
+  const closeDisconnectDialog = useCallback(() => {
+    setDisconnectDialog({ open: false, connection: null });
+  }, []);
+
+  const performDisconnect = useCallback(async (removeImportedFiles = false) => {
+    const sourceConnectionId = disconnectDialog.connection?.source_connection_id;
+    if (!sourceConnectionId) {
       return;
     }
     setState((current) => ({ ...current, connectorAction: sourceConnectionId, connectorError: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.disconnectSourceConnector(caseId, sourceConnectionId, { remove_imported_files: false }, { token });
-      recordFingerprint(result, 'Disconnect source');
+      const result = await evidenceApi.disconnectSourceConnector(
+        caseId,
+        sourceConnectionId,
+        { remove_imported_files: removeImportedFiles },
+        { token },
+      );
+      addFingerprint(result, removeImportedFiles ? 'Request source cleanup' : 'Disconnect source');
+      setState((current) => ({
+        ...current,
+        connectorMessage: result.data?.message || t('Source disconnected.'),
+      }));
+      closeDisconnectDialog();
       await loadConnectors();
     } catch (error) {
       setState((current) => ({ ...current, connectorAction: null, connectorError: error }));
     } finally {
       setState((current) => ({ ...current, connectorAction: null }));
     }
-  }, [caseId, getAccessToken, loadConnectors, recordFingerprint, t]);
+  }, [addFingerprint, caseId, closeDisconnectDialog, disconnectDialog.connection?.source_connection_id, getAccessToken, loadConnectors, t]);
 
   const loadDriveWatchItems = useCallback(async (sourceConnectionId = activeGoogleConnection?.source_connection_id) => {
     if (!sourceConnectionId) {
@@ -639,6 +660,11 @@ export default function IntakePage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Intake failed" error={state.error} /></div> : null}
       {state.connectorError ? <div className="mb-5"><ErrorPanel title="Source connector failed" error={state.connectorError} /></div> : null}
+      {state.connectorMessage ? (
+        <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+          {state.connectorMessage}
+        </div>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-5">
@@ -705,7 +731,7 @@ export default function IntakePage() {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => disconnectConnection(connection.source_connection_id)}
+                                onClick={() => disconnectConnection(connection)}
                                 disabled={Boolean(state.connectorAction)}
                                 className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                               >
@@ -1187,6 +1213,68 @@ export default function IntakePage() {
           </section> : null}
         </aside>
       </div>
+
+      {disconnectDialog.open ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/55"
+            aria-label={t('Cancel disconnect')}
+            onClick={closeDisconnectDialog}
+          />
+          <div className="relative w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-[#101820]">
+            <div className="flex items-start gap-3">
+              <div className="rounded-md border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                <Unlink size={18} aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Disconnect source account')}</h3>
+                <p className="mt-1 break-words text-sm text-gray-600 dark:text-gray-400">
+                  {disconnectDialog.connection?.external_account_email || disconnectDialog.connection?.display_name || t('Connected account')}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+              <p>{t('Choose what should happen to this source connection.')}</p>
+              <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                <div className="font-semibold text-gray-950 dark:text-white">{t('Sever connection only')}</div>
+                <div className="mt-1">{t('Stops future access to this connected account. Documents already added to the case stay available.')}</div>
+              </div>
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                <div className="font-semibold">{t('Request file cleanup review')}</div>
+                <div className="mt-1">{t('Disconnects the account and queues a non-destructive review of files imported from this source. Nothing is deleted until a controlled cleanup is approved and propagated through the system.')}</div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDisconnectDialog}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                {t('Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => performDisconnect(false)}
+                disabled={Boolean(state.connectorAction)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                {t('Sever only')}
+              </button>
+              <button
+                type="button"
+                onClick={() => performDisconnect(true)}
+                disabled={Boolean(state.connectorAction)}
+                className="rounded-md border border-amber-700 bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {t('Request cleanup')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
