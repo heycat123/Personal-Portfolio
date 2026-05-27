@@ -1,6 +1,7 @@
-import { KeyRound, RefreshCw, Search, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
+import { KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
@@ -41,6 +42,7 @@ export default function AdminPage() {
     status: '',
     membershipStatus: '',
   });
+  const [sort, setSort] = useState({ key: 'email', desc: false });
   const [form, setForm] = useState({
     email: '',
     display_name: '',
@@ -270,10 +272,19 @@ export default function AdminPage() {
     () => new Map(state.memberships.map((item) => [item.user_id, item])),
     [state.memberships],
   );
+  const adminRows = useMemo(() => state.users.map((user) => {
+    const membership = membershipByUser.get(user.user_id);
+    return {
+      ...user,
+      user: user.display_name || user.email || user.user_id,
+      case_role: membership?.role || '',
+      membership_status: membership?.status || 'none',
+      membership,
+    };
+  }), [membershipByUser, state.users]);
   const filteredUsers = useMemo(() => {
     const needle = filters.search.trim().toLowerCase();
-    return state.users.filter((user) => {
-      const membership = membershipByUser.get(user.user_id);
+    const rows = adminRows.filter((user) => {
       const haystack = `${user.display_name || ''} ${user.email || ''} ${user.user_id || ''}`.toLowerCase();
       if (needle && !haystack.includes(needle)) {
         return false;
@@ -281,20 +292,128 @@ export default function AdminPage() {
       if (filters.globalRole && user.global_role !== filters.globalRole) {
         return false;
       }
-      if (filters.caseRole && (membership?.role || '') !== filters.caseRole) {
+      if (filters.caseRole && (user.case_role || '') !== filters.caseRole) {
         return false;
       }
       if (filters.status && (user.status || '') !== filters.status) {
         return false;
       }
-      if (filters.membershipStatus && (membership?.status || 'none') !== filters.membershipStatus) {
+      if (filters.membershipStatus && (user.membership_status || 'none') !== filters.membershipStatus) {
         return false;
       }
       return true;
     });
-  }, [filters, membershipByUser, state.users]);
+    if (!sort?.key) {
+      return rows;
+    }
+    return [...rows].sort((left, right) => {
+      const leftValue = String(left[sort.key] || '').toLowerCase();
+      const rightValue = String(right[sort.key] || '').toLowerCase();
+      const result = leftValue.localeCompare(rightValue);
+      return sort.desc ? -result : result;
+    });
+  }, [adminRows, filters, sort]);
 
-  const resetFilters = () => setFilters({ search: '', globalRole: '', caseRole: '', status: '', membershipStatus: '' });
+  const tableFilterValues = {
+    user: filters.search,
+    global_role: filters.globalRole,
+    case_role: filters.caseRole,
+    status: filters.status,
+    membership_status: filters.membershipStatus,
+  };
+  const setTableFilter = (columnId, value) => {
+    const map = {
+      user: 'search',
+      global_role: 'globalRole',
+      case_role: 'caseRole',
+      status: 'status',
+      membership_status: 'membershipStatus',
+    };
+    const key = map[columnId];
+    if (key) {
+      setFilters((current) => ({ ...current, [key]: value }));
+    }
+  };
+  const clearTableFilter = (columnId) => setTableFilter(columnId, '');
+  const resetFilters = () => {
+    setFilters({ search: '', globalRole: '', caseRole: '', status: '', membershipStatus: '' });
+    setSort({ key: 'email', desc: false });
+  };
+  const appliedFilters = Object.entries(tableFilterValues)
+    .filter(([, value]) => String(value || '').trim())
+    .map(([key, value]) => ({ id: key, label: `${key.replaceAll('_', ' ')}: ${value}` }));
+  const adminColumns = [
+    {
+      key: 'user',
+      header: t('User'),
+      sortable: true,
+      help: 'Searches display name, email, and user id.',
+      render: (user) => (
+        <div>
+          <div className="font-medium text-gray-950 dark:text-white">{user.display_name || user.email}</div>
+          <div className="break-all text-xs text-gray-500">{user.email}</div>
+          <div className="text-xs text-gray-500">{t('Seen')} {user.last_seen_at ? formatDateTime(user.last_seen_at) : t('never')}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'global_role',
+      header: t('Global'),
+      sortable: true,
+      filterOptions: GLOBAL_ROLES.map((role) => ({ value: role, label: role })),
+    },
+    {
+      key: 'case_role',
+      header: t('Case Role'),
+      sortable: true,
+      filterOptions: CASE_ROLES.map((role) => ({ value: role, label: role })),
+      render: (user) => (
+        <select
+          value={user.case_role || 'viewer'}
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => updateRole(user.user_id, event.target.value)}
+          disabled={state.saving}
+          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+        >
+          {CASE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+        </select>
+      ),
+    },
+    {
+      key: 'status',
+      header: t('User Status'),
+      sortable: true,
+      filterOptions: USER_STATUSES.map((status) => ({ value: status, label: status })),
+      render: (user) => <StatusBadge status={user.status || 'unknown'} />,
+    },
+    {
+      key: 'membership_status',
+      header: t('Access'),
+      sortable: true,
+      filterOptions: ['active', 'revoked', 'none'].map((status) => ({ value: status, label: status })),
+      render: (user) => <StatusBadge status={user.membership_status || 'none'} />,
+    },
+    {
+      key: 'action',
+      header: t('Action'),
+      sortable: false,
+      filterable: false,
+      render: (user) => (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            revokeAccess(user.user_id);
+          }}
+          disabled={state.saving || !user.membership || user.membership.status === 'revoked'}
+          className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+        >
+          <UserX size={13} aria-hidden="true" />
+          {t('Revoke')}
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -476,123 +595,31 @@ export default function AdminPage() {
             </button>
           </div>
 
-          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))_auto]">
-            <label className="relative block">
-              <span className="sr-only">{t('Search users')}</span>
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={15} aria-hidden="true" />
-              <input
-                value={filters.search}
-                onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-                placeholder={t('Search users')}
-                className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              />
-            </label>
-            <select
-              value={filters.globalRole}
-              onChange={(event) => setFilters((current) => ({ ...current, globalRole: event.target.value }))}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-            >
-              <option value="">{t('All global roles')}</option>
-              {GLOBAL_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
-            <select
-              value={filters.caseRole}
-              onChange={(event) => setFilters((current) => ({ ...current, caseRole: event.target.value }))}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-            >
-              <option value="">{t('All case roles')}</option>
-              {CASE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
-            <select
-              value={filters.status}
-              onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-            >
-              <option value="">{t('All user statuses')}</option>
-              {USER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
-            </select>
-            <select
-              value={filters.membershipStatus}
-              onChange={(event) => setFilters((current) => ({ ...current, membershipStatus: event.target.value }))}
-              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-            >
-              <option value="">{t('All access statuses')}</option>
-              <option value="active">active</option>
-              <option value="revoked">revoked</option>
-              <option value="none">none</option>
-            </select>
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-            >
-              {t('Reset')}
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-gray-800">
-                <tr>
-                  <th className="py-2 pr-4">{t('User')}</th>
-                  <th className="py-2 pr-4">{t('Global')}</th>
-                  <th className="py-2 pr-4">{t('Case Role')}</th>
-                  <th className="py-2 pr-4">{t('Status')}</th>
-                  <th className="py-2">{t('Action')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((user) => {
-                  const membership = membershipByUser.get(user.user_id);
-                  return (
-                    <tr
-                      key={user.user_id}
-                      onClick={() => openUserDrawer(user)}
-                      className="cursor-pointer border-b border-gray-100 hover:bg-sky-50/50 dark:border-gray-800 dark:hover:bg-sky-950/20"
-                    >
-                      <td className="py-3 pr-4">
-                        <div className="font-medium text-gray-950 dark:text-white">{user.display_name || user.email}</div>
-                        <div className="text-xs text-gray-500">{user.email}</div>
-                        <div className="text-xs text-gray-500">{t('Seen')} {user.last_seen_at ? formatDateTime(user.last_seen_at) : t('never')}</div>
-                      </td>
-                      <td className="py-3 pr-4">{user.global_role}</td>
-                      <td className="py-3 pr-4">
-                        <select
-                          value={membership?.role || 'viewer'}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => updateRole(user.user_id, event.target.value)}
-                          disabled={state.saving}
-                          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-                        >
-                          {CASE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-                        </select>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge status={membership?.status || 'none'} />
-                      </td>
-                      <td className="py-3">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            revokeAccess(user.user_id);
-                          }}
-                          disabled={state.saving || !membership || membership.status === 'revoked'}
-                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-                        >
-                          <UserX size={13} aria-hidden="true" />
-                          {t('Revoke')}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            {!filteredUsers.length ? (
-              <p className="py-8 text-center text-sm text-gray-600 dark:text-gray-400">{t('No users match the current filters.')}</p>
-            ) : null}
-          </div>
+          <DataTable
+            columns={adminColumns}
+            rows={filteredUsers}
+            rowKey="user_id"
+            emptyTitle={t('No users match the current filters.')}
+            loading={state.loading}
+            enableHeaderMenus
+            filterValues={tableFilterValues}
+            sort={sort}
+            appliedFilters={appliedFilters}
+            sortLabel={
+              sort?.key
+                ? `${t('Sorted by')} ${sort.key.replaceAll('_', ' ')} (${sort.desc ? t('Descending') : t('Ascending')})`
+                : null
+            }
+            onFilterChange={setTableFilter}
+            onClearFilter={clearTableFilter}
+            onClearAllFilters={resetFilters}
+            onSort={(columnId, desc) => setSort({ key: columnId, desc })}
+            onRowSelect={openUserDrawer}
+            selectedRowKey={state.selectedUser?.user_id}
+            mobileTitle={(user) => user.display_name || user.email}
+            mobileSubtitle={(user) => user.email}
+            tableClassName="overflow-visible"
+          />
 
           {state.fingerprint ? (
             <div className="mt-4">

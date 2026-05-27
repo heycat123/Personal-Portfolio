@@ -19,6 +19,7 @@ import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 
 const NAV_ITEMS = [
+  { label: 'My Cases', to: '/evidence/cases', icon: Briefcase },
   { label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
   { label: 'Documents', path: 'documents', icon: FileText },
   { label: 'Intake', path: 'intake', icon: Upload },
@@ -76,8 +77,8 @@ export default function EvidenceSidebar({ open = false, onClose }) {
           const Icon = item.icon;
           return (
             <NavLink
-              key={item.path}
-              to={`${basePath}/${item.path}`}
+              key={item.to || item.path}
+              to={item.to || `${basePath}/${item.path}`}
               onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${

@@ -164,7 +164,9 @@ function UnknownCasePage() {
 
 function CaseScope() {
   const { caseId } = useParams();
-  const { isKnownCase, setActiveCaseId } = useCaseContext();
+  const { getAccessToken } = useEvidenceAuth();
+  const { isKnownCase, registerCases, setActiveCaseId } = useCaseContext();
+  const [remoteCheck, setRemoteCheck] = useState({ caseId: null, loading: false, checked: false, found: false });
 
   useEffect(() => {
     if (caseId && isKnownCase(caseId)) {
@@ -172,7 +174,54 @@ function CaseScope() {
     }
   }, [caseId, isKnownCase, setActiveCaseId]);
 
-  if (!caseId || !isKnownCase(caseId)) {
+  useEffect(() => {
+    if (!caseId) {
+      return undefined;
+    }
+    let cancelled = false;
+    getAccessToken()
+      .then((token) => evidenceApi.getCases({ token }))
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        const cases = result.data?.cases || [];
+        registerCases(cases);
+        setRemoteCheck({
+          caseId,
+          loading: false,
+          checked: true,
+          found: cases.some((item) => (item.case_id || item.caseId) === caseId),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRemoteCheck({ caseId, loading: false, checked: true, found: false });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId, getAccessToken, registerCases]);
+
+  if (!caseId) {
+    return <UnknownCasePage />;
+  }
+
+  const currentRemoteCheck = remoteCheck.caseId === caseId
+    ? remoteCheck
+    : { loading: true, checked: false, found: false };
+
+  if (!isKnownCase(caseId) && currentRemoteCheck.loading && !currentRemoteCheck.checked) {
+    return (
+      <div>
+        <PageHeader title="Checking Case Access" description="Refreshing the case list for this account." />
+        <EmptyState title="Loading case" />
+      </div>
+    );
+  }
+
+  if (!isKnownCase(caseId) && currentRemoteCheck.checked && !currentRemoteCheck.found) {
     return <UnknownCasePage />;
   }
 
