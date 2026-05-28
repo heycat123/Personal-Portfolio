@@ -285,6 +285,12 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  bulkReviewContactEntityLinks: (caseId, payload, options) =>
+    request(casePath(caseId, '/entities/contact-links/review-bulk'), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   reviewEntityAlias: (caseId, personId, payload, options) =>
     request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/aliases/review`), {
       ...options,

@@ -247,6 +247,7 @@ export default function EntitiesPage() {
   const [contactTargetSearches, setContactTargetSearches] = useState({});
   const [contactTargetOptions, setContactTargetOptions] = useState({});
   const [contactTargetLoading, setContactTargetLoading] = useState({});
+  const [contactSelection, setContactSelection] = useState({});
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [createEntityOpen, setCreateEntityOpen] = useState(false);
   const [createEntityForm, setCreateEntityForm] = useState({ canonical_name: '', aliases: '' });
@@ -528,6 +529,7 @@ export default function EntitiesPage() {
     setContactTargetSearches({});
     setContactTargetOptions({});
     setContactTargetLoading({});
+    setContactSelection({});
   }, []);
 
   const handleColumnFiltersChange = useCallback((updater) => {
@@ -560,11 +562,13 @@ export default function EntitiesPage() {
       return next;
     });
     setContactPagination((current) => ({ ...current, pageIndex: 0 }));
+    setContactSelection({});
   }, []);
 
   const clearContactFilter = useCallback((columnId) => {
     setContactFilters((current) => current.filter((filter) => filter.id !== columnId));
     setContactPagination((current) => ({ ...current, pageIndex: 0 }));
+    setContactSelection({});
   }, []);
 
   const setColumnSort = useCallback((columnId, desc) => {
@@ -847,6 +851,55 @@ export default function EntitiesPage() {
     }
   }, [caseId, contactTargets, entityLookup, getAccessToken, loadContactLinks, loadEntityDetail, recordFingerprint, selectedPersonId]);
 
+  const bulkReviewContactLinks = useCallback(async (decision) => {
+    if (!selectedContactIds.length) {
+      return;
+    }
+    const confirmableIds = decision === 'confirm'
+      ? selectedContactLinks.filter((link) => link.person_id).map((link) => link.contact_entity_link_id)
+      : selectedContactIds;
+    if (!confirmableIds.length) {
+      setState((current) => ({ ...current, actionError: new Error('Selected rows do not have proposed entities to confirm. Create or choose an entity per row first.') }));
+      return;
+    }
+    const skipped = selectedContactIds.length - confirmableIds.length;
+    setState((current) => ({ ...current, actionId: `bulk_contact_${decision}`, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.bulkReviewContactEntityLinks(
+        caseId,
+        {
+          contact_entity_link_ids: confirmableIds,
+          decision,
+          reviewer_note: decision === 'reject'
+            ? `Bulk rejected ${confirmableIds.length} contact link(s) from Contact Identity Review.`
+            : `Bulk confirmed ${confirmableIds.length} proposed contact link(s) from Contact Identity Review.${skipped ? ` ${skipped} unresolved row(s) skipped.` : ''}`,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Bulk contact identity review');
+      const failedCount = Number(result.data?.failed_count || 0);
+      setContactSelection({});
+      setState((current) => ({
+        ...current,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+        actionError: failedCount
+          ? new Error(`${failedCount} selected contact link(s) could not be reviewed. Check the request fingerprint for details.`)
+          : null,
+      }));
+      await loadContactLinks();
+      if (selectedPersonId) {
+        await loadEntityDetail(selectedPersonId);
+      }
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, getAccessToken, loadContactLinks, loadEntityDetail, recordFingerprint, selectedContactIds, selectedContactLinks, selectedPersonId]);
+
   const entity = state.entity;
   const confirmations = useMemo(() => entity?.alias_confirmations || [], [entity]);
   const confirmedAliases = useMemo(() => confirmations.filter((item) => item.decision === 'confirm'), [confirmations]);
@@ -966,6 +1019,37 @@ export default function EntitiesPage() {
     return { id: filter.id, label: `${t('Contact contains')}: ${filter.value}` };
   }), [normalizedContactFilters, t]);
 
+  const selectedContactIds = useMemo(
+    () => Object.entries(contactSelection).filter(([, selected]) => selected).map(([id]) => id),
+    [contactSelection],
+  );
+
+  const selectedContactLinks = useMemo(() => {
+    const selected = new Set(selectedContactIds);
+    return state.contactLinks.filter((link) => selected.has(link.contact_entity_link_id));
+  }, [selectedContactIds, state.contactLinks]);
+
+  const toggleContactSelection = useCallback((contactEntityLinkId) => {
+    setContactSelection((current) => ({
+      ...current,
+      [contactEntityLinkId]: !current[contactEntityLinkId],
+    }));
+  }, []);
+
+  const selectVisibleContactLinks = useCallback(() => {
+    setContactSelection((current) => {
+      const next = { ...current };
+      state.contactLinks.forEach((link) => {
+        if (link.contact_entity_link_id) {
+          next[link.contact_entity_link_id] = true;
+        }
+      });
+      return next;
+    });
+  }, [state.contactLinks]);
+
+  const clearContactSelection = useCallback(() => setContactSelection({}), []);
+
   const renderContactActions = useCallback((link) => {
     const selectedTarget = contactTargets[link.contact_entity_link_id] || link.person_id || '';
     const confirmId = `${link.contact_entity_link_id}_confirm`;
@@ -1052,6 +1136,25 @@ export default function EntitiesPage() {
 
   const contactColumns = useMemo(() => [
     {
+      id: 'selected',
+      header: t('Pick'),
+      help: t('Select rows for bulk contact review actions.'),
+      filterable: false,
+      sortable: false,
+      className: 'w-12',
+      headerClassName: 'w-12',
+      mobileHidden: true,
+      render: (link) => (
+        <input
+          type="checkbox"
+          checked={Boolean(contactSelection[link.contact_entity_link_id])}
+          onChange={() => toggleContactSelection(link.contact_entity_link_id)}
+          aria-label={t('Select contact link')}
+          className="h-4 w-4 accent-sky-700"
+        />
+      ),
+    },
+    {
       id: 'contact',
       header: t('Contact'),
       help: t('Google Contacts name and the contact point that was matched or proposed.'),
@@ -1127,7 +1230,7 @@ export default function EntitiesPage() {
       sortable: false,
       render: renderContactActions,
     },
-  ], [contactStatusOptions, openEntityDetail, renderContactActions, t]);
+  ], [contactSelection, contactStatusOptions, openEntityDetail, renderContactActions, t, toggleContactSelection]);
 
   const entityTableColumns = useMemo(() => ENTITY_COLUMNS.map((column) => {
     if (column.id === 'canonical_name') {
@@ -1417,6 +1520,48 @@ export default function EntitiesPage() {
             columns={contactColumns}
             loading={state.contactLoading}
             emptyTitle={state.contactLoading ? t('Loading contact identity links') : t('No contact identity links matched')}
+            toolbar={(
+              <div className="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-gray-700 dark:text-gray-300">
+                  <span className="font-semibold">{t('{count} selected', { count: selectedContactIds.length })}</span>
+                  <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{t('Bulk confirm only applies to rows that already have a proposed entity.')}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={selectVisibleContactLinks}
+                    disabled={!state.contactLinks.length}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+                  >
+                    {t('Select visible')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearContactSelection}
+                    disabled={!selectedContactIds.length}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+                  >
+                    {t('Clear')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => bulkReviewContactLinks('confirm')}
+                    disabled={!selectedContactIds.length || state.actionId === 'bulk_contact_confirm'}
+                    className="rounded-md border border-emerald-700 bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                  >
+                    {t('Confirm selected proposed')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => bulkReviewContactLinks('reject')}
+                    disabled={!selectedContactIds.length || state.actionId === 'bulk_contact_reject'}
+                    className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:bg-[#101820] dark:text-red-300 dark:hover:bg-red-950/40"
+                  >
+                    {t('Reject selected')}
+                  </button>
+                </div>
+              </div>
+            )}
             enableHeaderMenus
             filterValues={contactFilterValues}
             appliedFilters={contactAppliedFilters}
@@ -1425,7 +1570,16 @@ export default function EntitiesPage() {
             onClearAllFilters={resetContactTable}
             mobileTitle={(item) => contactDisplayLabel(item) || t('Unnamed contact')}
             mobileSubtitle={(item) => contactPointLabel(item)}
-            mobileMetrics={(item) => contactColumns.filter((column) => !['contact', 'actions'].includes(column.id)).map((column) => ({
+            mobileActions={(item) => (
+              <input
+                type="checkbox"
+                checked={Boolean(contactSelection[item.contact_entity_link_id])}
+                onChange={() => toggleContactSelection(item.contact_entity_link_id)}
+                aria-label={t('Select contact link')}
+                className="h-4 w-4 accent-sky-700"
+              />
+            )}
+            mobileMetrics={(item) => contactColumns.filter((column) => !['selected', 'contact', 'actions'].includes(column.id)).map((column) => ({
               ...column,
               render: column.render || (() => item[column.id]),
             }))}
@@ -1433,7 +1587,7 @@ export default function EntitiesPage() {
               pageIndex: contactPagination.pageIndex,
               pageSize: contactPagination.pageSize,
               total: state.contactLinkTotal,
-              pageSizeOptions: [10, 25, 50],
+              pageSizeOptions: [10, 25, 50, 100, 250],
               onPageChange: (pageIndex) => setContactPagination((current) => ({ ...current, pageIndex })),
               onPageSizeChange: (pageSize) => setContactPagination({ pageIndex: 0, pageSize }),
             }}
