@@ -107,6 +107,48 @@ const CONTACT_STATUS_OPTIONS = [
   { value: 'rejected', label: 'Rejected' },
 ];
 
+const COMMON_RELATIONSHIPS = [
+  'maternal grandmother',
+  'paternal grandmother',
+  'grandmother',
+  'maternal grandfather',
+  'paternal grandfather',
+  'mother',
+  'father',
+  'brother',
+  'sister',
+  'aunt',
+  'uncle',
+  'spouse',
+  'partner',
+  'therapist',
+  'attorney',
+  'teacher',
+  'doctor',
+  'lease tenant',
+  'witness',
+];
+
+const VAGUE_KINSHIP_ALIASES = new Set([
+  'grandma',
+  'grandmother',
+  'gma',
+  'granny',
+  'nana',
+  'grandpa',
+  'grandfather',
+  'papa',
+  'mom',
+  'mother',
+  'dad',
+  'father',
+  'brother',
+  'sister',
+  'aunt',
+  'auntie',
+  'uncle',
+]);
+
 function confidenceLabel(value) {
   const number = Number(value);
   if (Number.isNaN(number)) {
@@ -289,6 +331,18 @@ function confirmedRoles(entity) {
   return (entity?.roles || []).filter((role) => Number(role.confirmed_count || 0) > 0);
 }
 
+function relationshipTargetChoices(entity, entities, searchedEntities) {
+  const map = new Map();
+  [...(searchedEntities || []), ...(entities || [])]
+    .filter((item) => item?.person_id && item.person_id !== entity?.person_id)
+    .forEach((item) => map.set(item.person_id, item));
+  return [...map.values()].sort((a, b) => String(a.canonical_name || '').localeCompare(String(b.canonical_name || '')));
+}
+
+function isVagueKinshipAlias(value) {
+  return VAGUE_KINSHIP_ALIASES.has(normalizeIdentityText(value));
+}
+
 function parseCommaList(value) {
   return String(value || '')
     .split(/[\n,]+/)
@@ -331,12 +385,19 @@ export default function EntitiesPage() {
   const [canonicalNameDraft, setCanonicalNameDraft] = useState('');
   const [customAlias, setCustomAlias] = useState('');
   const [customRole, setCustomRole] = useState('');
+  const [relationshipForm, setRelationshipForm] = useState({
+    relationship_label: '',
+    target_person_id: '',
+    target_search: '',
+  });
   const [mergeNote, setMergeNote] = useState('');
   const [reassignTargets, setReassignTargets] = useState({});
   const [contactTargets, setContactTargets] = useState({});
   const [contactTargetSearches, setContactTargetSearches] = useState({});
   const [contactTargetOptions, setContactTargetOptions] = useState({});
   const [contactTargetLoading, setContactTargetLoading] = useState({});
+  const [relationshipTargetOptions, setRelationshipTargetOptions] = useState([]);
+  const [relationshipTargetLoading, setRelationshipTargetLoading] = useState(false);
   const [contactSelection, setContactSelection] = useState({});
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [createEntityOpen, setCreateEntityOpen] = useState(false);
@@ -566,6 +627,29 @@ export default function EntitiesPage() {
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
+  const searchRelationshipTargetEntities = useCallback(async (query) => {
+    const search = String(query || '').trim();
+    if (!search) {
+      setRelationshipTargetOptions([]);
+      return;
+    }
+    setRelationshipTargetLoading(true);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getEntities(
+        caseId,
+        { limit: 25, offset: 0, q: search, sort_by: 'entity', sort_dir: 'asc' },
+        { token },
+      );
+      recordFingerprint(result, 'Search relationship targets');
+      setRelationshipTargetOptions(result.data?.entities || []);
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setRelationshipTargetLoading(false);
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timers = Object.entries(contactTargetSearches).map(([contactEntityLinkId, query]) => {
       const search = String(query || '').trim();
@@ -592,11 +676,28 @@ export default function EntitiesPage() {
   }, [contactTargetSearches, searchContactTargetEntities]);
 
   useEffect(() => {
+    const search = String(relationshipForm.target_search || '').trim();
+    if (!search) {
+      setRelationshipTargetOptions([]);
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => {
+      searchRelationshipTargetEntities(search);
+    }, 250);
+    return () => window.clearTimeout(timerId);
+  }, [relationshipForm.target_search, searchRelationshipTargetEntities]);
+
+  useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadEntities();
     }, 0);
     return () => window.clearTimeout(timerId);
   }, [loadEntities]);
+
+  useEffect(() => {
+    setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
+    setRelationshipTargetOptions([]);
+  }, [selectedPersonId]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -818,6 +919,13 @@ export default function EntitiesPage() {
     if (!entity || !alias) {
       return;
     }
+    if (isVagueKinshipAlias(alias)) {
+      setState((current) => ({
+        ...current,
+        actionError: new Error(`"${alias}" is too ambiguous to save as a global alias. Add a relationship instead, such as maternal grandmother of Tiffany Curcio.`),
+      }));
+      return;
+    }
     setState((current) => ({ ...current, actionId: 'custom_alias', actionError: null }));
     try {
       const token = await getAccessToken();
@@ -850,6 +958,61 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
   }, [caseId, customAlias, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
+
+  const addEntityRelationship = useCallback(async () => {
+    const entity = state.entity;
+    const relationshipLabel = relationshipForm.relationship_label.trim();
+    const targetPersonId = relationshipForm.target_person_id;
+    if (!entity || !relationshipLabel || !targetPersonId) {
+      setState((current) => ({ ...current, actionError: new Error('Choose a relationship and target entity first.') }));
+      return;
+    }
+    setState((current) => ({ ...current, actionId: 'relationship', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const targetName = [...relationshipTargetOptions, ...state.entities].find((item) => item.person_id === targetPersonId)?.canonical_name || targetPersonId;
+      const result = await evidenceApi.createEntityRelationship(
+        caseId,
+        entity.person_id,
+        {
+          relationship_label: relationshipLabel,
+          target_person_id: targetPersonId,
+          reviewer_note: `Confirmed relationship: ${entity.canonical_name} is ${relationshipLabel} of ${targetName}.`,
+          confidence: 0.99,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Add entity relationship');
+      const refreshedEntity = result.data?.entity || null;
+      setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
+      setRelationshipTargetOptions([]);
+      if (refreshedEntity) {
+        setState((current) => ({
+          ...current,
+          entity: refreshedEntity,
+          actionId: null,
+          actionFingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        }));
+        setRowDetails((current) => ({ ...current, [refreshedEntity.person_id]: refreshedEntity }));
+      } else {
+        setState((current) => ({
+          ...current,
+          actionId: null,
+          actionFingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        }));
+      }
+      await loadEntityDetail(entity.person_id);
+      await loadEntities();
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, relationshipForm.relationship_label, relationshipForm.target_person_id, relationshipTargetOptions, state.entities, state.entity]);
 
   const updateCanonicalName = useCallback(async () => {
     const entity = state.entity;
@@ -1311,6 +1474,7 @@ export default function EntitiesPage() {
       const isRejected = decision?.decision === 'reject';
       const normalizedAlias = normalizeIdentityText(alias.normalized_alias || alias.alias);
       const isCanonicalAlias = canonical && normalizedAlias === canonical;
+      const isVagueKinship = isVagueKinshipAlias(alias.alias || alias.normalized_alias);
       const targetKey = `${detailEntity.person_id}:${alias.normalized_alias || alias.alias}`;
       const actionBase = `${detailEntity.person_id}_${alias.normalized_alias || alias.alias}`;
       return (
@@ -1333,12 +1497,17 @@ export default function EntitiesPage() {
               <span>{t('reviewed by {name}', { name: decision.reviewer_display_name || decision.reviewer_email })}</span>
             ) : null}
           </div>
+          {isVagueKinship && !isConfirmed ? (
+            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+              {t('This family label is ambiguous. Confirm the relationship instead of making it a global alias.')}
+            </p>
+          ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               title={t('Confirm alias "{alias}" should resolve to {name}.', { alias: alias.alias, name: detailEntity.canonical_name })}
               onClick={() => reviewAlias(detailEntity, alias, 'confirm')}
-              disabled={isConfirmed || state.actionId === `${actionBase}_confirm`}
+              disabled={isConfirmed || isVagueKinship || state.actionId === `${actionBase}_confirm`}
               className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:opacity-70 ${
                 isConfirmed
                   ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
@@ -1434,6 +1603,46 @@ export default function EntitiesPage() {
         </div>
       </div>
     ));
+  };
+
+  const renderRelationshipRows = (detailEntity) => {
+    const relationships = detailEntity?.relationships || [];
+    if (!relationships.length) {
+      return (
+        <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+          {t('No confirmed relationships yet.')}
+        </p>
+      );
+    }
+    return relationships.map((relationship) => {
+      const isSource = relationship.source_person_id === detailEntity.person_id;
+      const otherName = isSource ? relationship.target_canonical_name : relationship.source_canonical_name;
+      const sentence = isSource
+        ? t('{source} is {relationship} of {target}', {
+          source: relationship.source_canonical_name || detailEntity.canonical_name,
+          relationship: relationship.relationship_label,
+          target: relationship.target_canonical_name || relationship.target_person_id,
+        })
+        : t('{source} is {relationship} of {target}', {
+          source: relationship.source_canonical_name || relationship.source_person_id,
+          relationship: relationship.relationship_label,
+          target: relationship.target_canonical_name || detailEntity.canonical_name,
+        });
+      return (
+        <div key={relationship.relationship_id} className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900/70 dark:bg-sky-950/30">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="break-words font-semibold text-sky-950 dark:text-sky-100">{sentence}</span>
+            <StatusBadge status="succeeded" label={t('Confirmed')} />
+          </div>
+          <div className="mt-1 flex flex-wrap gap-2 text-xs text-sky-800 dark:text-sky-200">
+            <span>{t('Related entity')}: {otherName || t('Unknown')}</span>
+            {relationship.reviewer_display_name || relationship.reviewer_email ? (
+              <span>{t('reviewed by {name}', { name: relationship.reviewer_display_name || relationship.reviewer_email })}</span>
+            ) : null}
+          </div>
+        </div>
+      );
+    });
   };
 
   const openEntityDetail = useCallback((personId) => {
@@ -1750,11 +1959,16 @@ export default function EntitiesPage() {
             </h3>
             <div className="mt-3 flex gap-2">
               <input value={customAlias} onChange={(event) => setCustomAlias(event.target.value)} placeholder={t('Example: Kayla Willson')} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
-              <button type="button" onClick={addConfirmedAlias} disabled={!customAlias.trim() || state.actionId === 'custom_alias'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+              <button type="button" onClick={addConfirmedAlias} disabled={!customAlias.trim() || isVagueKinshipAlias(customAlias) || state.actionId === 'custom_alias'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
                 <Check size={15} aria-hidden="true" />
                 {t('Add')}
               </button>
             </div>
+            {isVagueKinshipAlias(customAlias) ? (
+              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+                {t('That family label is ambiguous in this case. Add a relationship instead, such as "maternal grandmother of Tiffany Curcio", so it does not collapse onto the wrong person.')}
+              </p>
+            ) : null}
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -1785,6 +1999,67 @@ export default function EntitiesPage() {
               <InfoTip label={t('User-confirmed roles or relationships attached to this entity. Extracted-only roles are not counted as confirmed here.')} />
             </h3>
             <div className="mt-3 space-y-2">{renderConfirmedRoleRows(detailEntity)}</div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              {t('Relationships')}
+              <InfoTip label={t('Use relationships for context-sensitive family labels, such as Maureen is maternal grandmother of Tiffany Curcio. This avoids making vague words like grandma global aliases.')} />
+            </h3>
+            <div className="mt-3 space-y-2">{renderRelationshipRows(detailEntity)}</div>
+            <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
+              <div className="text-sm font-semibold text-sky-950 dark:text-sky-100">
+                {t('Add Relationship')}
+              </div>
+              <p className="mt-1 text-xs text-sky-800 dark:text-sky-200">
+                {t('Format: this entity is a relationship of another entity. Example: Maureen is maternal grandmother of Tiffany Curcio.')}
+              </p>
+              <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <label className="min-w-0">
+                  <span className="text-xs font-semibold uppercase tracking-normal text-sky-900 dark:text-sky-100">{t('Relationship')}</span>
+                  <input
+                    list="entity-relationship-suggestions"
+                    value={relationshipForm.relationship_label}
+                    onChange={(event) => setRelationshipForm((current) => ({ ...current, relationship_label: event.target.value }))}
+                    placeholder={t('Example: maternal grandmother')}
+                    className="mt-1 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                  <datalist id="entity-relationship-suggestions">
+                    {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}
+                  </datalist>
+                </label>
+                <label className="min-w-0">
+                  <span className="text-xs font-semibold uppercase tracking-normal text-sky-900 dark:text-sky-100">{t('Target entity')}</span>
+                  <input
+                    value={relationshipForm.target_search}
+                    onChange={(event) => setRelationshipForm((current) => ({ ...current, target_search: event.target.value, target_person_id: '' }))}
+                    placeholder={t('Search target, e.g. Tiffany')}
+                    className="mt-1 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
+                  />
+                </label>
+              </div>
+              <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                <select
+                  value={relationshipForm.target_person_id}
+                  onChange={(event) => setRelationshipForm((current) => ({ ...current, target_person_id: event.target.value }))}
+                  className="min-w-0 rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
+                >
+                  <option value="">{relationshipTargetLoading ? t('Searching...') : t('Choose related entity...')}</option>
+                  {relationshipTargetChoices(detailEntity, state.entities, relationshipTargetOptions).map((item) => (
+                    <option key={item.person_id} value={item.person_id}>{item.canonical_name || item.person_id}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addEntityRelationship}
+                  disabled={!relationshipForm.relationship_label.trim() || !relationshipForm.target_person_id || state.actionId === 'relationship'}
+                  className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+                >
+                  <Check size={15} aria-hidden="true" />
+                  {t('Add Relationship')}
+                </button>
+              </div>
+            </div>
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
