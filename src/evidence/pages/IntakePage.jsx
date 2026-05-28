@@ -720,6 +720,7 @@ export default function IntakePage() {
   const job = state.register?.job;
   const upload = state.presign?.upload;
   const activeWatchItems = driveBrowser.watchItems.filter((item) => item.status === 'active');
+  const contactsPermissionMissing = Boolean(activeGoogleConnection && !activeGoogleConnection.can_sync_contacts);
   const sortedDriveItems = [...driveBrowser.files].sort((left, right) => {
     const leftFolder = left.mimeType === GOOGLE_FOLDER_MIME_TYPE ? 0 : 1;
     const rightFolder = right.mimeType === GOOGLE_FOLDER_MIME_TYPE ? 0 : 1;
@@ -816,6 +817,11 @@ export default function IntakePage() {
                                     <span className="rounded-full border border-gray-300 px-2 py-0.5 dark:border-gray-700">
                                       {isOwned ? t('Your connection') : t('Case connection')}
                                     </span>
+                                    {connection.missing_scopes?.length ? (
+                                      <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                                        {t('Needs reconnect for new permissions')}
+                                      </span>
+                                    ) : null}
                                     {!connection.can_browse ? (
                                       <span className="inline-flex items-center gap-1 rounded-full border border-gray-300 px-2 py-0.5 dark:border-gray-700">
                                         <Lock size={11} aria-hidden="true" />
@@ -1231,7 +1237,7 @@ export default function IntakePage() {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {activeGoogleConnection ? (
+                {activeGoogleConnection && !contactsPermissionMissing ? (
                   <button
                     type="button"
                     onClick={syncGoogleContacts}
@@ -1240,6 +1246,16 @@ export default function IntakePage() {
                   >
                     <Users size={15} aria-hidden="true" />
                     {contactSync.action === 'sync' ? t('Syncing contacts') : t('Sync Contacts')}
+                  </button>
+                ) : activeGoogleConnection ? (
+                  <button
+                    type="button"
+                    onClick={connectGoogleDrive}
+                    disabled={Boolean(state.connectorAction)}
+                    className="inline-flex items-center gap-2 rounded-md border border-amber-700 bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Link2 size={15} aria-hidden="true" />
+                    {state.connectorAction === 'google_drive' ? t('Opening') : t('Reconnect Google')}
                   </button>
                 ) : (
                   <button
@@ -1260,6 +1276,12 @@ export default function IntakePage() {
                 {t('Connect your Google account before syncing contacts. Contact sync is separate from document folder selection, and only the connected-account owner can view or manage imported contacts.')}
               </div>
             ) : null}
+            {contactsPermissionMissing ? (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                <div className="font-semibold">{t('Contacts permission is not granted yet.')}</div>
+                <div className="mt-1">{t('Reconnect Google and approve the Contacts permission. Your existing Drive selections stay attached to this connection.')}</div>
+              </div>
+            ) : null}
 
             {contactSync.error ? (
               <div className="mb-4">
@@ -1267,7 +1289,7 @@ export default function IntakePage() {
               </div>
             ) : null}
 
-            {activeGoogleConnection && (contactSync.summary || contactSync.contacts.length || contactSync.loading) ? (
+            {activeGoogleConnection && !contactsPermissionMissing && (contactSync.summary || contactSync.contacts.length || contactSync.loading) ? (
               <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
                 <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
