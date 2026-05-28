@@ -1798,21 +1798,24 @@ export default function EntitiesPage() {
 
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
-    const aliases = (detailEntity?.aliases || []).slice(0, compact ? 12 : 40);
+    const canonical = normalizeIdentityText(detailEntity.normalized_name || detailEntity.canonical_name);
+    const aliases = (detailEntity?.aliases || [])
+      .filter((alias) => {
+        const normalizedAlias = normalizeIdentityText(alias.normalized_alias || alias.alias);
+        return !canonical || normalizedAlias !== canonical;
+      })
+      .slice(0, compact ? 12 : 40);
     if (!aliases.length) {
       return (
         <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
-          {t('No extracted aliases are currently attached to this entity.')}
+          {t('No extracted alternate aliases are currently attached to this entity.')}
         </p>
       );
     }
-    const canonical = normalizeIdentityText(detailEntity.normalized_name || detailEntity.canonical_name);
     return aliases.map((alias) => {
       const decision = latestAliasDecision(detailConfirmations, alias);
       const isConfirmed = decision?.decision === 'confirm';
       const isRejected = decision?.decision === 'reject';
-      const normalizedAlias = normalizeIdentityText(alias.normalized_alias || alias.alias);
-      const isCanonicalAlias = canonical && normalizedAlias === canonical;
       const isVagueKinship = isVagueKinshipAlias(alias.alias || alias.normalized_alias);
       const targetKey = `${detailEntity.person_id}:${alias.normalized_alias || alias.alias}`;
       const actionBase = `${detailEntity.person_id}_${alias.normalized_alias || alias.alias}`;
@@ -1822,9 +1825,7 @@ export default function EntitiesPage() {
             <div>
               <span className="font-semibold text-gray-950 dark:text-white">{alias.alias}</span>
               <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                {isCanonicalAlias
-                  ? t('canonical name; {count} occurrence(s)', { count: alias.occurrence_count || 0 })
-                  : t('alias for {name}; {count} occurrence(s)', { name: detailEntity.canonical_name, count: alias.occurrence_count || 0 })}
+                {t('alias for {name}; {count} occurrence(s)', { name: detailEntity.canonical_name, count: alias.occurrence_count || 0 })}
               </span>
             </div>
             {decision ? <StatusBadge status={decisionStatus(decision.decision)} label={humanizeKey(decision.decision)} /> : null}

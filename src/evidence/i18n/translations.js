@@ -213,6 +213,7 @@ export const UI_TRANSLATIONS = {
     'List fingerprint': 'Impressão da lista',
     'Minimum value': 'Valor mínimo',
     'No health fingerprints captured yet.': 'Nenhuma impressão de saúde capturada ainda.',
+    'No extracted alternate aliases are currently attached to this entity.': 'Nenhum alias alternativo extraído está atualmente vinculado a esta entidade.',
     'No successful request fingerprint captured yet.': 'Nenhuma impressão de solicitação bem-sucedida capturada ainda.',
     'Remove this filter': 'Remover este filtro',
     'Sort': 'Ordenar',
