@@ -142,7 +142,7 @@ async function requestBlob(path, options = {}) {
   } = options;
   const correlationId = createCorrelationId();
   const headers = {
-    Accept: 'application/zip,application/pdf,application/octet-stream',
+    Accept: 'application/zip,application/pdf,image/*,text/plain,application/octet-stream',
     'X-Correlation-ID': correlationId,
   };
 
@@ -256,6 +256,14 @@ export const evidenceApi = {
     requestBlob(casePath(caseId, '/documents/export.zip'), { ...options, query: params }),
   getDocument: (caseId, fileId, options) =>
     request(casePath(caseId, `/documents/${encodeURIComponent(fileId)}`), options),
+  previewDocument: (caseId, fileId, options = {}) =>
+    requestBlob(casePath(caseId, `/documents/${encodeURIComponent(fileId)}/preview`), options),
+  createDocumentRemovalPlan: (caseId, fileId, payload = {}, options = {}) =>
+    request(casePath(caseId, `/documents/${encodeURIComponent(fileId)}/remove-plan`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   getEntities: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/entities'), { ...options, query: params }),
   getEntity: (caseId, personId, options) =>

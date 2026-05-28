@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Info, Search, X } from 'lucide-react';
+import { Download, ExternalLink, FileText, Info, Search, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -31,6 +31,72 @@ const STATUTE_FACTOR_OPTIONS = [
     label: `61.13(3)(${letter}) - parenting-plan best-interest factor`,
   })),
 ];
+const FACTOR_LABELS = Object.fromEntries(STATUTE_FACTOR_OPTIONS.map((item) => [item.value, item.label]));
+
+function factorLabel(code, t) {
+  if (!code) {
+    return t('No factor tag');
+  }
+  if (code === 'review_needed') {
+    return t('Needs review');
+  }
+  return FACTOR_LABELS[code] || code.toUpperCase();
+}
+
+function FactorTags({ document, t, compact = false }) {
+  const codes = Array.isArray(document?.legal_factor_codes) ? document.legal_factor_codes : [];
+  if (!codes.length) {
+    const label = document?.graph_status === 'complete' ? t('No factor tag') : t('Not graphed');
+    return <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>;
+  }
+  const visibleCodes = compact ? codes.slice(0, 3) : codes;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {visibleCodes.map((code) => (
+        <span key={code} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100" title={factorLabel(code, t)}>
+          {code === 'review_needed' ? t('Review') : code.toUpperCase()}
+        </span>
+      ))}
+      {compact && codes.length > visibleCodes.length ? (
+        <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-black/20 dark:text-gray-200">
+          +{codes.length - visibleCodes.length}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function DocumentPreviewPanel({ previewUrl, contentType, fileName, t }) {
+  if (!previewUrl) {
+    return null;
+  }
+  const normalizedType = String(contentType || '').toLowerCase();
+  if (normalizedType.startsWith('image/')) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-black/30">
+        <img src={previewUrl} alt={fileName || t('Document preview')} className="max-h-[55vh] w-full object-contain" />
+      </div>
+    );
+  }
+  if (normalizedType.includes('pdf') || normalizedType.startsWith('text/')) {
+    return (
+      <iframe
+        title={fileName || t('Document preview')}
+        src={previewUrl}
+        className="h-[58vh] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
+      />
+    );
+  }
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
+      <p>{t('Inline preview is not available for this file type.')}</p>
+      <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800">
+        <ExternalLink size={16} aria-hidden="true" />
+        {t('Open raw file')}
+      </a>
+    </div>
+  );
+}
 
 function documentsTableStorageKey(caseId) {
   return `evidence.documents.table.${caseId || 'default'}`;
@@ -171,6 +237,13 @@ export default function DocumentsPage() {
     error: null,
     document: null,
     fingerprint: null,
+    previewLoading: false,
+    previewError: null,
+    previewUrl: null,
+    previewContentType: null,
+    removalBusy: false,
+    removalError: null,
+    removalJob: null,
   });
   const [expandedDocuments, setExpandedDocuments] = useState({});
   const [documentDetails, setDocumentDetails] = useState({});
@@ -250,6 +323,12 @@ export default function DocumentsPage() {
     setDocumentDetails({});
   }, [documentQuery]);
 
+  useEffect(() => () => {
+    if (drawer.previewUrl) {
+      URL.revokeObjectURL(drawer.previewUrl);
+    }
+  }, [drawer.previewUrl]);
+
   const exportCurrentView = useCallback(async () => {
     setExportState({ busy: true, error: null, fingerprint: null });
     try {
@@ -308,29 +387,111 @@ export default function DocumentsPage() {
       error: null,
       document,
       fingerprint: null,
+      previewLoading: Boolean(document.s3_key),
+      previewError: null,
+      previewUrl: null,
+      previewContentType: null,
+      removalBusy: false,
+      removalError: null,
+      removalJob: null,
     });
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getDocument(caseId, document.file_id, { token });
       recordFingerprint(result, 'Document drawer detail');
+      const detailDocument = result.data || document;
       setDrawer({
         open: true,
         loading: false,
         error: null,
-        document: result.data || document,
+        document: detailDocument,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
+        previewLoading: Boolean(detailDocument.s3_key),
+        previewError: null,
+        previewUrl: null,
+        previewContentType: null,
+        removalBusy: false,
+        removalError: null,
+        removalJob: null,
       });
+      if (detailDocument.s3_key) {
+        try {
+          const previewResult = await evidenceApi.previewDocument(caseId, detailDocument.file_id, { token });
+          recordFingerprint(previewResult, 'Document raw preview');
+          const previewUrl = URL.createObjectURL(previewResult.blob);
+          setDrawer((current) => {
+            if (current.document?.file_id !== detailDocument.file_id) {
+              URL.revokeObjectURL(previewUrl);
+              return current;
+            }
+            return {
+              ...current,
+              previewLoading: false,
+              previewError: null,
+              previewUrl,
+              previewContentType: previewResult.contentType,
+            };
+          });
+        } catch (previewError) {
+          setDrawer((current) => (
+            current.document?.file_id === detailDocument.file_id
+              ? { ...current, previewLoading: false, previewError }
+              : current
+          ));
+        }
+      }
     } catch (error) {
       setDrawer((current) => ({ ...current, loading: false, error }));
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
   const closeDocumentDrawer = () => {
-    setDrawer((current) => ({ ...current, open: false }));
+    setDrawer((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return { ...current, open: false, previewUrl: null, previewLoading: false };
+    });
   };
+
+  const requestDocumentRemovalPlan = useCallback(async () => {
+    const document = drawer.document;
+    if (!document?.file_id || drawer.removalBusy) {
+      return;
+    }
+    const reason = window.prompt(t('Why should this document be removed or excluded? This only queues a cleanup review.'));
+    if (reason === null) {
+      return;
+    }
+    setDrawer((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createDocumentRemovalPlan(
+        caseId,
+        document.file_id,
+        {
+          removal_scope: 'single_document',
+          reason: reason.trim(),
+          remove_source_selection: true,
+          remove_cloud_copy: false,
+          delete_from_original_source: false,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Document cleanup review');
+      setDrawer((current) => ({
+        ...current,
+        removalBusy: false,
+        removalError: null,
+        removalJob: result.data?.job || result.data,
+      }));
+    } catch (error) {
+      setDrawer((current) => ({ ...current, removalBusy: false, removalError: error }));
+    }
+  }, [caseId, drawer.document, drawer.removalBusy, getAccessToken, recordFingerprint, t]);
 
   const loadDocumentDetail = useCallback(async (document) => {
     if (!document?.file_id) {
@@ -421,10 +582,7 @@ export default function DocumentsPage() {
       filterOptions: facetOptions(state.facets, 'legal_factor_code').length ? facetOptions(state.facets, 'legal_factor_code') : STATUTE_FACTOR_OPTIONS,
       filterPlaceholder: t('7a, 7b, 3a'),
       help: t('Filter documents by Florida statutory factor mappings from the graph. Use this to view and export documents supporting a specific factor.'),
-      render: () => {
-        const selected = STATUTE_FACTOR_OPTIONS.find((item) => item.value === filterValues.legal_factor_code);
-        return selected ? selected.label : t('Select a factor');
-      },
+      render: (document) => <FactorTags document={document} t={t} compact />,
     },
     {
       key: 'canonical_storage_label',
@@ -450,7 +608,7 @@ export default function DocumentsPage() {
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
     { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[10%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
-  ]), [caseId, filterValues.legal_factor_code, state.facets, t]);
+  ]), [caseId, state.facets, t]);
 
   const appliedFilters = useMemo(() =>
     Object.entries(filterValues || {})
@@ -774,6 +932,8 @@ export default function DocumentsPage() {
                     [t('Content Hash'), drawer.document?.content_hash],
                     [t('Version ID'), drawer.document?.current_file_version_id],
                     [t('Media Type'), drawer.document?.media_type],
+                    [t('Drive File ID'), drawer.document?.source_details?.drive_file_id],
+                    [t('File Size'), drawer.document?.content_length ? `${drawer.document.content_length} ${t('bytes')}` : null],
                   ].map(([label, value]) => (
                     <div key={label} className="min-w-0">
                       <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</dt>
@@ -781,19 +941,75 @@ export default function DocumentsPage() {
                     </div>
                   ))}
                 </dl>
+                {drawer.document?.source_details?.drive_web_view_link ? (
+                  <a
+                    href={drawer.document.source_details.drive_web_view_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+                  >
+                    <ExternalLink size={15} aria-hidden="true" />
+                    {t('Open in Google Drive')}
+                  </a>
+                ) : null}
 
                 <div className="mt-4">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing Domains')}</div>
                   <PipelineDots document={drawer.document} showLabels />
                 </div>
 
-                <Link
-                  to={`/evidence/cases/${caseId}/documents/${drawer.document?.file_id}`}
-                  className="mt-4 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
-                >
-                  <FileText size={16} aria-hidden="true" />
-                  {t('Open document details')}
-                </Link>
+                <div className="mt-4">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Factor Tags')}</div>
+                  <FactorTags document={drawer.document} t={t} />
+                </div>
+
+                {drawer.removalError ? <div className="mt-4"><ErrorPanel title="Cleanup review failed" error={drawer.removalError} /></div> : null}
+                {drawer.removalJob ? (
+                  <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                    {t('Cleanup review queued. Nothing was deleted.')} {drawer.removalJob.job_id ? `${t('Job')}: ${drawer.removalJob.job_id}` : ''}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    to={`/evidence/cases/${caseId}/documents/${drawer.document?.file_id}`}
+                    className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                  >
+                    <FileText size={16} aria-hidden="true" />
+                    {t('Open document details')}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={requestDocumentRemovalPlan}
+                    disabled={drawer.removalBusy || !drawer.document?.file_id}
+                    className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
+                    title={t('Queues a non-destructive cleanup review. It does not delete source, S3, Postgres, vector, or graph records.')}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                    {drawer.removalBusy ? t('Queueing') : t('Request cleanup review')}
+                  </button>
+                </div>
+              </section>
+
+              <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Raw File Preview')}</h3>
+                  {drawer.document?.s3_key ? <StatusBadge status="configured" label={t('Cloud copy')} /> : <StatusBadge status="degraded" label={t('No cloud copy')} />}
+                </div>
+                {drawer.previewLoading ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading raw file preview...')}</p>
+                ) : drawer.previewError ? (
+                  <ErrorPanel title="Raw preview failed" error={drawer.previewError} />
+                ) : drawer.previewUrl ? (
+                  <DocumentPreviewPanel
+                    previewUrl={drawer.previewUrl}
+                    contentType={drawer.previewContentType}
+                    fileName={drawer.document?.original_filename}
+                    t={t}
+                  />
+                ) : (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('No raw file preview is available for this document yet.')}</p>
+                )}
               </section>
 
               <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">

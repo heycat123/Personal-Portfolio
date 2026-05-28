@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Languages, Play } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, Languages, Play, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -51,6 +51,65 @@ function formatTranslationTargets(targets, t) {
   return Object.entries(counts).map(([language, count]) => `${language}: ${count}`).join(', ');
 }
 
+function factorLabel(code, t) {
+  if (!code) {
+    return t('No factor tag');
+  }
+  if (code === 'review_needed') {
+    return t('Needs review');
+  }
+  return String(code).toUpperCase();
+}
+
+function FactorTags({ document, t }) {
+  const codes = Array.isArray(document?.legal_factor_codes) ? document.legal_factor_codes : [];
+  if (!codes.length) {
+    const label = document?.graph_status === 'complete' ? t('No factor tag') : t('Not graphed');
+    return <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {codes.map((code) => (
+        <span key={code} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100" title={factorLabel(code, t)}>
+          {code === 'review_needed' ? t('Review') : String(code).toUpperCase()}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DocumentPreviewPanel({ previewUrl, contentType, fileName, t }) {
+  if (!previewUrl) {
+    return null;
+  }
+  const normalizedType = String(contentType || '').toLowerCase();
+  if (normalizedType.startsWith('image/')) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-black/30">
+        <img src={previewUrl} alt={fileName || t('Document preview')} className="max-h-[70vh] w-full object-contain" />
+      </div>
+    );
+  }
+  if (normalizedType.includes('pdf') || normalizedType.startsWith('text/')) {
+    return (
+      <iframe
+        title={fileName || t('Document preview')}
+        src={previewUrl}
+        className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
+      />
+    );
+  }
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
+      <p>{t('Inline preview is not available for this file type.')}</p>
+      <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800">
+        <ExternalLink size={16} aria-hidden="true" />
+        {t('Open raw file')}
+      </a>
+    </div>
+  );
+}
+
 export default function DocumentDetailPage() {
   const { caseId, fileId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -64,6 +123,13 @@ export default function DocumentDetailPage() {
     fingerprint: null,
     languageJob: null,
     languageAction: null,
+    previewLoading: false,
+    previewError: null,
+    previewUrl: null,
+    previewContentType: null,
+    removalBusy: false,
+    removalError: null,
+    removalJob: null,
   });
 
   const loadDocument = useCallback(async () => {
@@ -72,18 +138,42 @@ export default function DocumentDetailPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.getDocument(caseId, fileId, { token });
       recordFingerprint(result, 'Document detail');
+      const document = result.data;
       setState({
         loading: false,
         error: null,
         actionError: null,
-        document: result.data,
+        document,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
         languageJob: null,
         languageAction: null,
+        previewLoading: Boolean(document?.s3_key),
+        previewError: null,
+        previewUrl: null,
+        previewContentType: null,
+        removalBusy: false,
+        removalError: null,
+        removalJob: null,
       });
+      if (document?.s3_key) {
+        try {
+          const previewResult = await evidenceApi.previewDocument(caseId, fileId, { token });
+          recordFingerprint(previewResult, 'Document raw preview');
+          const previewUrl = URL.createObjectURL(previewResult.blob);
+          setState((current) => ({
+            ...current,
+            previewLoading: false,
+            previewError: null,
+            previewUrl,
+            previewContentType: previewResult.contentType,
+          }));
+        } catch (previewError) {
+          setState((current) => ({ ...current, previewLoading: false, previewError }));
+        }
+      }
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
@@ -96,6 +186,12 @@ export default function DocumentDetailPage() {
 
     return () => window.clearTimeout(timerId);
   }, [loadDocument]);
+
+  useEffect(() => () => {
+    if (state.previewUrl) {
+      URL.revokeObjectURL(state.previewUrl);
+    }
+  }, [state.previewUrl]);
 
   const document = state.document;
   const lowTextPages = useMemo(() => parseLowTextPages(document?.low_text_pages_json), [document]);
@@ -138,6 +234,41 @@ export default function DocumentDetailPage() {
     }
   }, [caseId, document?.content_hash, document?.file_id, getAccessToken, preferences.language, recordFingerprint]);
 
+  const requestDocumentRemovalPlan = useCallback(async () => {
+    if (!document?.file_id || state.removalBusy) {
+      return;
+    }
+    const reason = window.prompt(t('Why should this document be removed or excluded? This only queues a cleanup review.'));
+    if (reason === null) {
+      return;
+    }
+    setState((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createDocumentRemovalPlan(
+        caseId,
+        document.file_id,
+        {
+          removal_scope: 'single_document',
+          reason: reason.trim(),
+          remove_source_selection: true,
+          remove_cloud_copy: false,
+          delete_from_original_source: false,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Document cleanup review');
+      setState((current) => ({
+        ...current,
+        removalBusy: false,
+        removalError: null,
+        removalJob: result.data?.job || result.data,
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, removalBusy: false, removalError: error }));
+    }
+  }, [caseId, document?.file_id, getAccessToken, recordFingerprint, state.removalBusy, t]);
+
   return (
     <div>
       <PageHeader
@@ -164,6 +295,16 @@ export default function DocumentDetailPage() {
             >
               <Languages size={16} aria-hidden="true" />
               {state.languageAction === 'document_translation_cache' ? t('Queueing') : t('Queue translation cache')}
+            </button>
+            <button
+              type="button"
+              onClick={requestDocumentRemovalPlan}
+              disabled={!document || state.removalBusy}
+              className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
+              title={t('Queues a non-destructive cleanup review. It does not delete source, S3, Postgres, vector, or graph records.')}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              {state.removalBusy ? t('Queueing') : t('Request cleanup review')}
             </button>
             <Link
               to={`/evidence/cases/${caseId}/documents`}
@@ -199,6 +340,15 @@ export default function DocumentDetailPage() {
           </div>
         </div>
       ) : null}
+      {state.removalError ? <div className="mb-5"><ErrorPanel title="Cleanup review failed" error={state.removalError} /></div> : null}
+      {state.removalJob ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="font-semibold">{t('Cleanup review queued. Nothing was deleted.')}</div>
+          <div className="mt-1 break-words">
+            {state.removalJob.job_type || t('Job')} {state.removalJob.job_id ? `| ${state.removalJob.job_id}` : ''}
+          </div>
+        </div>
+      ) : null}
 
       {document ? (
         <>
@@ -216,6 +366,22 @@ export default function DocumentDetailPage() {
             />
           </div>
 
+          <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Raw File Preview')}</h3>
+              {document.s3_key ? <StatusBadge status="configured" label={t('Cloud copy')} /> : <StatusBadge status="degraded" label={t('No cloud copy')} />}
+            </div>
+            {state.previewLoading ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading raw file preview...')}</p>
+            ) : state.previewError ? (
+              <ErrorPanel title="Raw preview failed" error={state.previewError} />
+            ) : state.previewUrl ? (
+              <DocumentPreviewPanel previewUrl={state.previewUrl} contentType={state.previewContentType} fileName={document.original_filename} t={t} />
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No raw file preview is available for this document yet.')}</p>
+            )}
+          </div>
+
           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
               <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Metadata')}</h3>
@@ -225,6 +391,9 @@ export default function DocumentDetailPage() {
                   ['Version ID', document.current_file_version_id],
                   ['Content Hash', document.content_hash],
                   ['Original Path', document.original_filepath],
+                  ['Drive File ID', document.source_details?.drive_file_id],
+                  ['Drive MD5', document.source_details?.drive_md5],
+                  ['S3 Key', document.s3_key],
                   ['Created', formatDateTime(document.created_at)],
                   ['Updated', formatDateTime(document.updated_at)],
                 ].map(([label, value]) => (
@@ -234,6 +403,17 @@ export default function DocumentDetailPage() {
                   </div>
                 ))}
               </dl>
+              {document.source_details?.drive_web_view_link ? (
+                <a
+                  href={document.source_details.drive_web_view_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+                >
+                  <ExternalLink size={15} aria-hidden="true" />
+                  {t('Open in Google Drive')}
+                </a>
+              ) : null}
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -247,11 +427,15 @@ export default function DocumentDetailPage() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Graph Status')}</p>
-                  <StatusBadge status="unknown" label={t('Pending API route')} />
+                  <StatusBadge status={document.graph_status || 'pending'} label={document.graph_status || t('pending')} />
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Vector Status')}</p>
-                  <StatusBadge status="unknown" label={t('Pending API route')} />
+                  <StatusBadge status={document.vector_status || 'pending'} label={document.vector_status || t('pending')} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Factor Tags')}</p>
+                  <div className="mt-1"><FactorTags document={document} t={t} /></div>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Detected Languages')}</p>
