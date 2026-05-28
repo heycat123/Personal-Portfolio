@@ -1,4 +1,4 @@
-import { Check, ExternalLink, GitMerge, HelpCircle, RefreshCw, Users, X } from 'lucide-react';
+import { Check, ExternalLink, Eye, GitMerge, HelpCircle, RefreshCw, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -11,7 +11,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import useJobStatusPolling from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
-import { humanizeKey, truncateMiddle } from '../utils/formatters';
+import { formatDateTime, humanizeKey, truncateMiddle } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
 const CONTACT_PAGE_SIZE = 25;
@@ -201,6 +201,7 @@ export default function EntitiesPage() {
   const [mergeNote, setMergeNote] = useState('');
   const [reassignTargets, setReassignTargets] = useState({});
   const [contactTargets, setContactTargets] = useState({});
+  const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [state, setState] = useState({
     loading: true,
     contactLoading: true,
@@ -214,12 +215,16 @@ export default function EntitiesPage() {
     contactLinks: [],
     contactLinkTotal: 0,
     contactStatusCounts: [],
+    contactContextLoading: false,
+    contactContextError: null,
+    contactContext: null,
     total: 0,
     entity: null,
     suggestions: [],
     decisions: [],
     fingerprint: null,
     contactFingerprint: null,
+    contactContextFingerprint: null,
     detailFingerprint: null,
     actionFingerprint: null,
   });
@@ -353,6 +358,42 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, contactLoading: false, contactError: error }));
     }
   }, [caseId, contactQuery, getAccessToken, recordFingerprint]);
+
+  const openContactContext = useCallback(async (link) => {
+    setContextDrawerOpen(true);
+    setState((current) => ({
+      ...current,
+      contactContextLoading: true,
+      contactContextError: null,
+      contactContext: { link },
+      contactContextFingerprint: null,
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getContactEntityLinkContext(
+        caseId,
+        link.contact_entity_link_id,
+        { conversation_limit: 8, message_limit: 50 },
+        { token },
+      );
+      recordFingerprint(result, 'Contact communication context');
+      setState((current) => ({
+        ...current,
+        contactContextLoading: false,
+        contactContext: result.data,
+        contactContextFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        contactContextLoading: false,
+        contactContextError: error,
+      }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -692,6 +733,9 @@ export default function EntitiesPage() {
     label: `${t(FILTER_LABELS[filter.id] || humanizeKey(filter.id))} ${filter.value}`,
   }));
   const activeSort = sorting[0] || DEFAULT_SORTING[0];
+  const contactContextData = state.contactContext || {};
+  const contactContextLink = contactContextData.link || null;
+  const contactContextSummary = contactContextData.summary || {};
 
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
@@ -819,6 +863,16 @@ export default function EntitiesPage() {
         <div className="flex flex-wrap gap-1">
           <button
             type="button"
+            onClick={() => openContactContext(link)}
+            disabled={state.contactContextLoading && state.contactContext?.link?.contact_entity_link_id === link.contact_entity_link_id}
+            className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:opacity-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+            title={t('Open sample conversations that contain this contact point.')}
+          >
+            <Eye size={13} aria-hidden="true" />
+            {t('Preview')}
+          </button>
+          <button
+            type="button"
             onClick={() => reviewContactLink(link, 'confirm')}
             disabled={state.actionId === confirmId || !selectedTarget}
             className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
@@ -838,7 +892,7 @@ export default function EntitiesPage() {
         </div>
       </div>
     );
-  }, [contactTargets, reviewContactLink, state.actionId, state.entities, t]);
+  }, [contactTargets, openContactContext, reviewContactLink, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
 
   const contactColumns = useMemo(() => [
     {
@@ -1010,7 +1064,7 @@ export default function EntitiesPage() {
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="break-words font-semibold text-gray-950 dark:text-white">{contactPointLabel(link)}</div>
-                      <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{link.contact_display_name || t('Unnamed contact')} · {link.external_account_email || t('source account hidden')}</div>
+                      <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{link.contact_display_name || t('Unnamed contact')} - {link.external_account_email || t('source account hidden')}</div>
                     </div>
                     <StatusBadge status={contactLinkBadgeStatus(link.link_status)} label={humanizeKey(link.link_status)} />
                   </div>
@@ -1294,6 +1348,171 @@ export default function EntitiesPage() {
               </button>
             </div>
             {renderEntityDetailPanel(entity, { inDrawer: true })}
+          </div>
+        </div>
+      ) : null}
+
+      {contextDrawerOpen ? (
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label={t('Close communication context')}
+            onClick={() => setContextDrawerOpen(false)}
+            className="absolute inset-0 bg-black/50"
+          />
+          <div className="absolute bottom-0 right-0 top-0 flex w-screen max-w-full flex-col overflow-hidden border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-3xl">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-950 dark:text-white">{t('Communication Context')}</div>
+                <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
+                  {contactContextLink?.contact_display_name || t('Unnamed contact')} - {contactContextLink ? contactPointLabel(contactContextLink) : t('No contact point selected')}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContextDrawerOpen(false)}
+                className="shrink-0 rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto overflow-x-hidden p-3 sm:p-4">
+              {state.contactContextFingerprint?.id ? (
+                <div className="mb-3">
+                  <RequestFingerprint
+                    fingerprintId={state.contactContextFingerprint.id}
+                    correlationId={state.contactContextFingerprint.correlationId}
+                    label="Context fingerprint"
+                    compact
+                  />
+                </div>
+              ) : null}
+
+              {state.contactContextLoading ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
+                  {t('Loading communication context...')}
+                </div>
+              ) : null}
+
+              {state.contactContextError ? (
+                <ErrorPanel title="Communication context failed" error={state.contactContextError} />
+              ) : null}
+
+              {!state.contactContextLoading && !state.contactContextError ? (
+                <div className="space-y-4">
+                  <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('What Was Matched')}</h3>
+                    <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Addresses')}</div>
+                        <div className="text-gray-950 dark:text-white">{contactContextSummary.communication_address_count || 0}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Conversations')}</div>
+                        <div className="text-gray-950 dark:text-white">{contactContextSummary.conversation_count || 0}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Message Samples')}</div>
+                        <div className="text-gray-950 dark:text-white">{contactContextSummary.message_sample_count || 0}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {(contactContextData.communication_addresses || []).map((address) => (
+                        <div key={address.address_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={address.canonical_person_id ? 'configured' : 'degraded'} label={address.platform || t('communication')} />
+                            <span className="break-all font-semibold text-gray-950 dark:text-white">
+                              {address.display_name || address.address_value || address.normalized_address}
+                            </span>
+                          </div>
+                          <div className="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">{address.normalized_address || address.address_value}</div>
+                          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                            {address.canonical_person_id
+                              ? t('Currently linked to {name}', { name: address.canonical_name || address.canonical_person_id })
+                              : t('No canonical person is linked yet.')}
+                          </div>
+                        </div>
+                      ))}
+                      {!(contactContextData.communication_addresses || []).length ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{t('No communication address rows matched this contact point.')}</p>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Conversation Samples')}</h3>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      {t('These samples show who the number or email appeared with and the surrounding message text. Direct matches are highlighted.')}
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {(contactContextData.conversations || []).map((conversation) => (
+                        <div key={conversation.conversation_id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="break-words font-semibold text-gray-950 dark:text-white">
+                                {conversation.title || conversation.chat_name || conversation.conversation_id}
+                              </div>
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                {conversation.platform || t('communication')} - {t('{count} matching message(s)', { count: conversation.matching_messages || 0 })}
+                              </div>
+                            </div>
+                            <div className="text-right text-xs text-gray-500 dark:text-gray-400">
+                              <div>{formatDateTime(conversation.first_message_at || conversation.first_match_epoch_ms)}</div>
+                              <div>{formatDateTime(conversation.last_message_at || conversation.last_match_epoch_ms)}</div>
+                            </div>
+                          </div>
+
+                          <div className="mt-3">
+                            <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Participants')}</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {(conversation.participants || []).map((participant) => (
+                                <span key={participant.address_id} className="rounded-full border border-gray-300 px-2 py-1 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200">
+                                  {participant.canonical_name || participant.display_name || participant.normalized_address || participant.address_value}
+                                </span>
+                              ))}
+                              {!(conversation.participants || []).length ? (
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{t('No participants recorded.')}</span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="mt-3 space-y-2">
+                            {(conversation.messages || []).map((message) => (
+                              <div
+                                key={message.message_id}
+                                className={`rounded-md border p-3 text-sm ${
+                                  message.is_direct_match
+                                    ? 'border-sky-300 bg-sky-50 dark:border-sky-900/70 dark:bg-sky-950/30'
+                                    : 'border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-black/20'
+                                }`}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                  <span>{formatDateTime(message.timestamp_iso || message.timestamp_epoch_ms)}</span>
+                                  {message.is_direct_match ? <StatusBadge status="configured" label={t('direct match')} /> : null}
+                                </div>
+                                <div className="mt-1 break-words text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                  {message.sender_display_name || message.sender_address || t('Unknown sender')} {t('to')} {message.recipient_display_name || message.recipient_address || t('Unknown recipient')}
+                                </div>
+                                <div className="mt-2 whitespace-pre-wrap break-words text-gray-800 dark:text-gray-100">
+                                  {message.message_text_preview || t('No message text recorded.')}
+                                </div>
+                              </div>
+                            ))}
+                            {!(conversation.messages || []).length ? (
+                              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No sample messages returned for this conversation.')}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                      {!(contactContextData.conversations || []).length ? (
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{t('No conversations matched this contact point.')}</p>
+                      ) : null}
+                    </div>
+                  </section>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
