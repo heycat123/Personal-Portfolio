@@ -27,9 +27,14 @@ const COMMON_RELATIONSHIPS = [
   'child',
   'grandchild',
   'brother',
+  'baby sister',
+  'half brother',
+  'half sister',
   'sister',
   'aunt',
   'uncle',
+  'niece',
+  'nephew',
   'spouse',
   'partner',
   'therapist',
@@ -72,6 +77,10 @@ function promotionBadgeStatus(status) {
 function isInferredRelationship(relationship) {
   const sourceJson = relationship?.source_json || {};
   return sourceJson.inferred === true || sourceJson.source === 'relationship_inference';
+}
+
+function relationshipDisplay(label, t) {
+  return t(String(label || '').trim());
 }
 
 function contactPointLabel(link) {
@@ -465,12 +474,12 @@ export default function EntityDetailPage() {
         label: relationship.source_person_id === entity.person_id
           ? t('{source} is {relationship} of {target}', {
             source: relationship.source_canonical_name || entity.canonical_name,
-            relationship: relationship.relationship_label,
+            relationship: relationshipDisplay(relationship.relationship_label, t),
             target: relationship.target_canonical_name || relationship.target_person_id,
           })
           : t('{source} is {relationship} of {target}', {
             source: relationship.source_canonical_name || relationship.source_person_id,
-            relationship: relationship.relationship_label,
+            relationship: relationshipDisplay(relationship.relationship_label, t),
             target: relationship.target_canonical_name || entity.canonical_name,
           }),
         detail: inferred
@@ -614,7 +623,7 @@ export default function EntityDetailPage() {
                       onSelect={(targetPersonId, label) => setRelationshipForm((current) => ({ ...current, target_person_id: targetPersonId, target_search: label }))}
                       t={t}
                     />
-                    <datalist id="entity-detail-relationship-suggestions">{COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}</datalist>
+                    <datalist id="entity-detail-relationship-suggestions">{COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} label={relationshipDisplay(relationship, t)} />)}</datalist>
                   </div>
                   <div className="mt-2 flex justify-end">
                     <button type="button" onClick={addRelationship} disabled={!relationshipForm.relationship_label.trim() || !relationshipForm.target_person_id || state.actionId === 'relationship'} className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60">

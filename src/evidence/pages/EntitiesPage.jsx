@@ -183,6 +183,7 @@ const COMMON_RELATIONSHIPS = [
   'grandmother',
   'maternal grandfather',
   'paternal grandfather',
+  'grandfather',
   'grandparent',
   'mother',
   'father',
@@ -192,9 +193,14 @@ const COMMON_RELATIONSHIPS = [
   'child',
   'grandchild',
   'brother',
+  'baby sister',
+  'half brother',
+  'half sister',
   'sister',
   'aunt',
   'uncle',
+  'niece',
+  'nephew',
   'spouse',
   'partner',
   'therapist',
@@ -457,6 +463,10 @@ function entityNameCopy(entityType) {
     helpTitle: 'Person name',
     helpText: 'The real person name. Use a specific name, not relationship-only words like mom or grandma.',
   };
+}
+
+function relationshipDisplay(label, t) {
+  return t(String(label || '').trim());
 }
 
 function getColumnFilterValue(columnFilters, id) {
@@ -1919,12 +1929,12 @@ export default function EntitiesPage() {
         label: relationship.source_person_id === detailEntity.person_id
           ? t('{source} is {relationship} of {target}', {
             source: relationship.source_canonical_name || detailEntity.canonical_name,
-            relationship: relationship.relationship_label,
+            relationship: relationshipDisplay(relationship.relationship_label, t),
             target: relationship.target_canonical_name || relationship.target_person_id,
           })
           : t('{source} is {relationship} of {target}', {
             source: relationship.source_canonical_name || relationship.source_person_id,
-            relationship: relationship.relationship_label,
+            relationship: relationshipDisplay(relationship.relationship_label, t),
             target: relationship.target_canonical_name || detailEntity.canonical_name,
           }),
         detail: inferred
@@ -2427,7 +2437,7 @@ export default function EntitiesPage() {
                     className="mt-1 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
                   />
                   <datalist id="entity-relationship-suggestions">
-                    {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}
+                    {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} label={relationshipDisplay(relationship, t)} />)}
                   </datalist>
                 </label>
                 <EntityTargetTypeahead
@@ -2767,7 +2777,7 @@ export default function EntitiesPage() {
                   className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
                 <datalist id="create-entity-relationship-suggestions">
-                  {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}
+                  {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} label={relationshipDisplay(relationship, t)} />)}
                 </datalist>
               </label>
               <EntityTargetTypeahead
@@ -2786,7 +2796,7 @@ export default function EntitiesPage() {
             </div>
             {createEntityForm.canonical_name.trim() && createEntityForm.relationship_label.trim() && createEntityForm.relationship_target_person_id ? (
               <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
-                {createEntityForm.canonical_name.trim()} {t('is')} {createEntityForm.relationship_label.trim()} {t('of')} {
+                {createEntityForm.canonical_name.trim()} {t('is')} {relationshipDisplay(createEntityForm.relationship_label.trim(), t)} {t('of')} {
                   relationshipTargetChoices(null, state.entities, relationshipTargetOptions).find((item) => item.person_id === createEntityForm.relationship_target_person_id)?.canonical_name || createEntityForm.relationship_target_person_id
                 }.
                 <div className="mt-1 text-xs">
