@@ -321,6 +321,16 @@ export const evidenceApi = {
       casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/sync`),
       { ...options, method: 'POST', body: payload },
     ),
+  syncGoogleContacts: (caseId, sourceConnectionId, payload = {}, options = {}) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-contacts/sync`),
+      { ...options, method: 'POST', body: payload },
+    ),
+  getGoogleContacts: (caseId, sourceConnectionId, params = {}, options = {}) =>
+    request(
+      casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-contacts`),
+      { ...options, query: params },
+    ),
   getSourceWatchItems: (caseId, sourceConnectionId, options) =>
     request(casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/watch-items`), options),
   addSourceWatchItem: (caseId, sourceConnectionId, payload, options) =>
