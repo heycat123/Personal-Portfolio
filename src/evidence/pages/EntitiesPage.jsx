@@ -261,6 +261,34 @@ function entityMatchesSearch(entity, search) {
   ].some((value) => String(value || '').toLowerCase().includes(query));
 }
 
+function normalizeIdentityText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/\b([a-z0-9]+)'s\b/g, '$1')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function latestConfirmedAlternateAliases(entity) {
+  const canonical = normalizeIdentityText(entity?.normalized_name || entity?.canonical_name);
+  const seen = new Set();
+  return (entity?.alias_confirmations || [])
+    .filter((item) => {
+      const normalized = normalizeIdentityText(item.normalized_alias || item.alias);
+      if (!normalized || normalized === canonical || seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return item.decision === 'confirm';
+    });
+}
+
+function confirmedRoles(entity) {
+  return (entity?.roles || []).filter((role) => Number(role.confirmed_count || 0) > 0);
+}
+
 function parseCommaList(value) {
   return String(value || '')
     .split(/[\n,]+/)
@@ -1268,10 +1296,21 @@ export default function EntitiesPage() {
 
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
-    return (detailEntity?.aliases || []).slice(0, compact ? 12 : 40).map((alias) => {
+    const aliases = (detailEntity?.aliases || []).slice(0, compact ? 12 : 40);
+    if (!aliases.length) {
+      return (
+        <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+          {t('No extracted aliases are currently attached to this entity.')}
+        </p>
+      );
+    }
+    const canonical = normalizeIdentityText(detailEntity.normalized_name || detailEntity.canonical_name);
+    return aliases.map((alias) => {
       const decision = latestAliasDecision(detailConfirmations, alias);
       const isConfirmed = decision?.decision === 'confirm';
       const isRejected = decision?.decision === 'reject';
+      const normalizedAlias = normalizeIdentityText(alias.normalized_alias || alias.alias);
+      const isCanonicalAlias = canonical && normalizedAlias === canonical;
       const targetKey = `${detailEntity.person_id}:${alias.normalized_alias || alias.alias}`;
       const actionBase = `${detailEntity.person_id}_${alias.normalized_alias || alias.alias}`;
       return (
@@ -1280,7 +1319,9 @@ export default function EntitiesPage() {
             <div>
               <span className="font-semibold text-gray-950 dark:text-white">{alias.alias}</span>
               <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                {t('resolves to {name}; {count} occurrence(s)', { name: detailEntity.canonical_name, count: alias.occurrence_count || 0 })}
+                {isCanonicalAlias
+                  ? t('canonical name; {count} occurrence(s)', { count: alias.occurrence_count || 0 })
+                  : t('alias for {name}; {count} occurrence(s)', { name: detailEntity.canonical_name, count: alias.occurrence_count || 0 })}
               </span>
             </div>
             {decision ? <StatusBadge status={decisionStatus(decision.decision)} label={humanizeKey(decision.decision)} /> : null}
@@ -1345,6 +1386,54 @@ export default function EntitiesPage() {
         </div>
       );
     });
+  };
+
+  const renderConfirmedAliasRows = (detailEntity) => {
+    const aliases = latestConfirmedAlternateAliases(detailEntity);
+    if (!aliases.length) {
+      return (
+        <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+          {t('No confirmed alternate aliases yet.')}
+        </p>
+      );
+    }
+    return aliases.map((alias) => (
+      <div key={alias.confirmation_id || alias.normalized_alias || alias.alias} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="break-words font-semibold text-emerald-950 dark:text-emerald-100">{alias.alias}</span>
+          <StatusBadge status="succeeded" label={t('Confirmed')} />
+        </div>
+        <div className="mt-1 flex flex-wrap gap-2 text-xs text-emerald-800 dark:text-emerald-200">
+          <span>{t('Resolves to {name}', { name: detailEntity.canonical_name })}</span>
+          {alias.reviewer_display_name || alias.reviewer_email ? (
+            <span>{t('reviewed by {name}', { name: alias.reviewer_display_name || alias.reviewer_email })}</span>
+          ) : null}
+        </div>
+      </div>
+    ));
+  };
+
+  const renderConfirmedRoleRows = (detailEntity) => {
+    const roles = confirmedRoles(detailEntity);
+    if (!roles.length) {
+      return (
+        <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">
+          {t('No confirmed roles yet.')}
+        </p>
+      );
+    }
+    return roles.map((role) => (
+      <div key={role.role_name} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="break-words font-semibold text-emerald-950 dark:text-emerald-100">{role.role_name}</span>
+          <StatusBadge status="succeeded" label={t('Confirmed')} />
+        </div>
+        <div className="mt-1 flex flex-wrap gap-2 text-xs text-emerald-800 dark:text-emerald-200">
+          <span>{t('{count} confirmed assertion(s)', { count: role.confirmed_count || 0 })}</span>
+          <span>{t('extraction confidence {value}', { value: confidenceLabel(role.confidence) })}</span>
+        </div>
+      </div>
+    ));
   };
 
   const openEntityDetail = useCallback((personId) => {
@@ -1684,6 +1773,22 @@ export default function EntitiesPage() {
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              {t('Current Confirmed Aliases')}
+              <InfoTip label={t('Human-confirmed alternate names, nicknames, misspellings, or labels that should resolve to this entity. The canonical name itself is not repeated here.')} />
+            </h3>
+            <div className="mt-3 space-y-2">{renderConfirmedAliasRows(detailEntity)}</div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              {t('Current Confirmed Roles')}
+              <InfoTip label={t('User-confirmed roles or relationships attached to this entity. Extracted-only roles are not counted as confirmed here.')} />
+            </h3>
+            <div className="mt-3 space-y-2">{renderConfirmedRoleRows(detailEntity)}</div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
               {t('Contact Points')}
               <InfoTip label={t('Phone numbers and emails that may belong to this entity based on Google Contacts and communication address matches.')} />
             </h3>
@@ -1710,7 +1815,7 @@ export default function EntitiesPage() {
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Aliases For {name}', { name: detailEntity.canonical_name })}</h3>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Extracted Alias Review For {name}', { name: detailEntity.canonical_name })}</h3>
             <div className="mt-3 space-y-2">{renderAliasRows(detailEntity)}</div>
           </section>
 
