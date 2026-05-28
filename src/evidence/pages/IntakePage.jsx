@@ -858,8 +858,8 @@ export default function IntakePage() {
                     <FolderOpen size={18} aria-hidden="true" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Google Drive Selector')}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select folders/files and mirror new Drive files into controlled cloud copy storage.')}</p>
+                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Document Source Intake')}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select Google Drive folders/files for document intake and mirror new files into controlled cloud copy storage.')}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
                   </div>
                 </div>
@@ -900,15 +900,6 @@ export default function IntakePage() {
                     <Eye size={15} aria-hidden="true" />
                     {driveReview.loading ? t('Reviewing') : t('Review Google Docs')}
                   </button>
-                  <button
-                    type="button"
-                    onClick={syncGoogleContacts}
-                    disabled={Boolean(contactSync.action)}
-                    className="inline-flex items-center gap-2 rounded-md border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-200 dark:hover:bg-emerald-950/40"
-                  >
-                    <Users size={15} aria-hidden="true" />
-                    {contactSync.action === 'sync' ? t('Syncing contacts') : t('Sync Contacts')}
-                  </button>
                 </div>
               </div>
 
@@ -922,95 +913,6 @@ export default function IntakePage() {
                   <div className="font-semibold">{t('Google Drive sync queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
                   <div className="mt-2 text-xs">{t('The worker will mirror selected Drive files, including supported Google Docs exports, into controlled cloud copy storage and queue new files for registration.')}</div>
-                </div>
-              ) : null}
-              {contactSync.error ? (
-                <div className="mb-4">
-                  <ErrorPanel title="Google contacts failed" error={contactSync.error} />
-                </div>
-              ) : null}
-              {contactSync.summary || contactSync.contacts.length || contactSync.loading ? (
-                <div className="mb-5 rounded-md border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-                  <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Google Contacts Correlation')}</h4>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {contactSync.summary
-                          ? t('{contacts} contact row(s); {matched} matched communication address row(s).', {
-                            contacts: contactSync.summary.active_contacts || contactSync.summary.inserted_or_updated || 0,
-                            matched: contactSync.summary.matched_phone_rows || 0,
-                          })
-                          : t('Contacts can label phone numbers already found in SMS and WhatsApp evidence.')}
-                      </p>
-                    </div>
-                    <form
-                      className="flex flex-col gap-2 sm:flex-row sm:items-center"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        loadGoogleContacts({});
-                      }}
-                    >
-                      <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
-                        <input
-                          type="checkbox"
-                          checked={contactSync.matchedOnly}
-                          onChange={(event) => {
-                            const matchedOnly = event.target.checked;
-                            setContactSync((current) => ({ ...current, matchedOnly }));
-                            loadGoogleContacts({ matchedOnly });
-                          }}
-                          className="h-4 w-4 rounded border-gray-300 text-emerald-700 focus:ring-emerald-700"
-                        />
-                        {t('Matched only')}
-                      </label>
-                      <input
-                        type="search"
-                        value={contactSync.query}
-                        onChange={(event) => setContactSync((current) => ({ ...current, query: event.target.value }))}
-                        placeholder={t('Search contacts')}
-                        className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100 dark:border-gray-700 dark:bg-[#0b1117] dark:text-white dark:focus:ring-emerald-950"
-                      />
-                      <button
-                        type="submit"
-                        disabled={contactSync.loading}
-                        className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-100 dark:hover:bg-emerald-950/40"
-                      >
-                        <Search size={14} aria-hidden="true" />
-                        {contactSync.loading ? t('Loading') : t('View Contacts')}
-                      </button>
-                    </form>
-                  </div>
-                  <div className="max-h-[260px] overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-[#0b1117]">
-                    {contactSync.loading ? (
-                      <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('Loading contact mappings.')}</div>
-                    ) : contactSync.contacts.length ? (
-                      <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
-                        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-white/5 dark:text-gray-400">
-                          <tr>
-                            <th className="px-3 py-2 text-left">{t('Contact')}</th>
-                            <th className="px-3 py-2 text-left">{t('Phone')}</th>
-                            <th className="px-3 py-2 text-left">{t('Email')}</th>
-                            <th className="px-3 py-2 text-right">{t('Matched')}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                          {contactSync.contacts.map((contact) => (
-                            <tr key={contact.contact_mapping_id}>
-                              <td className="max-w-[220px] px-3 py-2">
-                                <div className="truncate font-medium text-gray-950 dark:text-white">{contact.display_name || t('Unnamed contact')}</div>
-                                <div className="truncate text-xs text-gray-500 dark:text-gray-400">{contact.contact_resource_name}</div>
-                              </td>
-                              <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{contact.phone_value || contact.phone_match_key || t('None')}</td>
-                              <td className="max-w-[220px] truncate px-3 py-2 text-gray-700 dark:text-gray-300">{contact.email_address || t('None')}</td>
-                              <td className="px-3 py-2 text-right font-semibold text-gray-950 dark:text-white">{contact.matched_address_count || 0}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('No contact mappings loaded yet.')}</div>
-                    )}
-                  </div>
                 </div>
               ) : null}
               {driveReview.error ? (
@@ -1314,13 +1216,150 @@ export default function IntakePage() {
             </section>
           ) : null}
 
+          <section id="contacts" className="scroll-mt-24 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-3">
+                <div className="rounded-md border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                  <Users size={18} aria-hidden="true" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Contact Syncs')}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Import contact names and phone numbers to help connect communication addresses to real people and entity records.')}</p>
+                  {activeGoogleConnection ? (
+                    <p className="text-xs text-gray-500 dark:text-gray-500">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {activeGoogleConnection ? (
+                  <button
+                    type="button"
+                    onClick={syncGoogleContacts}
+                    disabled={Boolean(contactSync.action)}
+                    className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Users size={15} aria-hidden="true" />
+                    {contactSync.action === 'sync' ? t('Syncing contacts') : t('Sync Contacts')}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={connectGoogleDrive}
+                    disabled={Boolean(state.connectorAction)}
+                    className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Link2 size={15} aria-hidden="true" />
+                    {t('Connect Google')}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {!activeGoogleConnection ? (
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300">
+                {t('Connect your Google account before syncing contacts. Contact sync is separate from document folder selection, and only the connected-account owner can view or manage imported contacts.')}
+              </div>
+            ) : null}
+
+            {contactSync.error ? (
+              <div className="mb-4">
+                <ErrorPanel title="Google contacts failed" error={contactSync.error} />
+              </div>
+            ) : null}
+
+            {activeGoogleConnection && (contactSync.summary || contactSync.contacts.length || contactSync.loading) ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20">
+                <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Google Contacts Correlation')}</h4>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {contactSync.summary
+                        ? t('{contacts} contact row(s); {matched} matched communication address row(s).', {
+                          contacts: contactSync.summary.active_contacts || contactSync.summary.inserted_or_updated || 0,
+                          matched: contactSync.summary.matched_phone_rows || 0,
+                        })
+                        : t('Contacts can label phone numbers already found in SMS and WhatsApp evidence.')}
+                    </p>
+                  </div>
+                  <form
+                    className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      loadGoogleContacts({});
+                    }}
+                  >
+                    <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={contactSync.matchedOnly}
+                        onChange={(event) => {
+                          const matchedOnly = event.target.checked;
+                          setContactSync((current) => ({ ...current, matchedOnly }));
+                          loadGoogleContacts({ matchedOnly });
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-emerald-700 focus:ring-emerald-700"
+                      />
+                      {t('Matched only')}
+                    </label>
+                    <input
+                      type="search"
+                      value={contactSync.query}
+                      onChange={(event) => setContactSync((current) => ({ ...current, query: event.target.value }))}
+                      placeholder={t('Search contacts')}
+                      className="min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100 dark:border-gray-700 dark:bg-[#0b1117] dark:text-white dark:focus:ring-emerald-950"
+                    />
+                    <button
+                      type="submit"
+                      disabled={contactSync.loading}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-100 dark:hover:bg-emerald-950/40"
+                    >
+                      <Search size={14} aria-hidden="true" />
+                      {contactSync.loading ? t('Loading') : t('View Contacts')}
+                    </button>
+                  </form>
+                </div>
+                <div className="max-h-[260px] overflow-auto rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-[#0b1117]">
+                  {contactSync.loading ? (
+                    <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('Loading contact mappings.')}</div>
+                  ) : contactSync.contacts.length ? (
+                    <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
+                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-white/5 dark:text-gray-400">
+                        <tr>
+                          <th className="px-3 py-2 text-left">{t('Contact')}</th>
+                          <th className="px-3 py-2 text-left">{t('Phone')}</th>
+                          <th className="px-3 py-2 text-left">{t('Email')}</th>
+                          <th className="px-3 py-2 text-right">{t('Matched')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {contactSync.contacts.map((contact) => (
+                          <tr key={contact.contact_mapping_id}>
+                            <td className="max-w-[220px] px-3 py-2">
+                              <div className="truncate font-medium text-gray-950 dark:text-white">{contact.display_name || t('Unnamed contact')}</div>
+                              <div className="truncate text-xs text-gray-500 dark:text-gray-400">{contact.contact_resource_name}</div>
+                            </td>
+                            <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{contact.phone_value || contact.phone_match_key || t('None')}</td>
+                            <td className="max-w-[220px] truncate px-3 py-2 text-gray-700 dark:text-gray-300">{contact.email_address || t('None')}</td>
+                            <td className="px-3 py-2 text-right font-semibold text-gray-950 dark:text-white">{contact.matched_address_count || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="p-4 text-sm text-gray-600 dark:text-gray-400">{t('No contact mappings loaded yet.')}</div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </section>
+
           <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-5 flex items-center gap-3">
               <div className="rounded-md border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-300">
                 <FileUp size={18} aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source File')}</h3>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Manual Document Upload')}</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400">{t('Phase 7.5 registers uploads only; ingestion starts in a later job.')}</p>
               </div>
             </div>

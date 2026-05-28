@@ -1,4 +1,4 @@
-import { Check, ExternalLink, GitMerge, HelpCircle, RefreshCw, X } from 'lucide-react';
+import { Check, ExternalLink, GitMerge, HelpCircle, RefreshCw, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -766,20 +766,29 @@ export default function EntitiesPage() {
           filter: activeEntityFilter ? ` ${t('matching')} "${activeEntityFilter}"` : '',
         })}
         actions={
-          <button
-            type="button"
-            onClick={() => {
-              loadEntities();
-              loadSuggestions();
-              if (selectedPersonId) {
-                loadEntityDetail(selectedPersonId);
-              }
-            }}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            {t('Refresh')}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={`/evidence/cases/${caseId}/intake#contacts`}
+              className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-[#101820] dark:text-emerald-100 dark:hover:bg-emerald-950/40"
+            >
+              <Users size={16} aria-hidden="true" />
+              {t('Contact Syncs')}
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                loadEntities();
+                loadSuggestions();
+                if (selectedPersonId) {
+                  loadEntityDetail(selectedPersonId);
+                }
+              }}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              <RefreshCw size={16} aria-hidden="true" />
+              {t('Refresh')}
+            </button>
+          </div>
         }
       />
 
