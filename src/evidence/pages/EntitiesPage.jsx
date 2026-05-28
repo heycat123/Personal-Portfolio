@@ -14,6 +14,7 @@ import { evidenceApi } from '../services/evidenceApi';
 import { humanizeKey, truncateMiddle } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
+const CONTACT_PAGE_SIZE = 25;
 
 const DEFAULT_SORTING = [{ id: 'source_rows', desc: true }];
 
@@ -98,6 +99,14 @@ const ENTITY_COLUMNS = [
   },
 ];
 
+const CONTACT_STATUS_OPTIONS = [
+  { value: 'review_needed', label: 'Needs review' },
+  { value: 'auto_confirmed', label: 'Auto confirmed' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'contact_only', label: 'Contact only' },
+  { value: 'rejected', label: 'Rejected' },
+];
+
 function confidenceLabel(value) {
   const number = Number(value);
   if (Number.isNaN(number)) {
@@ -131,6 +140,17 @@ function decisionStatus(decision) {
   if (decision === 'confirm') return 'succeeded';
   if (decision === 'reject') return 'failed';
   return 'degraded';
+}
+
+function contactLinkBadgeStatus(status) {
+  if (status === 'confirmed' || status === 'auto_confirmed') return 'succeeded';
+  if (status === 'rejected') return 'failed';
+  if (status === 'review_needed') return 'degraded';
+  return 'configured';
+}
+
+function contactPointLabel(link) {
+  return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
 
 function getColumnFilterValue(columnFilters, id) {
@@ -171,6 +191,8 @@ export default function EntitiesPage() {
   const [columnFilters, setColumnFilters] = useState([]);
   const [sorting, setSorting] = useState(DEFAULT_SORTING);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE });
+  const [contactPagination, setContactPagination] = useState({ pageIndex: 0, pageSize: CONTACT_PAGE_SIZE });
+  const [contactFilters, setContactFilters] = useState([{ id: 'link_status', value: 'review_needed' }]);
   const [selectedPersonId, setSelectedPersonId] = useState(null);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [expanded, setExpanded] = useState({});
@@ -178,19 +200,26 @@ export default function EntitiesPage() {
   const [customAlias, setCustomAlias] = useState('');
   const [mergeNote, setMergeNote] = useState('');
   const [reassignTargets, setReassignTargets] = useState({});
+  const [contactTargets, setContactTargets] = useState({});
   const [state, setState] = useState({
     loading: true,
+    contactLoading: true,
     detailLoading: false,
     suggestionsLoading: true,
     actionId: null,
     error: null,
+    contactError: null,
     actionError: null,
     entities: [],
+    contactLinks: [],
+    contactLinkTotal: 0,
+    contactStatusCounts: [],
     total: 0,
     entity: null,
     suggestions: [],
     decisions: [],
     fingerprint: null,
+    contactFingerprint: null,
     detailFingerprint: null,
     actionFingerprint: null,
   });
@@ -202,6 +231,7 @@ export default function EntitiesPage() {
   }, [state.entities]);
 
   const normalizedFilters = useMemo(() => normalizeColumnFilters(columnFilters), [columnFilters]);
+  const normalizedContactFilters = useMemo(() => normalizeColumnFilters(contactFilters), [contactFilters]);
 
   const tableQuery = useMemo(() => {
     const activeSort = sorting[0] || DEFAULT_SORTING[0];
@@ -219,6 +249,13 @@ export default function EntitiesPage() {
       min_source_rows: getColumnFilterValue(normalizedFilters, 'source_rows'),
     };
   }, [normalizedFilters, pagination.pageIndex, pagination.pageSize, sorting]);
+
+  const contactQuery = useMemo(() => ({
+    limit: contactPagination.pageSize,
+    offset: contactPagination.pageIndex * contactPagination.pageSize,
+    q: getColumnFilterValue(normalizedContactFilters, 'contact'),
+    link_status: getColumnFilterValue(normalizedContactFilters, 'link_status'),
+  }), [contactPagination.pageIndex, contactPagination.pageSize, normalizedContactFilters]);
 
   const loadEntityDetail = useCallback(async (personId, options = {}) => {
     if (!personId) {
@@ -295,6 +332,28 @@ export default function EntitiesPage() {
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
+  const loadContactLinks = useCallback(async () => {
+    setState((current) => ({ ...current, contactLoading: true, contactError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getContactEntityLinks(caseId, contactQuery, { token });
+      recordFingerprint(result, 'Contact identity links');
+      setState((current) => ({
+        ...current,
+        contactLoading: false,
+        contactLinks: result.data?.links || [],
+        contactLinkTotal: result.data?.total || 0,
+        contactStatusCounts: result.data?.status_counts || [],
+        contactFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, contactLoading: false, contactError: error }));
+    }
+  }, [caseId, contactQuery, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadEntities();
@@ -311,6 +370,13 @@ export default function EntitiesPage() {
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
+      loadContactLinks();
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [loadContactLinks]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
       loadEntityDetail(selectedPersonId);
     }, 0);
     return () => window.clearTimeout(timerId);
@@ -319,11 +385,12 @@ export default function EntitiesPage() {
   const refreshEntityWorkspace = useCallback(async () => {
     await loadEntities();
     await loadSuggestions();
+    await loadContactLinks();
     if (selectedPersonId) {
       await loadEntityDetail(selectedPersonId);
       await loadEntityDetail(selectedPersonId, { forRow: true, silent: true });
     }
-  }, [loadEntities, loadEntityDetail, loadSuggestions, selectedPersonId]);
+  }, [loadContactLinks, loadEntities, loadEntityDetail, loadSuggestions, selectedPersonId]);
 
   const liveJobs = useJobStatusPolling({
     caseId,
@@ -337,6 +404,12 @@ export default function EntitiesPage() {
     setPagination({ pageIndex: 0, pageSize: PAGE_SIZE });
     setSelectedPersonId(null);
     setExpanded({});
+  }, []);
+
+  const resetContactTable = useCallback(() => {
+    setContactFilters([{ id: 'link_status', value: 'review_needed' }]);
+    setContactPagination({ pageIndex: 0, pageSize: CONTACT_PAGE_SIZE });
+    setContactTargets({});
   }, []);
 
   const handleColumnFiltersChange = useCallback((updater) => {
@@ -359,6 +432,22 @@ export default function EntitiesPage() {
   const clearColumnFilter = useCallback((columnId) => {
     handleColumnFiltersChange((current) => current.filter((filter) => filter.id !== columnId));
   }, [handleColumnFiltersChange]);
+
+  const setContactFilterValue = useCallback((columnId, value) => {
+    setContactFilters((current) => {
+      const next = current.filter((filter) => filter.id !== columnId);
+      if (String(value || '').trim()) {
+        next.push({ id: columnId, value });
+      }
+      return next;
+    });
+    setContactPagination((current) => ({ ...current, pageIndex: 0 }));
+  }, []);
+
+  const clearContactFilter = useCallback((columnId) => {
+    setContactFilters((current) => current.filter((filter) => filter.id !== columnId));
+    setContactPagination((current) => ({ ...current, pageIndex: 0 }));
+  }, []);
 
   const setColumnSort = useCallback((columnId, desc) => {
     setSorting([{ id: columnId, desc }]);
@@ -549,6 +638,51 @@ export default function EntitiesPage() {
     }
   }, [caseId, getAccessToken, loadSuggestions, mergeNote, recordFingerprint]);
 
+  const reviewContactLink = useCallback(async (link, decision) => {
+    if (!link?.contact_entity_link_id) {
+      return;
+    }
+    const targetPersonId = contactTargets[link.contact_entity_link_id] || link.person_id || '';
+    if (decision === 'confirm' && !targetPersonId) {
+      setState((current) => ({ ...current, actionError: new Error('Choose the entity this contact point belongs to before confirming.') }));
+      return;
+    }
+    const actionId = `${link.contact_entity_link_id}_${decision}`;
+    setState((current) => ({ ...current, actionId, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.reviewContactEntityLink(
+        caseId,
+        link.contact_entity_link_id,
+        {
+          decision,
+          target_person_id: decision === 'confirm' ? targetPersonId : link.person_id || null,
+          reviewer_note: decision === 'confirm'
+            ? `Confirmed ${contactPointLabel(link)} belongs to ${entityLookup.get(targetPersonId)?.canonical_name || link.canonical_name || targetPersonId}.`
+            : decision === 'reject'
+              ? `Rejected ${contactPointLabel(link)} for ${link.canonical_name || link.person_id || 'this entity'}.`
+              : `Marked ${contactPointLabel(link)} for further review.`,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Review contact identity link');
+      setState((current) => ({
+        ...current,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await loadContactLinks();
+      if (selectedPersonId) {
+        await loadEntityDetail(selectedPersonId);
+      }
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, contactTargets, entityLookup, getAccessToken, loadContactLinks, loadEntityDetail, recordFingerprint, selectedPersonId]);
+
   const entity = state.entity;
   const confirmations = useMemo(() => entity?.alias_confirmations || [], [entity]);
   const confirmedAliases = useMemo(() => confirmations.filter((item) => item.decision === 'confirm'), [confirmations]);
@@ -640,6 +774,143 @@ export default function EntitiesPage() {
     [normalizedFilters],
   );
 
+  const contactFilterValues = useMemo(
+    () => Object.fromEntries(normalizedContactFilters.map((filter) => [filter.id, filter.value])),
+    [normalizedContactFilters],
+  );
+
+  const contactStatusOptions = useMemo(() => {
+    const counts = new Map((state.contactStatusCounts || []).map((item) => [item.link_status, item.count]));
+    return CONTACT_STATUS_OPTIONS.map((option) => ({ ...option, count: counts.get(option.value) || 0 }));
+  }, [state.contactStatusCounts]);
+
+  const contactAppliedFilters = useMemo(() => normalizedContactFilters.map((filter) => {
+    if (filter.id === 'link_status') {
+      const label = CONTACT_STATUS_OPTIONS.find((option) => option.value === filter.value)?.label || filter.value;
+      return { id: filter.id, label: `${t('Status')}: ${t(label)}` };
+    }
+    return { id: filter.id, label: `${t('Contact contains')}: ${filter.value}` };
+  }), [normalizedContactFilters, t]);
+
+  const renderContactActions = useCallback((link) => {
+    const selectedTarget = contactTargets[link.contact_entity_link_id] || link.person_id || '';
+    const confirmId = `${link.contact_entity_link_id}_confirm`;
+    const rejectId = `${link.contact_entity_link_id}_reject`;
+    const targetOptions = state.entities
+      .filter((item) => item.person_id)
+      .map((item) => ({ value: item.person_id, label: item.canonical_name || item.person_id }));
+    if (link.person_id && !targetOptions.some((item) => item.value === link.person_id)) {
+      targetOptions.unshift({ value: link.person_id, label: link.canonical_name || link.person_id });
+    }
+
+    return (
+      <div className="space-y-2">
+        <select
+          value={selectedTarget}
+          onChange={(event) => setContactTargets((current) => ({ ...current, [link.contact_entity_link_id]: event.target.value }))}
+          className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+          title={t('Choose the canonical entity this contact point belongs to.')}
+        >
+          <option value="">{t('Choose entity')}</option>
+          {targetOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => reviewContactLink(link, 'confirm')}
+            disabled={state.actionId === confirmId || !selectedTarget}
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+          >
+            <Check size={13} aria-hidden="true" />
+            {t('Confirm')}
+          </button>
+          <button
+            type="button"
+            onClick={() => reviewContactLink(link, 'reject')}
+            disabled={state.actionId === rejectId}
+            className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+          >
+            <X size={13} aria-hidden="true" />
+            {t('Reject')}
+          </button>
+        </div>
+      </div>
+    );
+  }, [contactTargets, reviewContactLink, state.actionId, state.entities, t]);
+
+  const contactColumns = useMemo(() => [
+    {
+      id: 'contact',
+      header: t('Contact'),
+      help: t('Google Contacts name and the contact point that was matched or proposed.'),
+      filterType: 'text',
+      placeholder: t('Name, phone, or email'),
+      className: 'min-w-[240px]',
+      render: (link) => (
+        <div className="min-w-0">
+          <div className="break-words font-semibold text-gray-950 dark:text-white">{link.contact_display_name || t('Unnamed contact')}</div>
+          <div className="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">{contactPointLabel(link)}</div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{link.external_account_email || t('source account hidden')}</div>
+        </div>
+      ),
+    },
+    {
+      id: 'link_status',
+      header: t('Status'),
+      help: t('Whether this contact-point relationship can be trusted automatically or needs human review.'),
+      filterOptions: contactStatusOptions,
+      render: (link) => <StatusBadge status={contactLinkBadgeStatus(link.link_status)} label={humanizeKey(link.link_status)} />,
+    },
+    {
+      id: 'canonical_name',
+      header: t('Proposed Entity'),
+      help: t('Canonical entity the contact point currently points toward. Blank means the contact point is not yet tied to a person.'),
+      render: (link) => (
+        <div className="min-w-0">
+          {link.person_id ? (
+            <button
+              type="button"
+              onClick={() => openEntityDetail(link.person_id)}
+              className="break-words text-left font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300"
+            >
+              {link.canonical_name || link.person_id}
+            </button>
+          ) : (
+            <span className="text-gray-500 dark:text-gray-400">{t('Unresolved')}</span>
+          )}
+          {link.person_id ? <div className="text-xs text-gray-500 dark:text-gray-400">{truncateMiddle(link.person_id, 24)}</div> : null}
+        </div>
+      ),
+    },
+    {
+      id: 'confidence',
+      header: t('Confidence'),
+      help: t('Confidence of the proposed contact-point to entity relationship.'),
+      render: (link) => confidenceLabel(link.confidence),
+    },
+    {
+      id: 'evidence',
+      header: t('Evidence'),
+      help: t('Why this contact point was linked or marked for review.'),
+      render: (link) => (
+        <div className="text-sm">
+          <div className="text-gray-700 dark:text-gray-300">{link.reason || t('No reason recorded.')}</div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('{count} communication address match(es)', { count: link.matched_address_count || 0 })}</div>
+        </div>
+      ),
+    },
+    {
+      id: 'actions',
+      header: t('Review'),
+      help: t('Confirm when the contact point belongs to the selected entity; reject when it does not.'),
+      filterable: false,
+      sortable: false,
+      render: renderContactActions,
+    },
+  ], [contactStatusOptions, openEntityDetail, renderContactActions, t]);
+
   const entityTableColumns = useMemo(() => ENTITY_COLUMNS.map((column) => {
     if (column.id === 'canonical_name') {
       return {
@@ -725,6 +996,31 @@ export default function EntitiesPage() {
                 <Check size={15} aria-hidden="true" />
                 {t('Add')}
               </button>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              {t('Contact Points')}
+              <InfoTip label={t('Phone numbers and emails that may belong to this entity based on Google Contacts and communication address matches.')} />
+            </h3>
+            <div className="mt-3 space-y-2">
+              {(detailEntity.contact_links || []).slice(0, 20).map((link) => (
+                <div key={link.contact_entity_link_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="break-words font-semibold text-gray-950 dark:text-white">{contactPointLabel(link)}</div>
+                      <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{link.contact_display_name || t('Unnamed contact')} · {link.external_account_email || t('source account hidden')}</div>
+                    </div>
+                    <StatusBadge status={contactLinkBadgeStatus(link.link_status)} label={humanizeKey(link.link_status)} />
+                  </div>
+                  <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">{link.reason || t('No reason recorded.')}</div>
+                  <div className="mt-3">{renderContactActions(link)}</div>
+                </div>
+              ))}
+              {!(detailEntity.contact_links || []).length ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No contact points are linked to this entity yet.')}</p>
+              ) : null}
             </div>
           </section>
 
@@ -823,6 +1119,53 @@ export default function EntitiesPage() {
       </div>
 
       <div className="space-y-5">
+        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Contact Identity Review')}</h3>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {t('Review Google Contacts phone and email links before they are treated as trusted entity evidence. Auto-confirmed links came from existing communication address mappings; ambiguous or unresolved links stay in review.')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(state.contactStatusCounts || []).map((item) => (
+                <span key={item.link_status} className="rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
+                  {t(humanizeKey(item.link_status))}: {item.count}
+                </span>
+              ))}
+            </div>
+          </div>
+          {state.contactError ? <div className="mb-3"><ErrorPanel title="Contact identity links failed" error={state.contactError} onRetry={loadContactLinks} /></div> : null}
+          {state.contactFingerprint?.id ? <div className="mb-3"><RequestFingerprint fingerprintId={state.contactFingerprint.id} correlationId={state.contactFingerprint.correlationId} label="Contact links fingerprint" /></div> : null}
+          <DataTable
+            rows={state.contactLinks}
+            rowKey={(item) => item.contact_entity_link_id}
+            columns={contactColumns}
+            loading={state.contactLoading}
+            emptyTitle={state.contactLoading ? t('Loading contact identity links') : t('No contact identity links matched')}
+            enableHeaderMenus
+            filterValues={contactFilterValues}
+            appliedFilters={contactAppliedFilters}
+            onFilterChange={setContactFilterValue}
+            onClearFilter={clearContactFilter}
+            onClearAllFilters={resetContactTable}
+            mobileTitle={(item) => item.contact_display_name || t('Unnamed contact')}
+            mobileSubtitle={(item) => contactPointLabel(item)}
+            mobileMetrics={(item) => contactColumns.filter((column) => !['contact', 'actions'].includes(column.id)).map((column) => ({
+              ...column,
+              render: column.render || (() => item[column.id]),
+            }))}
+            pagination={{
+              pageIndex: contactPagination.pageIndex,
+              pageSize: contactPagination.pageSize,
+              total: state.contactLinkTotal,
+              pageSizeOptions: [10, 25, 50],
+              onPageChange: (pageIndex) => setContactPagination((current) => ({ ...current, pageIndex })),
+              onPageSizeChange: (pageSize) => setContactPagination({ pageIndex: 0, pageSize }),
+            }}
+          />
+        </section>
+
         <div>
           <DataTable
             rows={state.entities}

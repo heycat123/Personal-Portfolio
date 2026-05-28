@@ -19,6 +19,17 @@ function confidenceLabel(value) {
   return number.toFixed(2);
 }
 
+function contactLinkBadgeStatus(status) {
+  if (status === 'confirmed' || status === 'auto_confirmed') return 'succeeded';
+  if (status === 'rejected') return 'failed';
+  if (status === 'review_needed') return 'degraded';
+  return 'configured';
+}
+
+function contactPointLabel(link) {
+  return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
+}
+
 function InfoTip({ label }) {
   return (
     <button type="button" title={label} aria-label={label} className="inline-flex rounded-full text-gray-400 hover:text-sky-700 dark:hover:text-sky-300">
@@ -172,6 +183,28 @@ export default function EntityDetailPage() {
                   </div>
                 ))}
                 {!(entity.alias_confirmations || []).length ? <p className="text-sm text-gray-600 dark:text-gray-400">{t('No human alias decisions recorded yet.')}</p> : null}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Contact Points')}</h3>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Phone numbers and emails linked from contact sync and communication address matching.')}</p>
+              <div className="mt-3 space-y-2">
+                {(entity.contact_links || []).map((link) => (
+                  <div key={link.contact_entity_link_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="break-all font-semibold text-gray-950 dark:text-white">{contactPointLabel(link)}</div>
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{link.contact_display_name || t('Unnamed contact')}</div>
+                      </div>
+                      <StatusBadge status={contactLinkBadgeStatus(link.link_status)} label={humanizeKey(link.link_status)} />
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      {t('confidence')} {confidenceLabel(link.confidence)}; {t('{count} communication address match(es)', { count: link.matched_address_count || 0 })}
+                    </div>
+                  </div>
+                ))}
+                {!(entity.contact_links || []).length ? <p className="text-sm text-gray-600 dark:text-gray-400">{t('No contact points are linked yet.')}</p> : null}
               </div>
             </section>
 

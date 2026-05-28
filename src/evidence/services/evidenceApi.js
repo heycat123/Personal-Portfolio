@@ -270,6 +270,14 @@ export const evidenceApi = {
     request(casePath(caseId, `/entities/${encodeURIComponent(personId)}`), options),
   getEntityMergeSuggestions: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/entities/merge-suggestions'), { ...options, query: params }),
+  getContactEntityLinks: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/entities/contact-links'), { ...options, query: params }),
+  reviewContactEntityLink: (caseId, contactEntityLinkId, payload, options) =>
+    request(casePath(caseId, `/entities/contact-links/${encodeURIComponent(contactEntityLinkId)}/review`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   reviewEntityAlias: (caseId, personId, payload, options) =>
     request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/aliases/review`), {
       ...options,
