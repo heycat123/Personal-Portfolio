@@ -455,7 +455,16 @@ function relationshipTargetChoices(entity, entities, searchedEntities) {
 }
 
 function isVagueKinshipAlias(value) {
-  return VAGUE_KINSHIP_ALIASES.has(normalizeIdentityText(value));
+  const normalized = normalizeIdentityText(value);
+  if (VAGUE_KINSHIP_ALIASES.has(normalized)) {
+    return true;
+  }
+  const parts = normalized.split(' ');
+  return parts.length === 2 && ['my', 'his', 'her', 'our', 'their'].includes(parts[0]) && VAGUE_KINSHIP_ALIASES.has(parts[1]);
+}
+
+function vagueKinshipAliases(values) {
+  return (values || []).filter((value) => isVagueKinshipAlias(value));
 }
 
 function parseCommaList(value) {
@@ -529,6 +538,9 @@ export default function EntitiesPage() {
     aliases: '',
     roles: '',
     entity_type: 'PERSON',
+    relationship_label: '',
+    relationship_target_person_id: '',
+    relationship_target_search: '',
   });
   const [roleResolutionReview, setRoleResolutionReview] = useState(null);
   const [state, setState] = useState({
@@ -836,6 +848,18 @@ export default function EntitiesPage() {
     }, 250);
     return () => window.clearTimeout(timerId);
   }, [relationshipForm.target_search, searchRelationshipTargetEntities]);
+
+  useEffect(() => {
+    const search = String(createEntityForm.relationship_target_search || '').trim();
+    if (!search) {
+      setRelationshipTargetOptions([]);
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => {
+      searchRelationshipTargetEntities(search);
+    }, 250);
+    return () => window.clearTimeout(timerId);
+  }, [createEntityForm.relationship_target_search, searchRelationshipTargetEntities]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -1257,9 +1281,16 @@ export default function EntitiesPage() {
     }
   }, [canonicalNameDraft, caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
-  const submitManualEntity = useCallback(async ({ canonicalName, aliases, roles, entityType }) => {
+  const submitManualEntity = useCallback(async ({ canonicalName, aliases, roles, entityType, relationshipLabel = '', relationshipTargetPersonId = '' }) => {
     if (!canonicalName) {
       setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
+      return;
+    }
+    if (vagueKinshipAliases(aliases).length && !(relationshipLabel && relationshipTargetPersonId)) {
+      setState((current) => ({
+        ...current,
+        actionError: new Error('Relationship words like mom, dad, or grandma cannot be saved as global aliases. Add a relationship and related entity instead.'),
+      }));
       return;
     }
     setState((current) => ({ ...current, actionId: 'create_entity', actionError: null }));
@@ -1272,7 +1303,9 @@ export default function EntitiesPage() {
           aliases,
           roles,
           entity_type: entityType || 'PERSON',
-          reviewer_note: `Manual entity created from Entities page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}`,
+          relationship_label: relationshipLabel || null,
+          relationship_target_person_id: relationshipTargetPersonId || null,
+          reviewer_note: `Manual entity created from Entities page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}${relationshipLabel ? ` Relationship: ${canonicalName} is ${relationshipLabel}.` : ''}`,
         },
         { token },
       );
@@ -1294,7 +1327,15 @@ export default function EntitiesPage() {
           }),
         ));
       }
-      setCreateEntityForm({ canonical_name: '', aliases: '', roles: '', entity_type: 'PERSON' });
+      setCreateEntityForm({
+        canonical_name: '',
+        aliases: '',
+        roles: '',
+        entity_type: 'PERSON',
+        relationship_label: '',
+        relationship_target_person_id: '',
+        relationship_target_search: '',
+      });
       setCreateEntityOpen(false);
       setState((current) => ({
         ...current,
@@ -1327,12 +1368,25 @@ export default function EntitiesPage() {
     const aliases = parseCommaList(createEntityForm.aliases);
     const roles = parseCommaList(createEntityForm.roles);
     const entityType = createEntityForm.entity_type || 'PERSON';
+    const relationshipLabel = createEntityForm.relationship_label.trim();
+    const relationshipTargetPersonId = createEntityForm.relationship_target_person_id;
     if (!canonicalName) {
       setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
       return;
     }
+    if (vagueKinshipAliases(aliases).length && !(relationshipLabel && relationshipTargetPersonId)) {
+      setState((current) => ({
+        ...current,
+        actionError: new Error('Aliases like mom, dad, grandma, and brother are relationship words. Choose a relationship and related entity so the system knows whose mom, dad, or grandma this person is.'),
+      }));
+      return;
+    }
+    if (Boolean(relationshipLabel) !== Boolean(relationshipTargetPersonId)) {
+      setState((current) => ({ ...current, actionError: new Error('Choose both a relationship and a related entity, or leave both blank.') }));
+      return;
+    }
     if (!roles.length) {
-      await submitManualEntity({ canonicalName, aliases, roles, entityType });
+      await submitManualEntity({ canonicalName, aliases, roles, entityType, relationshipLabel, relationshipTargetPersonId });
       return;
     }
     setState((current) => ({ ...current, actionId: 'resolve_roles', actionError: null }));
@@ -1355,6 +1409,8 @@ export default function EntitiesPage() {
           aliases,
           roles,
           entityType,
+          relationshipLabel,
+          relationshipTargetPersonId,
           preview,
           fingerprint: { id: result.requestFingerprintId, correlationId: result.correlationId },
         });
@@ -1373,11 +1429,13 @@ export default function EntitiesPage() {
         aliases,
         roles: rolesFromResolution(preview, roles, 'suggested'),
         entityType,
+        relationshipLabel,
+        relationshipTargetPersonId,
       });
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.roles, getAccessToken, recordFingerprint, submitManualEntity]);
+  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.relationship_label, createEntityForm.relationship_target_person_id, createEntityForm.roles, getAccessToken, recordFingerprint, submitManualEntity]);
 
   const completeRoleResolutionReview = useCallback(async (mode) => {
     const review = roleResolutionReview;
@@ -1395,6 +1453,8 @@ export default function EntitiesPage() {
       aliases: review.aliases,
       roles: resolvedRoles,
       entityType: review.entityType,
+      relationshipLabel: review.relationshipLabel,
+      relationshipTargetPersonId: review.relationshipTargetPersonId,
     });
   }, [roleResolutionReview, submitManualEntity]);
 
@@ -1671,9 +1731,9 @@ export default function EntitiesPage() {
             <button
               type="button"
               onClick={() => reassignAlias(detailEntity, alias)}
-              disabled={!reassignTargets[targetKey] || state.actionId === `${actionBase}_reassign`}
+              disabled={isVagueKinship || !reassignTargets[targetKey] || state.actionId === `${actionBase}_reassign`}
               className="rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
-              title={t('Reject this alias on the current entity and confirm it on the selected target entity.')}
+              title={isVagueKinship ? t('Relationship words should be confirmed as relationships, not moved as global aliases.') : t('Reject this alias on the current entity and confirm it on the selected target entity.')}
             >
               {t('Move alias')}
             </button>
@@ -2488,13 +2548,31 @@ export default function EntitiesPage() {
 
       {createEntityOpen ? (
         <section className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
+          <div className="mb-4 grid gap-3 text-sm text-gray-700 dark:text-gray-300 lg:grid-cols-4">
+            <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+              <div className="font-semibold text-gray-950 dark:text-white">{t('Canonical name')}</div>
+              <p className="mt-1">{t('The real person, place, or organization name. Example: Leda Forseen.')}</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+              <div className="font-semibold text-gray-950 dark:text-white">{t('Aliases')}</div>
+              <p className="mt-1">{t('Specific alternate names only. Example: Leda, Leda Mae. Do not use mom or grandma here.')}</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+              <div className="font-semibold text-gray-950 dark:text-white">{t('Relationship')}</div>
+              <p className="mt-1">{t('How this entity relates to another entity. Example: Leda Forseen is mother of Forest Lee.')}</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+              <div className="font-semibold text-gray-950 dark:text-white">{t('Role notes')}</div>
+              <p className="mt-1">{t('Optional descriptive facts, such as lease tenant or therapist. These are not identity aliases.')}</p>
+            </div>
+          </div>
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
             <label className="min-w-0 flex-1">
               <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Canonical name')}</span>
               <input
                 value={createEntityForm.canonical_name}
                 onChange={(event) => setCreateEntityForm((current) => ({ ...current, canonical_name: event.target.value }))}
-                placeholder={t('Example: Cheryl')}
+                placeholder={t('Example: Leda Forseen')}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               />
             </label>
@@ -2503,7 +2581,7 @@ export default function EntitiesPage() {
               <input
                 value={createEntityForm.aliases}
                 onChange={(event) => setCreateEntityForm((current) => ({ ...current, aliases: event.target.value }))}
-                placeholder={t('Comma-separated nicknames, typos, or roles')}
+                placeholder={t('Specific aliases only, e.g. Leda Mae')}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               />
             </label>
@@ -2521,13 +2599,71 @@ export default function EntitiesPage() {
               </select>
             </label>
           </div>
+          {vagueKinshipAliases(parseCommaList(createEntityForm.aliases)).length ? (
+            <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+              <div className="font-semibold">{t('Relationship word detected')}</div>
+              <p className="mt-1">
+                {t('Words like mom, dad, grandma, brother, and aunt can mean different people in different conversations. Save them as a relationship below instead of a global alias.')}
+              </p>
+            </div>
+          ) : null}
+          <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+            <div className="flex items-center gap-1 text-sm font-semibold text-gray-950 dark:text-white">
+              {t('Optional relationship')}
+              <InfoTip label={t('Use this when the new person is someone else’s mom, father, therapist, lawyer, brother, or similar relationship.')} />
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <label className="min-w-0">
+                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Relationship type')}</span>
+                <input
+                  list="create-entity-relationship-suggestions"
+                  value={createEntityForm.relationship_label}
+                  onChange={(event) => setCreateEntityForm((current) => ({ ...current, relationship_label: event.target.value }))}
+                  placeholder={t('Example: mother')}
+                  className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+                <datalist id="create-entity-relationship-suggestions">
+                  {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}
+                </datalist>
+              </label>
+              <label className="min-w-0">
+                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Related entity search')}</span>
+                <input
+                  value={createEntityForm.relationship_target_search}
+                  onChange={(event) => setCreateEntityForm((current) => ({ ...current, relationship_target_search: event.target.value, relationship_target_person_id: '' }))}
+                  placeholder={t('Example: Forest Lee')}
+                  className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                />
+              </label>
+              <label className="min-w-0">
+                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Related entity')}</span>
+                <select
+                  value={createEntityForm.relationship_target_person_id}
+                  onChange={(event) => setCreateEntityForm((current) => ({ ...current, relationship_target_person_id: event.target.value }))}
+                  className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+                >
+                  <option value="">{relationshipTargetLoading ? t('Searching...') : t('Choose related entity...')}</option>
+                  {relationshipTargetChoices(null, state.entities, relationshipTargetOptions).map((item) => (
+                    <option key={item.person_id} value={item.person_id}>{item.canonical_name || item.person_id}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {createEntityForm.canonical_name.trim() && createEntityForm.relationship_label.trim() && createEntityForm.relationship_target_person_id ? (
+              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+                {createEntityForm.canonical_name.trim()} {t('is')} {createEntityForm.relationship_label.trim()} {t('of')} {
+                  relationshipTargetChoices(null, state.entities, relationshipTargetOptions).find((item) => item.person_id === createEntityForm.relationship_target_person_id)?.canonical_name || createEntityForm.relationship_target_person_id
+                }.
+              </div>
+            ) : null}
+          </div>
           <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <label className="min-w-0">
-              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Known roles or relationships')}</span>
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Role notes')}</span>
               <input
                 value={createEntityForm.roles}
                 onChange={(event) => setCreateEntityForm((current) => ({ ...current, roles: event.target.value }))}
-                placeholder={t("Example: dad's partner, lease tenant")}
+                placeholder={t('Example: lease tenant, therapist')}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               />
             </label>
@@ -2551,7 +2687,7 @@ export default function EntitiesPage() {
             </div>
           </div>
           <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
-            {t('Use this when you know a real person or organization belongs in the case but ingestion did not create a clean canonical entity. The entity, aliases, and roles are recorded as user-confirmed.')}
+            {t('Use this when you know a real person or organization belongs in the case but ingestion did not create a clean canonical entity. Specific aliases are recorded as user-confirmed; relationship words are recorded as relationships so they do not collapse onto the wrong person.')}
           </p>
         </section>
       ) : null}
