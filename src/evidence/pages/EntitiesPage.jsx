@@ -16,10 +16,14 @@ import { formatDateTime, humanizeKey, truncateMiddle } from '../utils/formatters
 const PAGE_SIZE = 50;
 const CONTACT_PAGE_SIZE = 25;
 
-const DEFAULT_SORTING = [{ id: 'source_rows', desc: true }];
+const DEFAULT_SORTING = [{ id: 'review_priority', desc: true }];
 
 const SORT_PARAM_BY_COLUMN = {
   canonical_name: 'entity',
+  entity_type: 'entity_type',
+  review_status: 'review_status',
+  promotion_state: 'promotion_state',
+  review_priority: 'review_priority',
   confidence: 'confidence',
   alias_count: 'aliases',
   mention_count: 'mentions',
@@ -30,6 +34,10 @@ const SORT_PARAM_BY_COLUMN = {
 
 const FILTER_LABELS = {
   canonical_name: 'Entity contains',
+  entity_type: 'Type',
+  review_status: 'Review state',
+  promotion_state: 'Promotion',
+  review_priority: 'Priority >=',
   confidence: 'Confidence >=',
   alias_count: 'Aliases >=',
   mention_count: 'Mentions >=',
@@ -37,6 +45,36 @@ const FILTER_LABELS = {
   confirmed_alias_count: 'Confirmed >=',
   source_rows: 'Source rows >=',
 };
+
+const ENTITY_TYPE_OPTIONS = [
+  { value: 'PERSON', label: 'People' },
+  { value: 'ORGANIZATION', label: 'Organizations' },
+  { value: 'LOCATION', label: 'Locations' },
+  { value: 'ADDRESS', label: 'Addresses' },
+  { value: 'EMAIL', label: 'Emails' },
+  { value: 'IDENTIFIER', label: 'Identifiers' },
+  { value: 'LEGAL_FACTOR', label: 'Legal factors' },
+  { value: 'DOCUMENT', label: 'Documents' },
+  { value: 'TOPIC', label: 'Topics' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+const REVIEW_STATUS_OPTIONS = [
+  { value: 'needs_review', label: 'Needs review' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'candidate', label: 'Candidate' },
+  { value: 'topic_only', label: 'Topic only' },
+  { value: 'suppressed', label: 'Suppressed' },
+  { value: 'duplicate', label: 'Duplicate' },
+];
+
+const PROMOTION_STATE_OPTIONS = [
+  { value: 'promoted', label: 'Promoted' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'candidate', label: 'Candidate' },
+  { value: 'topic_only', label: 'Topic only' },
+  { value: 'suppressed', label: 'Suppressed' },
+];
 
 const ENTITY_COLUMNS = [
   {
@@ -46,6 +84,38 @@ const ENTITY_COLUMNS = [
     filterType: 'text',
     placeholder: 'Name, alias, or id',
     headerClassName: 'min-w-[260px]',
+  },
+  {
+    id: 'entity_type',
+    label: 'Type',
+    help: 'Promotion audit type. This decides whether an extracted item behaves like a person, place, identifier, topic, or quiet background concept.',
+    filterOptions: ENTITY_TYPE_OPTIONS,
+    filterMulti: true,
+    headerClassName: 'min-w-[140px]',
+  },
+  {
+    id: 'review_status',
+    label: 'Review',
+    help: 'Human attention bucket. Needs review is important or ambiguous; topic-only and suppressed are hidden from normal identity review.',
+    filterOptions: REVIEW_STATUS_OPTIONS,
+    filterMulti: true,
+    headerClassName: 'min-w-[150px]',
+  },
+  {
+    id: 'promotion_state',
+    label: 'Promotion',
+    help: 'Whether the entity is confirmed, promoted for review, a candidate, topic-only, or suppressed.',
+    filterOptions: PROMOTION_STATE_OPTIONS,
+    filterMulti: true,
+    headerClassName: 'min-w-[145px]',
+  },
+  {
+    id: 'review_priority',
+    label: 'Priority',
+    help: 'Computed triage priority based on confirmations, contacts, roles, ambiguity, repeat evidence, and confidence.',
+    filterType: 'number',
+    placeholder: '50',
+    headerClassName: 'min-w-[110px]',
   },
   {
     id: 'confidence',
@@ -196,6 +266,20 @@ function contactLinkBadgeStatus(status) {
   return 'configured';
 }
 
+function reviewBadgeStatus(status) {
+  if (status === 'confirmed') return 'succeeded';
+  if (status === 'needs_review') return 'degraded';
+  if (status === 'suppressed') return 'failed';
+  return 'configured';
+}
+
+function promotionBadgeStatus(status) {
+  if (status === 'confirmed' || status === 'promoted') return 'succeeded';
+  if (status === 'suppressed') return 'failed';
+  if (status === 'topic_only') return 'degraded';
+  return 'configured';
+}
+
 function contactPointLabel(link) {
   return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
@@ -285,6 +369,18 @@ function sortingLabel(sorting, t) {
 function entityColumnValue(entity, columnId) {
   if (columnId === 'canonical_name') {
     return entity.canonical_name || entity.person_id;
+  }
+  if (columnId === 'entity_type') {
+    return entity.effective_entity_type || entity.entity_type_override || entity.entity_type || 'OTHER';
+  }
+  if (columnId === 'review_status') {
+    return entity.effective_review_status || entity.review_status || 'candidate';
+  }
+  if (columnId === 'promotion_state') {
+    return entity.effective_promotion_state || entity.promotion_state || 'candidate';
+  }
+  if (columnId === 'review_priority') {
+    return Number(entity.effective_review_priority ?? entity.review_priority ?? 0);
   }
   if (columnId === 'confidence') {
     return confidenceLabel(entity.confidence);
@@ -479,6 +575,10 @@ export default function EntitiesPage() {
       q: getColumnFilterValue(normalizedFilters, 'canonical_name'),
       sort_by: SORT_PARAM_BY_COLUMN[activeSort.id] || 'source_rows',
       sort_dir: activeSort.desc ? 'desc' : 'asc',
+      entity_type: getColumnFilterValue(normalizedFilters, 'entity_type'),
+      review_status: getColumnFilterValue(normalizedFilters, 'review_status'),
+      promotion_state: getColumnFilterValue(normalizedFilters, 'promotion_state'),
+      min_review_priority: getColumnFilterValue(normalizedFilters, 'review_priority'),
       min_confidence: getColumnFilterValue(normalizedFilters, 'confidence'),
       min_aliases: getColumnFilterValue(normalizedFilters, 'alias_count'),
       min_mentions: getColumnFilterValue(normalizedFilters, 'mention_count'),
@@ -591,6 +691,29 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, contactLoading: false, contactError: error }));
     }
   }, [caseId, contactQuery, getAccessToken, recordFingerprint]);
+
+  const runEntityReviewAudit = useCallback(async () => {
+    setState((current) => ({ ...current, actionId: 'audit_entities', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.auditEntityReviewStatus(caseId, { apply: true, limit: 0 }, { token });
+      recordFingerprint(result, 'Entity promotion audit');
+      setState((current) => ({
+        ...current,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await loadEntities();
+      if (selectedPersonId) {
+        await loadEntityDetail(selectedPersonId);
+      }
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, selectedPersonId]);
 
   const openContactContext = useCallback(async (link) => {
     setContextDrawerOpen(true);
@@ -1897,6 +2020,41 @@ export default function EntitiesPage() {
         ),
       };
     }
+    if (column.id === 'entity_type') {
+      return {
+        ...column,
+        key: column.id,
+        header: t(column.label),
+        sortable: true,
+        filterable: true,
+        render: (item) => <StatusBadge status="configured" label={humanizeKey(entityColumnValue(item, column.id))} />,
+      };
+    }
+    if (column.id === 'review_status') {
+      return {
+        ...column,
+        key: column.id,
+        header: t(column.label),
+        sortable: true,
+        filterable: true,
+        render: (item) => (
+          <div className="space-y-1">
+            <StatusBadge status={reviewBadgeStatus(entityColumnValue(item, column.id))} label={humanizeKey(entityColumnValue(item, column.id))} />
+            {item.review_reason ? <div className="text-xs text-gray-500 dark:text-gray-400">{item.review_reason}</div> : null}
+          </div>
+        ),
+      };
+    }
+    if (column.id === 'promotion_state') {
+      return {
+        ...column,
+        key: column.id,
+        header: t(column.label),
+        sortable: true,
+        filterable: true,
+        render: (item) => <StatusBadge status={promotionBadgeStatus(entityColumnValue(item, column.id))} label={humanizeKey(entityColumnValue(item, column.id))} />,
+      };
+    }
 
     return {
       ...column,
@@ -1932,7 +2090,13 @@ export default function EntitiesPage() {
             </div>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{detailEntity ? truncateMiddle(detailEntity.person_id, 36) : t('Choose a row to inspect aliases and provenance.')}</p>
           </div>
-          {detailEntity ? <StatusBadge status="configured" label={detailEntity.entity_type || 'entity'} /> : null}
+          {detailEntity ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              <StatusBadge status="configured" label={humanizeKey(detailEntity.effective_entity_type || detailEntity.entity_type || 'entity')} />
+              <StatusBadge status={reviewBadgeStatus(detailEntity.review_status)} label={humanizeKey(detailEntity.review_status || 'candidate')} />
+              <StatusBadge status={promotionBadgeStatus(detailEntity.promotion_state)} label={humanizeKey(detailEntity.promotion_state || 'candidate')} />
+            </div>
+          ) : null}
         </div>
         {detailEntity && nameEditOpen ? (
           <div className="mt-3 flex gap-2">
@@ -1950,7 +2114,7 @@ export default function EntitiesPage() {
         ) : null}
         {state.detailFingerprint?.id ? <div className="mt-3"><RequestFingerprint fingerprintId={state.detailFingerprint.id} correlationId={state.detailFingerprint.correlationId} compact /></div> : null}
         {detailEntity ? (
-          <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+          <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
             <div>
               <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confidence')} <InfoTip label={t('Average extraction/entity-resolution confidence from ingestion.')} /></div>
               <div className="text-gray-950 dark:text-white">{confidenceLabel(detailEntity.confidence)}</div>
@@ -1963,6 +2127,16 @@ export default function EntitiesPage() {
               <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confirmed')} <InfoTip label={t('Human alias confirmations for this entity. The confirmation record includes who confirmed it.')} /></div>
               <div className="text-gray-950 dark:text-white">{(detailEntity.alias_confirmations || []).filter((item) => item.decision === 'confirm').length}</div>
             </div>
+            <div>
+              <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Priority')} <InfoTip label={t('Computed triage priority used to decide which entities deserve human review first.')} /></div>
+              <div className="text-gray-950 dark:text-white">{detailEntity.review_priority ?? 0}</div>
+            </div>
+          </div>
+        ) : null}
+        {detailEntity?.review_reason ? (
+          <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100">
+            <div className="font-semibold">{t('Why this appears here')}</div>
+            <p className="mt-1">{detailEntity.review_reason}</p>
           </div>
         ) : null}
         {detailEntity ? (
@@ -2206,6 +2380,16 @@ export default function EntitiesPage() {
               <Users size={16} aria-hidden="true" />
               {t('Contact Syncs')}
             </Link>
+            <button
+              type="button"
+              onClick={runEntityReviewAudit}
+              disabled={state.actionId === 'audit_entities'}
+              className="inline-flex items-center gap-2 rounded-md border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-60 dark:border-violet-800 dark:bg-[#101820] dark:text-violet-100 dark:hover:bg-violet-950/40"
+              title={t('Rebuild review buckets from current aliases, contacts, mentions, roles, and confirmations.')}
+            >
+              <GitMerge size={16} aria-hidden="true" />
+              {state.actionId === 'audit_entities' ? t('Auditing...') : t('Audit Entities')}
+            </button>
             <button
               type="button"
               onClick={() => {

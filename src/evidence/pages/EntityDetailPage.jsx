@@ -46,6 +46,20 @@ function contactLinkBadgeStatus(status) {
   return 'configured';
 }
 
+function reviewBadgeStatus(status) {
+  if (status === 'confirmed') return 'succeeded';
+  if (status === 'needs_review') return 'degraded';
+  if (status === 'suppressed') return 'failed';
+  return 'configured';
+}
+
+function promotionBadgeStatus(status) {
+  if (status === 'confirmed' || status === 'promoted') return 'succeeded';
+  if (status === 'suppressed') return 'failed';
+  if (status === 'topic_only') return 'degraded';
+  return 'configured';
+}
+
 function contactPointLabel(link) {
   return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
@@ -415,7 +429,11 @@ export default function EntityDetailPage() {
                   </div>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{truncateMiddle(entity.person_id, 42)}</p>
                 </div>
-                <StatusBadge status="configured" label={entity.entity_type || 'entity'} />
+                <div className="flex flex-wrap justify-end gap-2">
+                  <StatusBadge status="configured" label={humanizeKey(entity.effective_entity_type || entity.entity_type || 'entity')} />
+                  <StatusBadge status={reviewBadgeStatus(entity.review_status)} label={humanizeKey(entity.review_status || 'candidate')} />
+                  <StatusBadge status={promotionBadgeStatus(entity.promotion_state)} label={humanizeKey(entity.promotion_state || 'candidate')} />
+                </div>
               </div>
               {nameEditOpen ? (
                 <div className="mt-3 flex gap-2">
@@ -529,9 +547,27 @@ export default function EntityDetailPage() {
                 </div>
                 <div>
                   <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Type')}</dt>
-                  <dd className="mt-1"><StatusBadge status="configured" label={entity.entity_type || 'entity'} /></dd>
+                  <dd className="mt-1"><StatusBadge status="configured" label={humanizeKey(entity.effective_entity_type || entity.entity_type || 'entity')} /></dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Review State')}</dt>
+                  <dd className="mt-1"><StatusBadge status={reviewBadgeStatus(entity.review_status)} label={humanizeKey(entity.review_status || 'candidate')} /></dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Promotion')}</dt>
+                  <dd className="mt-1"><StatusBadge status={promotionBadgeStatus(entity.promotion_state)} label={humanizeKey(entity.promotion_state || 'candidate')} /></dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Priority')}</dt>
+                  <dd className="mt-1 text-gray-950 dark:text-white">{entity.review_priority ?? 0}</dd>
                 </div>
               </dl>
+              {entity.review_reason ? (
+                <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100">
+                  <div className="font-semibold">{t('Why this appears here')}</div>
+                  <p className="mt-1">{entity.review_reason}</p>
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">

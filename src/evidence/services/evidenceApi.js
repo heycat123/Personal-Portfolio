@@ -266,6 +266,8 @@ export const evidenceApi = {
     }),
   getEntities: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/entities'), { ...options, query: params }),
+  auditEntityReviewStatus: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/entities/review-audit'), { ...options, method: 'POST', body: payload }),
   createEntity: (caseId, payload = {}, options = {}) =>
     request(casePath(caseId, '/entities'), { ...options, method: 'POST', body: payload }),
   getEntity: (caseId, personId, options) =>
