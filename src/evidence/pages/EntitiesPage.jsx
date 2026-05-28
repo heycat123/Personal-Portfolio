@@ -429,6 +429,29 @@ function contactDisplayLabel(link) {
   return String(link?.contact_display_name || '').trim() || contactCommunicationNames(link)[0] || '';
 }
 
+function contactEntityName(link) {
+  return contactDisplayLabel(link) || '';
+}
+
+function contactAliasText(link) {
+  const name = normalizeIdentityText(contactEntityName(link));
+  const aliases = [
+    ...contactCommunicationNames(link),
+    String(link?.contact_display_name || '').trim(),
+  ].filter(Boolean);
+  const seen = new Set();
+  return aliases
+    .filter((alias) => {
+      const normalized = normalizeIdentityText(alias);
+      if (!normalized || normalized === name || seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    })
+    .join(', ');
+}
+
 function contactPlatformLabel(link) {
   return contactCommunicationPlatforms(link).map((platform) => humanizeKey(platform)).join(', ');
 }
@@ -686,6 +709,7 @@ export default function EntitiesPage() {
   const [contactSelection, setContactSelection] = useState({});
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [createEntityOpen, setCreateEntityOpen] = useState(false);
+  const [createEntityContactLink, setCreateEntityContactLink] = useState(null);
   const [createEntityForm, setCreateEntityForm] = useState({
     canonical_name: '',
     aliases: '',
@@ -1434,7 +1458,7 @@ export default function EntitiesPage() {
     }
   }, [canonicalNameDraft, caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
-  const submitManualEntity = useCallback(async ({ canonicalName, aliases, roles, entityType, relationshipLabel = '', relationshipTargetPersonId = '' }) => {
+  const submitManualEntity = useCallback(async ({ canonicalName, aliases, roles, entityType, relationshipLabel = '', relationshipTargetPersonId = '', sourceContactLink = null }) => {
     if (!canonicalName) {
       setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
       return;
@@ -1465,6 +1489,19 @@ export default function EntitiesPage() {
       recordFingerprint(result, 'Create entity');
       const personId = result.data?.person_id || result.data?.entity?.person_id;
       const createdEntity = result.data?.entity || null;
+      if (personId && sourceContactLink?.contact_entity_link_id) {
+        const attachResult = await evidenceApi.reviewContactEntityLink(
+          caseId,
+          sourceContactLink.contact_entity_link_id,
+          {
+            decision: 'confirm',
+            target_person_id: personId,
+            reviewer_note: `Created ${canonicalName} from contact ${contactPointLabel(sourceContactLink)} and confirmed the contact point to the new entity.`,
+          },
+          { token },
+        );
+        recordFingerprint(attachResult, 'Attach contact to created entity');
+      }
       if (createdEntity) {
         setState((current) => ({
           ...current,
@@ -1490,6 +1527,7 @@ export default function EntitiesPage() {
         relationship_target_search: '',
       });
       setCreateEntityOpen(false);
+      setCreateEntityContactLink(null);
       setState((current) => ({
         ...current,
         actionId: null,
@@ -1499,6 +1537,9 @@ export default function EntitiesPage() {
         },
       }));
       await loadEntities();
+      if (sourceContactLink?.contact_entity_link_id) {
+        await loadContactLinks();
+      }
       if (createdEntity) {
         setState((current) => ({
           ...current,
@@ -1514,7 +1555,7 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, contactTargetSearches, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
+  }, [caseId, contactTargetSearches, getAccessToken, loadContactLinks, loadEntities, loadEntityDetail, recordFingerprint]);
 
   const createManualEntity = useCallback(async () => {
     const canonicalName = createEntityForm.canonical_name.trim();
@@ -1539,7 +1580,15 @@ export default function EntitiesPage() {
       return;
     }
     if (!roles.length) {
-      await submitManualEntity({ canonicalName, aliases, roles, entityType, relationshipLabel, relationshipTargetPersonId });
+      await submitManualEntity({
+        canonicalName,
+        aliases,
+        roles,
+        entityType,
+        relationshipLabel,
+        relationshipTargetPersonId,
+        sourceContactLink: createEntityContactLink,
+      });
       return;
     }
     setState((current) => ({ ...current, actionId: 'resolve_roles', actionError: null }));
@@ -1564,6 +1613,7 @@ export default function EntitiesPage() {
           entityType,
           relationshipLabel,
           relationshipTargetPersonId,
+          sourceContactLink: createEntityContactLink,
           preview,
           fingerprint: { id: result.requestFingerprintId, correlationId: result.correlationId },
         });
@@ -1584,11 +1634,12 @@ export default function EntitiesPage() {
         entityType,
         relationshipLabel,
         relationshipTargetPersonId,
+        sourceContactLink: createEntityContactLink,
       });
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.relationship_label, createEntityForm.relationship_target_person_id, createEntityForm.roles, getAccessToken, recordFingerprint, submitManualEntity]);
+  }, [caseId, createEntityContactLink, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.relationship_label, createEntityForm.relationship_target_person_id, createEntityForm.roles, getAccessToken, recordFingerprint, submitManualEntity]);
 
   const completeRoleResolutionReview = useCallback(async (mode) => {
     const review = roleResolutionReview;
@@ -1608,6 +1659,7 @@ export default function EntitiesPage() {
       entityType: review.entityType,
       relationshipLabel: review.relationshipLabel,
       relationshipTargetPersonId: review.relationshipTargetPersonId,
+      sourceContactLink: review.sourceContactLink,
     });
   }, [roleResolutionReview, submitManualEntity]);
 
@@ -1777,6 +1829,31 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
   }, [caseId, getAccessToken, loadContactLinks, loadEntityDetail, recordFingerprint, selectedContactIds, selectedContactLinks, selectedPersonId]);
+
+  const startEntityFromContact = useCallback((link) => {
+    const name = contactEntityName(link);
+    setCreateEntityContactLink(link);
+    setCreateEntityForm({
+      canonical_name: name,
+      aliases: contactAliasText(link),
+      roles: '',
+      entity_type: 'PERSON',
+      relationship_label: '',
+      relationship_target_person_id: '',
+      relationship_target_search: '',
+    });
+    setCreateEntityOpen(true);
+    setRelationshipTargetOptions([]);
+    setState((current) => ({
+      ...current,
+      actionError: name
+        ? null
+        : new Error('This contact does not have a usable display name. Enter a person name manually before creating the entity.'),
+    }));
+    window.setTimeout(() => {
+      document.getElementById('create-entity-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }, []);
 
   const entity = state.entity;
   const activeEntityFilter = getColumnFilterValue(normalizedFilters, 'canonical_name');
@@ -2103,6 +2180,15 @@ export default function EntitiesPage() {
           </button>
           <button
             type="button"
+            onClick={() => startEntityFromContact(link)}
+            className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+            title={t('Create a new person from this contact and attach this contact point after save.')}
+          >
+            <Plus size={13} aria-hidden="true" />
+            {t('Create entity')}
+          </button>
+          <button
+            type="button"
             onClick={() => reviewContactLink(link, 'confirm')}
             disabled={state.actionId === confirmId || !selectedTarget}
             className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
@@ -2122,7 +2208,7 @@ export default function EntitiesPage() {
         </div>
       </div>
     );
-  }, [contactTargetLoading, contactTargetOptions, contactTargetSearches, contactTargets, openContactContext, reviewContactLink, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
+  }, [contactTargetLoading, contactTargetOptions, contactTargetSearches, contactTargets, openContactContext, reviewContactLink, startEntityFromContact, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
 
   const contactColumns = useMemo(() => [
     {
@@ -2590,7 +2676,10 @@ export default function EntitiesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setCreateEntityOpen((current) => !current)}
+              onClick={() => {
+                setCreateEntityContactLink(null);
+                setCreateEntityOpen((current) => !current);
+              }}
               className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
             >
               <Plus size={16} aria-hidden="true" />
@@ -2710,7 +2799,7 @@ export default function EntitiesPage() {
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
 
       {createEntityOpen ? (
-        <section className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
+        <section id="create-entity-panel" className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
           <div className="mb-4 grid gap-3 text-sm text-gray-700 dark:text-gray-300 lg:grid-cols-3">
             <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
               <div className="font-semibold text-gray-950 dark:text-white">{t('Type')}</div>
@@ -2729,6 +2818,17 @@ export default function EntitiesPage() {
               <p className="mt-1">{t('How this entity relates to another entity. Example: Leda Forseen is mother of Forest Lee.')}</p>
             </div>
           </div>
+          {createEntityContactLink ? (
+            <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100">
+              <div className="font-semibold">{t('Creating from contact')}</div>
+              <div className="mt-1 break-words">
+                {contactEntityName(createEntityContactLink) || t('Unnamed contact')} · {contactPointLabel(createEntityContactLink)}
+              </div>
+              <p className="mt-1 text-xs">
+                {t('Create the entity and optionally add a relationship below. After creation, this contact point will be confirmed for the new entity.')}
+              </p>
+            </div>
+          ) : null}
           <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
             <label className="min-w-0">
               <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Type')}</span>
@@ -2836,7 +2936,10 @@ export default function EntitiesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setCreateEntityOpen(false)}
+                onClick={() => {
+                  setCreateEntityOpen(false);
+                  setCreateEntityContactLink(null);
+                }}
                 className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
               >
                 {t('Cancel')}
