@@ -132,6 +132,105 @@ function relationshipTargetChoices(entity, entities, searchedEntities) {
   return [...map.values()].sort((a, b) => String(a.canonical_name || '').localeCompare(String(b.canonical_name || '')));
 }
 
+function entityMatchesQuery(entity, query) {
+  const normalized = normalizeIdentityText(query);
+  if (!normalized) {
+    return true;
+  }
+  const aliases = [
+    ...(entity?.aliases || []).map((alias) => alias?.alias || alias),
+    ...(entity?.alias_confirmations || []).map((alias) => alias?.alias),
+  ];
+  return [
+    entity?.canonical_name,
+    entity?.person_id,
+    entity?.normalized_name,
+    ...aliases,
+  ].some((value) => normalizeIdentityText(value).includes(normalized));
+}
+
+function relationshipTargetMatches(entity, entities, searchedEntities, query) {
+  const search = normalizeIdentityText(query);
+  if (!search) {
+    return relationshipTargetChoices(entity, entities, searchedEntities).slice(0, 8);
+  }
+  const map = new Map();
+  (searchedEntities || [])
+    .filter((item) => item?.person_id && item.person_id !== entity?.person_id)
+    .forEach((item) => map.set(item.person_id, item));
+  (entities || [])
+    .filter((item) => item?.person_id && item.person_id !== entity?.person_id && entityMatchesQuery(item, search))
+    .forEach((item) => {
+      if (!map.has(item.person_id)) {
+        map.set(item.person_id, item);
+      }
+    });
+  return [...map.values()].slice(0, 8);
+}
+
+function selectedRelationshipTarget(personId, entities, searchedEntities) {
+  return [...(searchedEntities || []), ...(entities || [])].find((item) => item?.person_id === personId) || null;
+}
+
+function EntityTargetTypeahead({
+  label,
+  placeholder,
+  value,
+  search,
+  options,
+  baseEntities,
+  currentEntity,
+  loading,
+  onSearchChange,
+  onSelect,
+  t,
+}) {
+  const selected = selectedRelationshipTarget(value, baseEntities, options);
+  const matches = relationshipTargetMatches(currentEntity, baseEntities, options, search);
+  const showMatches = Boolean(String(search || '').trim()) && !value;
+  return (
+    <div className="min-w-0">
+      <label className="block">
+        <span className="text-xs font-semibold uppercase tracking-normal text-sky-900 dark:text-sky-100">{label}</span>
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          className="mt-1 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
+        />
+      </label>
+      {selected ? (
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <span className="min-w-0 break-words">{t('Selected')}: <strong>{selected.canonical_name || selected.person_id}</strong></span>
+          <button type="button" onClick={() => onSelect('', '')} className="shrink-0 rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold hover:bg-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-900/50">
+            {t('Clear')}
+          </button>
+        </div>
+      ) : null}
+      {showMatches ? (
+        <div className="mt-2 overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          {loading ? (
+            <div className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{t('Searching...')}</div>
+          ) : matches.length ? (
+            matches.map((item) => (
+              <button type="button" key={item.person_id} onClick={() => onSelect(item.person_id, item.canonical_name || item.person_id)} className="flex w-full flex-col items-start gap-0.5 border-b border-gray-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-sky-50 dark:border-gray-800 dark:hover:bg-sky-950/40">
+                <span className="font-semibold text-gray-950 dark:text-white">{item.canonical_name || item.person_id}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {item.alias_count ? t('{count} aliases', { count: item.alias_count }) : t('No aliases listed')}
+                  {item.mention_count ? ` · ${t('{count} mentions', { count: item.mention_count })}` : ''}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{t('No matching entities found.')}</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function InfoTip({ label }) {
   return (
     <button type="button" title={label} aria-label={label} className="inline-flex rounded-full text-gray-400 hover:text-sky-700 dark:hover:text-sky-300">
@@ -502,14 +601,22 @@ export default function EntityDetailPage() {
                 <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
                   <div className="grid gap-2 lg:grid-cols-2">
                     <input list="entity-detail-relationship-suggestions" value={relationshipForm.relationship_label} onChange={(event) => setRelationshipForm((current) => ({ ...current, relationship_label: event.target.value }))} placeholder={t('Example: maternal grandmother')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
-                    <input value={relationshipForm.target_search} onChange={(event) => setRelationshipForm((current) => ({ ...current, target_search: event.target.value, target_person_id: '' }))} placeholder={t('Search target, e.g. Tiffany')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
+                    <EntityTargetTypeahead
+                      label={t('Target entity')}
+                      placeholder={t('Search target, e.g. Forest Lee')}
+                      value={relationshipForm.target_person_id}
+                      search={relationshipForm.target_search}
+                      options={relationshipTargetOptions}
+                      baseEntities={entityOptions}
+                      currentEntity={entity}
+                      loading={relationshipTargetLoading}
+                      onSearchChange={(nextSearch) => setRelationshipForm((current) => ({ ...current, target_search: nextSearch, target_person_id: '' }))}
+                      onSelect={(targetPersonId, label) => setRelationshipForm((current) => ({ ...current, target_person_id: targetPersonId, target_search: label }))}
+                      t={t}
+                    />
                     <datalist id="entity-detail-relationship-suggestions">{COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}</datalist>
                   </div>
-                  <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
-                    <select value={relationshipForm.target_person_id} onChange={(event) => setRelationshipForm((current) => ({ ...current, target_person_id: event.target.value }))} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100">
-                      <option value="">{relationshipTargetLoading ? t('Searching...') : t('Choose related entity...')}</option>
-                      {relationshipTargetChoices(entity, entityOptions, relationshipTargetOptions).map((item) => <option key={item.person_id} value={item.person_id}>{item.canonical_name || item.person_id}</option>)}
-                    </select>
+                  <div className="mt-2 flex justify-end">
                     <button type="button" onClick={addRelationship} disabled={!relationshipForm.relationship_label.trim() || !relationshipForm.target_person_id || state.actionId === 'relationship'} className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60">
                       <Check size={15} aria-hidden="true" />
                       {t('Save')}

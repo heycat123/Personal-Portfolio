@@ -246,6 +246,74 @@ function InfoTip({ label }) {
   );
 }
 
+function EntityTargetTypeahead({
+  label,
+  placeholder,
+  value,
+  search,
+  options,
+  baseEntities,
+  currentEntity,
+  loading,
+  onSearchChange,
+  onSelect,
+  t,
+}) {
+  const selected = selectedRelationshipTarget(value, baseEntities, options);
+  const matches = relationshipTargetMatches(currentEntity, baseEntities, options, search);
+  const showMatches = Boolean(String(search || '').trim()) && !value;
+  return (
+    <div className="min-w-0">
+      <label className="block">
+        <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</span>
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+        />
+      </label>
+      {selected ? (
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <span className="min-w-0 break-words">{t('Selected')}: <strong>{selected.canonical_name || selected.person_id}</strong></span>
+          <button
+            type="button"
+            onClick={() => onSelect('', '')}
+            className="shrink-0 rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold hover:bg-emerald-100 dark:border-emerald-800 dark:hover:bg-emerald-900/50"
+          >
+            {t('Clear')}
+          </button>
+        </div>
+      ) : null}
+      {showMatches ? (
+        <div className="mt-2 overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          {loading ? (
+            <div className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{t('Searching...')}</div>
+          ) : matches.length ? (
+            matches.map((item) => (
+              <button
+                type="button"
+                key={item.person_id}
+                onClick={() => onSelect(item.person_id, item.canonical_name || item.person_id)}
+                className="flex w-full flex-col items-start gap-0.5 border-b border-gray-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-sky-50 dark:border-gray-800 dark:hover:bg-sky-950/40"
+              >
+                <span className="font-semibold text-gray-950 dark:text-white">{item.canonical_name || item.person_id}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {item.alias_count ? t('{count} aliases', { count: item.alias_count }) : t('No aliases listed')}
+                  {item.mention_count ? ` · ${t('{count} mentions', { count: item.mention_count })}` : ''}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">{t('No matching entities found.')}</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function latestAliasDecision(confirmations, alias) {
   const normalized = String(alias?.normalized_alias || alias?.alias || '').toLowerCase();
   const aliasId = alias?.alias_id || '';
@@ -497,6 +565,29 @@ function relationshipTargetChoices(entity, entities, searchedEntities) {
     .filter((item) => item?.person_id && item.person_id !== entity?.person_id)
     .forEach((item) => map.set(item.person_id, item));
   return [...map.values()].sort((a, b) => String(a.canonical_name || '').localeCompare(String(b.canonical_name || '')));
+}
+
+function relationshipTargetMatches(entity, entities, searchedEntities, query) {
+  const search = normalizeIdentityText(query);
+  if (!search) {
+    return relationshipTargetChoices(entity, entities, searchedEntities).slice(0, 8);
+  }
+  const map = new Map();
+  (searchedEntities || [])
+    .filter((item) => item?.person_id && item.person_id !== entity?.person_id)
+    .forEach((item) => map.set(item.person_id, item));
+  (entities || [])
+    .filter((item) => item?.person_id && item.person_id !== entity?.person_id && entityMatchesSearch(item, search))
+    .forEach((item) => {
+      if (!map.has(item.person_id)) {
+        map.set(item.person_id, item);
+      }
+    });
+  return [...map.values()].slice(0, 8);
+}
+
+function selectedRelationshipTarget(personId, entities, searchedEntities) {
+  return [...(searchedEntities || []), ...(entities || [])].find((item) => item?.person_id === personId) || null;
 }
 
 function isVagueKinshipAlias(value) {
@@ -2339,27 +2430,21 @@ export default function EntitiesPage() {
                     {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}
                   </datalist>
                 </label>
-                <label className="min-w-0">
-                  <span className="text-xs font-semibold uppercase tracking-normal text-sky-900 dark:text-sky-100">{t('Target entity')}</span>
-                  <input
-                    value={relationshipForm.target_search}
-                    onChange={(event) => setRelationshipForm((current) => ({ ...current, target_search: event.target.value, target_person_id: '' }))}
-                    placeholder={t('Search target, e.g. Tiffany')}
-                    className="mt-1 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
-                  />
-                </label>
-              </div>
-              <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-                <select
+                <EntityTargetTypeahead
+                  label={t('Target entity')}
+                  placeholder={t('Search target, e.g. Forest Lee')}
                   value={relationshipForm.target_person_id}
-                  onChange={(event) => setRelationshipForm((current) => ({ ...current, target_person_id: event.target.value }))}
-                  className="min-w-0 rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100"
-                >
-                  <option value="">{relationshipTargetLoading ? t('Searching...') : t('Choose related entity...')}</option>
-                  {relationshipTargetChoices(detailEntity, state.entities, relationshipTargetOptions).map((item) => (
-                    <option key={item.person_id} value={item.person_id}>{item.canonical_name || item.person_id}</option>
-                  ))}
-                </select>
+                  search={relationshipForm.target_search}
+                  options={relationshipTargetOptions}
+                  baseEntities={state.entities}
+                  currentEntity={detailEntity}
+                  loading={relationshipTargetLoading}
+                  onSearchChange={(nextSearch) => setRelationshipForm((current) => ({ ...current, target_search: nextSearch, target_person_id: '' }))}
+                  onSelect={(personId, label) => setRelationshipForm((current) => ({ ...current, target_person_id: personId, target_search: label }))}
+                  t={t}
+                />
+              </div>
+              <div className="mt-2 flex justify-end">
                 <button
                   type="button"
                   onClick={addEntityRelationship}
@@ -2671,7 +2756,7 @@ export default function EntitiesPage() {
               {t('Optional relationship')}
               <InfoTip label={t('Use this when the new person is someone else’s mom, father, therapist, lawyer, brother, or similar relationship.')} />
             </div>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <label className="min-w-0">
                 <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Relationship type')}</span>
                 <input
@@ -2685,28 +2770,19 @@ export default function EntitiesPage() {
                   {COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}
                 </datalist>
               </label>
-              <label className="min-w-0">
-                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Related entity search')}</span>
-                <input
-                  value={createEntityForm.relationship_target_search}
-                  onChange={(event) => setCreateEntityForm((current) => ({ ...current, relationship_target_search: event.target.value, relationship_target_person_id: '' }))}
-                  placeholder={t('Example: Forest Lee')}
-                  className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-                />
-              </label>
-              <label className="min-w-0">
-                <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Related entity')}</span>
-                <select
-                  value={createEntityForm.relationship_target_person_id}
-                  onChange={(event) => setCreateEntityForm((current) => ({ ...current, relationship_target_person_id: event.target.value }))}
-                  className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-                >
-                  <option value="">{relationshipTargetLoading ? t('Searching...') : t('Choose related entity...')}</option>
-                  {relationshipTargetChoices(null, state.entities, relationshipTargetOptions).map((item) => (
-                    <option key={item.person_id} value={item.person_id}>{item.canonical_name || item.person_id}</option>
-                  ))}
-                </select>
-              </label>
+              <EntityTargetTypeahead
+                label={t('Related entity')}
+                placeholder={t('Search target, e.g. Forest Lee')}
+                value={createEntityForm.relationship_target_person_id}
+                search={createEntityForm.relationship_target_search}
+                options={relationshipTargetOptions}
+                baseEntities={state.entities}
+                currentEntity={null}
+                loading={relationshipTargetLoading}
+                onSearchChange={(nextSearch) => setCreateEntityForm((current) => ({ ...current, relationship_target_search: nextSearch, relationship_target_person_id: '' }))}
+                onSelect={(personId, label) => setCreateEntityForm((current) => ({ ...current, relationship_target_person_id: personId, relationship_target_search: label }))}
+                t={t}
+              />
             </div>
             {createEntityForm.canonical_name.trim() && createEntityForm.relationship_label.trim() && createEntityForm.relationship_target_person_id ? (
               <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
