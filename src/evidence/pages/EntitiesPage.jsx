@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Eye, GitMerge, HelpCircle, RefreshCw, Users, X } from 'lucide-react';
+import { Check, ExternalLink, Eye, GitMerge, HelpCircle, Plus, RefreshCw, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -244,7 +244,12 @@ export default function EntitiesPage() {
   const [mergeNote, setMergeNote] = useState('');
   const [reassignTargets, setReassignTargets] = useState({});
   const [contactTargets, setContactTargets] = useState({});
+  const [contactTargetSearches, setContactTargetSearches] = useState({});
+  const [contactTargetOptions, setContactTargetOptions] = useState({});
+  const [contactTargetLoading, setContactTargetLoading] = useState({});
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
+  const [createEntityOpen, setCreateEntityOpen] = useState(false);
+  const [createEntityForm, setCreateEntityForm] = useState({ canonical_name: '', aliases: '' });
   const [state, setState] = useState({
     loading: true,
     contactLoading: true,
@@ -438,6 +443,32 @@ export default function EntitiesPage() {
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
+  const searchContactTargetEntities = useCallback(async (contactEntityLinkId, query) => {
+    const search = String(query || '').trim();
+    if (!search) {
+      setContactTargetOptions((current) => ({ ...current, [contactEntityLinkId]: [] }));
+      return;
+    }
+    setContactTargetLoading((current) => ({ ...current, [contactEntityLinkId]: true }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getEntities(
+        caseId,
+        { limit: 25, offset: 0, q: search, sort_by: 'entity', sort_dir: 'asc' },
+        { token },
+      );
+      recordFingerprint(result, 'Search entity targets');
+      setContactTargetOptions((current) => ({
+        ...current,
+        [contactEntityLinkId]: result.data?.entities || [],
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setContactTargetLoading((current) => ({ ...current, [contactEntityLinkId]: false }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadEntities();
@@ -494,6 +525,9 @@ export default function EntitiesPage() {
     setContactFilters([{ id: 'link_status', value: 'review_needed' }]);
     setContactPagination({ pageIndex: 0, pageSize: CONTACT_PAGE_SIZE });
     setContactTargets({});
+    setContactTargetSearches({});
+    setContactTargetOptions({});
+    setContactTargetLoading({});
   }, []);
 
   const handleColumnFiltersChange = useCallback((updater) => {
@@ -679,6 +713,52 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
   }, [caseId, customAlias, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
+
+  const createManualEntity = useCallback(async () => {
+    const canonicalName = createEntityForm.canonical_name.trim();
+    const aliases = createEntityForm.aliases
+      .split(/[\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!canonicalName) {
+      setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
+      return;
+    }
+    setState((current) => ({ ...current, actionId: 'create_entity', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createEntity(
+        caseId,
+        {
+          canonical_name: canonicalName,
+          aliases,
+          entity_type: 'PERSON',
+          reviewer_note: `Manual entity created from Entities page for ${canonicalName}.`,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Create entity');
+      const personId = result.data?.person_id || result.data?.entity?.person_id;
+      setCreateEntityForm({ canonical_name: '', aliases: '' });
+      setCreateEntityOpen(false);
+      setState((current) => ({
+        ...current,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await loadEntities();
+      if (personId) {
+        setSelectedPersonId(personId);
+        setDetailDrawerOpen(true);
+        await loadEntityDetail(personId);
+      }
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
 
   const decideMergeSuggestion = useCallback(async (suggestion, decision) => {
     const people = suggestion.people || [];
@@ -890,15 +970,41 @@ export default function EntitiesPage() {
     const selectedTarget = contactTargets[link.contact_entity_link_id] || link.person_id || '';
     const confirmId = `${link.contact_entity_link_id}_confirm`;
     const rejectId = `${link.contact_entity_link_id}_reject`;
-    const targetOptions = state.entities
+    const targetSearch = contactTargetSearches[link.contact_entity_link_id] || '';
+    const targetLoading = Boolean(contactTargetLoading[link.contact_entity_link_id]);
+    const optionMap = new Map();
+    [...state.entities, ...(contactTargetOptions[link.contact_entity_link_id] || [])]
       .filter((item) => item.person_id)
-      .map((item) => ({ value: item.person_id, label: item.canonical_name || item.person_id }));
+      .forEach((item) => optionMap.set(item.person_id, { value: item.person_id, label: item.canonical_name || item.person_id }));
+    const targetOptions = [...optionMap.values()].sort((a, b) => a.label.localeCompare(b.label));
     if (link.person_id && !targetOptions.some((item) => item.value === link.person_id)) {
       targetOptions.unshift({ value: link.person_id, label: link.canonical_name || link.person_id });
     }
 
     return (
       <div className="space-y-2">
+        <div className="flex gap-1">
+          <input
+            value={targetSearch}
+            onChange={(event) => setContactTargetSearches((current) => ({ ...current, [link.contact_entity_link_id]: event.target.value }))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                searchContactTargetEntities(link.contact_entity_link_id, targetSearch);
+              }
+            }}
+            placeholder={t('Search entity or alias')}
+            className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+          />
+          <button
+            type="button"
+            onClick={() => searchContactTargetEntities(link.contact_entity_link_id, targetSearch)}
+            disabled={targetLoading || !targetSearch.trim()}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+          >
+            {targetLoading ? t('...') : t('Search')}
+          </button>
+        </div>
         <select
           value={selectedTarget}
           onChange={(event) => setContactTargets((current) => ({ ...current, [link.contact_entity_link_id]: event.target.value }))}
@@ -942,7 +1048,7 @@ export default function EntitiesPage() {
         </div>
       </div>
     );
-  }, [contactTargets, openContactContext, reviewContactLink, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
+  }, [contactTargetLoading, contactTargetOptions, contactTargetSearches, contactTargets, openContactContext, reviewContactLink, searchContactTargetEntities, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
 
   const contactColumns = useMemo(() => [
     {
@@ -1177,6 +1283,14 @@ export default function EntitiesPage() {
         })}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCreateEntityOpen((current) => !current)}
+              className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
+            >
+              <Plus size={16} aria-hidden="true" />
+              {t('New Entity')}
+            </button>
             <Link
               to={`/evidence/cases/${caseId}/intake#contacts`}
               className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-[#101820] dark:text-emerald-100 dark:hover:bg-emerald-950/40"
@@ -1204,6 +1318,52 @@ export default function EntitiesPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadEntities} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
+
+      {createEntityOpen ? (
+        <section className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <label className="min-w-0 flex-1">
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Canonical name')}</span>
+              <input
+                value={createEntityForm.canonical_name}
+                onChange={(event) => setCreateEntityForm((current) => ({ ...current, canonical_name: event.target.value }))}
+                placeholder={t('Example: Elliott Hall')}
+                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
+            </label>
+            <label className="min-w-0 flex-1">
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Aliases')}</span>
+              <input
+                value={createEntityForm.aliases}
+                onChange={(event) => setCreateEntityForm((current) => ({ ...current, aliases: event.target.value }))}
+                placeholder={t('Comma-separated nicknames, typos, or roles')}
+                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={createManualEntity}
+                disabled={state.actionId === 'create_entity' || !createEntityForm.canonical_name.trim()}
+                className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+              >
+                <Check size={15} aria-hidden="true" />
+                {t('Create')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateEntityOpen(false)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                {t('Cancel')}
+              </button>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+            {t('Use this when you know a real person or organization belongs in the case but ingestion did not create a clean canonical entity. The entity and aliases are recorded as user-confirmed.')}
+          </p>
+        </section>
+      ) : null}
 
       <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
         <div className="grid gap-3 lg:grid-cols-3">

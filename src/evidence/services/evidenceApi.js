@@ -266,6 +266,8 @@ export const evidenceApi = {
     }),
   getEntities: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/entities'), { ...options, query: params }),
+  createEntity: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/entities'), { ...options, method: 'POST', body: payload }),
   getEntity: (caseId, personId, options) =>
     request(casePath(caseId, `/entities/${encodeURIComponent(personId)}`), options),
   getEntityMergeSuggestions: (caseId, params = {}, options = {}) =>
