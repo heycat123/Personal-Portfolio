@@ -241,6 +241,7 @@ export default function EntitiesPage() {
   const [expanded, setExpanded] = useState({});
   const [rowDetails, setRowDetails] = useState({});
   const [customAlias, setCustomAlias] = useState('');
+  const [customRole, setCustomRole] = useState('');
   const [mergeNote, setMergeNote] = useState('');
   const [reassignTargets, setReassignTargets] = useState({});
   const [contactTargets, setContactTargets] = useState({});
@@ -250,7 +251,12 @@ export default function EntitiesPage() {
   const [contactSelection, setContactSelection] = useState({});
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [createEntityOpen, setCreateEntityOpen] = useState(false);
-  const [createEntityForm, setCreateEntityForm] = useState({ canonical_name: '', aliases: '' });
+  const [createEntityForm, setCreateEntityForm] = useState({
+    canonical_name: '',
+    aliases: '',
+    roles: '',
+    entity_type: 'PERSON',
+  });
   const [state, setState] = useState({
     loading: true,
     contactLoading: true,
@@ -718,9 +724,49 @@ export default function EntitiesPage() {
     }
   }, [caseId, customAlias, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
+  const addConfirmedRole = useCallback(async () => {
+    const entity = state.entity;
+    const roleName = customRole.trim();
+    if (!entity || !roleName) {
+      return;
+    }
+    setState((current) => ({ ...current, actionId: 'custom_role', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createEntityRole(
+        caseId,
+        entity.person_id,
+        {
+          role_name: roleName,
+          reviewer_note: `Manually confirmed that ${entity.canonical_name} is ${roleName}.`,
+          confidence: 0.99,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Add confirmed entity role');
+      setCustomRole('');
+      setState((current) => ({
+        ...current,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await loadEntityDetail(entity.person_id);
+      await loadEntities();
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, customRole, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
+
   const createManualEntity = useCallback(async () => {
     const canonicalName = createEntityForm.canonical_name.trim();
     const aliases = createEntityForm.aliases
+      .split(/[\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const roles = createEntityForm.roles
       .split(/[\n,]+/)
       .map((item) => item.trim())
       .filter(Boolean);
@@ -736,14 +782,15 @@ export default function EntitiesPage() {
         {
           canonical_name: canonicalName,
           aliases,
-          entity_type: 'PERSON',
-          reviewer_note: `Manual entity created from Entities page for ${canonicalName}.`,
+          roles,
+          entity_type: createEntityForm.entity_type || 'PERSON',
+          reviewer_note: `Manual entity created from Entities page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}`,
         },
         { token },
       );
       recordFingerprint(result, 'Create entity');
       const personId = result.data?.person_id || result.data?.entity?.person_id;
-      setCreateEntityForm({ canonical_name: '', aliases: '' });
+      setCreateEntityForm({ canonical_name: '', aliases: '', roles: '', entity_type: 'PERSON' });
       setCreateEntityOpen(false);
       setState((current) => ({
         ...current,
@@ -762,7 +809,7 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
+  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.roles, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
 
   const decideMergeSuggestion = useCallback(async (suggestion, decision) => {
     const people = suggestion.people || [];
@@ -1322,6 +1369,20 @@ export default function EntitiesPage() {
 
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              {t('Add Confirmed Role')}
+              <InfoTip label={t("Use this when you know this entity has a relationship or role in the case, such as dad's partner, lease tenant, brother, or attorney.")} />
+            </h3>
+            <div className="mt-3 flex gap-2">
+              <input value={customRole} onChange={(event) => setCustomRole(event.target.value)} placeholder={t("Example: dad's partner")} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+              <button type="button" onClick={addConfirmedRole} disabled={!customRole.trim() || state.actionId === 'custom_role'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+                <Check size={15} aria-hidden="true" />
+                {t('Add')}
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
               {t('Contact Points')}
               <InfoTip label={t('Phone numbers and emails that may belong to this entity based on Google Contacts and communication address matches.')} />
             </h3>
@@ -1424,13 +1485,13 @@ export default function EntitiesPage() {
 
       {createEntityOpen ? (
         <section className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
             <label className="min-w-0 flex-1">
               <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Canonical name')}</span>
               <input
                 value={createEntityForm.canonical_name}
                 onChange={(event) => setCreateEntityForm((current) => ({ ...current, canonical_name: event.target.value }))}
-                placeholder={t('Example: Elliott Hall')}
+                placeholder={t('Example: Cheryl')}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               />
             </label>
@@ -1440,6 +1501,30 @@ export default function EntitiesPage() {
                 value={createEntityForm.aliases}
                 onChange={(event) => setCreateEntityForm((current) => ({ ...current, aliases: event.target.value }))}
                 placeholder={t('Comma-separated nicknames, typos, or roles')}
+                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
+            </label>
+            <label className="min-w-0">
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Type')}</span>
+              <select
+                value={createEntityForm.entity_type}
+                onChange={(event) => setCreateEntityForm((current) => ({ ...current, entity_type: event.target.value }))}
+                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              >
+                <option value="PERSON">{t('Person')}</option>
+                <option value="ORGANIZATION">{t('Organization')}</option>
+                <option value="LOCATION">{t('Location')}</option>
+                <option value="OTHER">{t('Other')}</option>
+              </select>
+            </label>
+          </div>
+          <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <label className="min-w-0">
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Known roles or relationships')}</span>
+              <input
+                value={createEntityForm.roles}
+                onChange={(event) => setCreateEntityForm((current) => ({ ...current, roles: event.target.value }))}
+                placeholder={t("Example: dad's partner, lease tenant")}
                 className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
               />
             </label>
@@ -1463,7 +1548,7 @@ export default function EntitiesPage() {
             </div>
           </div>
           <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
-            {t('Use this when you know a real person or organization belongs in the case but ingestion did not create a clean canonical entity. The entity and aliases are recorded as user-confirmed.')}
+            {t('Use this when you know a real person or organization belongs in the case but ingestion did not create a clean canonical entity. The entity, aliases, and roles are recorded as user-confirmed.')}
           </p>
         </section>
       ) : null}

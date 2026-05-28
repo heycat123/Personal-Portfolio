@@ -303,6 +303,12 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  createEntityRole: (caseId, personId, payload, options) =>
+    request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/roles`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   createEntityMergeDecision: (caseId, payload, options) =>
     request(casePath(caseId, '/entities/merge-decisions'), { ...options, method: 'POST', body: payload }),
   presignDocumentUpload: (caseId, payload, options) =>
