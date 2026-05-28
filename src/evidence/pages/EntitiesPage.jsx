@@ -231,6 +231,36 @@ function entityColumnValue(entity, columnId) {
   return entity[columnId] || 0;
 }
 
+function upsertEntityRows(rows, entity) {
+  if (!entity?.person_id) {
+    return rows;
+  }
+  const existingIndex = rows.findIndex((item) => item.person_id === entity.person_id);
+  if (existingIndex === -1) {
+    return [entity, ...rows];
+  }
+  const next = [...rows];
+  next[existingIndex] = { ...next[existingIndex], ...entity };
+  return next;
+}
+
+function entityMatchesSearch(entity, search) {
+  const query = String(search || '').trim().toLowerCase();
+  if (!query) {
+    return true;
+  }
+  const aliases = [
+    ...(entity?.aliases || []).map((alias) => alias.alias || alias.normalized_alias),
+    ...(entity?.alias_preview || []).map((alias) => alias.alias || alias.normalized_alias),
+  ];
+  return [
+    entity?.canonical_name,
+    entity?.person_id,
+    entity?.normalized_name,
+    ...aliases,
+  ].some((value) => String(value || '').toLowerCase().includes(query));
+}
+
 export default function EntitiesPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -481,6 +511,31 @@ export default function EntitiesPage() {
       setContactTargetLoading((current) => ({ ...current, [contactEntityLinkId]: false }));
     }
   }, [caseId, getAccessToken, recordFingerprint]);
+
+  useEffect(() => {
+    const timers = Object.entries(contactTargetSearches).map(([contactEntityLinkId, query]) => {
+      const search = String(query || '').trim();
+      if (!search) {
+        setContactTargetOptions((current) => {
+          if (!current[contactEntityLinkId]?.length) {
+            return current;
+          }
+          return { ...current, [contactEntityLinkId]: [] };
+        });
+        return null;
+      }
+      return window.setTimeout(() => {
+        searchContactTargetEntities(contactEntityLinkId, search);
+      }, 250);
+    });
+    return () => {
+      timers.forEach((timerId) => {
+        if (timerId) {
+          window.clearTimeout(timerId);
+        }
+      });
+    };
+  }, [contactTargetSearches, searchContactTargetEntities]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -842,6 +897,22 @@ export default function EntitiesPage() {
       );
       recordFingerprint(result, 'Create entity');
       const personId = result.data?.person_id || result.data?.entity?.person_id;
+      const createdEntity = result.data?.entity || null;
+      if (createdEntity) {
+        setState((current) => ({
+          ...current,
+          entities: upsertEntityRows(current.entities, createdEntity),
+          total: Math.max(current.total || 0, upsertEntityRows(current.entities, createdEntity).length),
+          entity: createdEntity,
+        }));
+        setRowDetails((current) => ({ ...current, [createdEntity.person_id]: createdEntity }));
+        setContactTargetOptions((current) => Object.fromEntries(
+          Object.entries(current).map(([key, rows]) => {
+            const search = contactTargetSearches[key] || '';
+            return [key, entityMatchesSearch(createdEntity, search) ? upsertEntityRows(rows || [], createdEntity) : rows];
+          }),
+        ));
+      }
       setCreateEntityForm({ canonical_name: '', aliases: '', roles: '', entity_type: 'PERSON' });
       setCreateEntityOpen(false);
       setState((current) => ({
@@ -853,6 +924,13 @@ export default function EntitiesPage() {
         },
       }));
       await loadEntities();
+      if (createdEntity) {
+        setState((current) => ({
+          ...current,
+          entities: upsertEntityRows(current.entities, createdEntity),
+          total: Math.max(current.total || 0, upsertEntityRows(current.entities, createdEntity).length),
+        }));
+      }
       if (personId) {
         setSelectedPersonId(personId);
         setDetailDrawerOpen(true);
@@ -861,7 +939,7 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.roles, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
+  }, [caseId, contactTargetSearches, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.roles, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
 
   const decideMergeSuggestion = useCallback(async (suggestion, decision) => {
     const people = suggestion.people || [];
@@ -1162,9 +1240,12 @@ export default function EntitiesPage() {
     const confirmId = `${link.contact_entity_link_id}_confirm`;
     const rejectId = `${link.contact_entity_link_id}_reject`;
     const targetSearch = contactTargetSearches[link.contact_entity_link_id] || '';
+    const activeSearch = targetSearch.trim();
     const targetLoading = Boolean(contactTargetLoading[link.contact_entity_link_id]);
+    const searchedOptions = contactTargetOptions[link.contact_entity_link_id] || [];
+    const baseOptions = activeSearch ? searchedOptions : state.entities;
     const optionMap = new Map();
-    [...state.entities, ...(contactTargetOptions[link.contact_entity_link_id] || [])]
+    baseOptions
       .filter((item) => item.person_id)
       .forEach((item) => optionMap.set(item.person_id, { value: item.person_id, label: item.canonical_name || item.person_id }));
     const targetOptions = [...optionMap.values()].sort((a, b) => a.label.localeCompare(b.label));
@@ -1178,24 +1259,25 @@ export default function EntitiesPage() {
           <input
             value={targetSearch}
             onChange={(event) => setContactTargetSearches((current) => ({ ...current, [link.contact_entity_link_id]: event.target.value }))}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                searchContactTargetEntities(link.contact_entity_link_id, targetSearch);
-              }
-            }}
             placeholder={t('Search entity or alias')}
             className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
           />
           <button
             type="button"
-            onClick={() => searchContactTargetEntities(link.contact_entity_link_id, targetSearch)}
-            disabled={targetLoading || !targetSearch.trim()}
+            onClick={() => setContactTargetSearches((current) => ({ ...current, [link.contact_entity_link_id]: '' }))}
+            disabled={targetLoading || !activeSearch}
             className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
           >
-            {targetLoading ? t('...') : t('Search')}
+            {targetLoading ? t('...') : t('Clear')}
           </button>
         </div>
+        {activeSearch ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {targetLoading
+              ? t('Searching entities...')
+              : t('{count} matching entity option(s)', { count: targetOptions.length })}
+          </div>
+        ) : null}
         <select
           value={selectedTarget}
           onChange={(event) => setContactTargets((current) => ({ ...current, [link.contact_entity_link_id]: event.target.value }))}
@@ -1239,7 +1321,7 @@ export default function EntitiesPage() {
         </div>
       </div>
     );
-  }, [contactTargetLoading, contactTargetOptions, contactTargetSearches, contactTargets, openContactContext, reviewContactLink, searchContactTargetEntities, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
+  }, [contactTargetLoading, contactTargetOptions, contactTargetSearches, contactTargets, openContactContext, reviewContactLink, state.actionId, state.contactContext, state.contactContextLoading, state.entities, t]);
 
   const contactColumns = useMemo(() => [
     {
