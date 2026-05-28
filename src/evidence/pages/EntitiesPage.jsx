@@ -261,6 +261,31 @@ function entityMatchesSearch(entity, search) {
   ].some((value) => String(value || '').toLowerCase().includes(query));
 }
 
+function parseCommaList(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function roleResolutionNeedsReview(preview) {
+  const items = preview?.items || [];
+  return items.some((item) => item.decision !== 'auto_apply');
+}
+
+function rolesFromResolution(preview, fallbackRoles, mode = 'suggested') {
+  const items = preview?.items || [];
+  if (!items.length) {
+    return fallbackRoles;
+  }
+  return items.map((item, index) => {
+    if (mode === 'original') {
+      return item.input_role || fallbackRoles[index] || '';
+    }
+    return item.normalized_role || item.input_role || fallbackRoles[index] || '';
+  }).filter(Boolean);
+}
+
 export default function EntitiesPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -293,6 +318,7 @@ export default function EntitiesPage() {
     roles: '',
     entity_type: 'PERSON',
   });
+  const [roleResolutionReview, setRoleResolutionReview] = useState(null);
   const [state, setState] = useState({
     loading: true,
     contactLoading: true,
@@ -831,9 +857,7 @@ export default function EntitiesPage() {
     }
   }, [canonicalNameDraft, caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
-  const addConfirmedRole = useCallback(async () => {
-    const entity = state.entity;
-    const roleName = customRole.trim();
+  const submitConfirmedRole = useCallback(async (entity, roleName) => {
     if (!entity || !roleName) {
       return;
     }
@@ -865,18 +889,54 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, customRole, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
+  }, [caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
 
-  const createManualEntity = useCallback(async () => {
-    const canonicalName = createEntityForm.canonical_name.trim();
-    const aliases = createEntityForm.aliases
-      .split(/[\n,]+/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const roles = createEntityForm.roles
-      .split(/[\n,]+/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+  const addConfirmedRole = useCallback(async () => {
+    const entity = state.entity;
+    const roleName = customRole.trim();
+    if (!entity || !roleName) {
+      return;
+    }
+    setState((current) => ({ ...current, actionId: 'resolve_roles', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.previewEntityRoleResolution(
+        caseId,
+        {
+          roles: [roleName],
+          subject_person_id: entity.person_id,
+          subject_name: entity.canonical_name,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Resolve entity role');
+      const preview = result.data;
+      if (roleResolutionNeedsReview(preview)) {
+        setRoleResolutionReview({
+          mode: 'role',
+          entity,
+          roleName,
+          preview,
+          fingerprint: { id: result.requestFingerprintId, correlationId: result.correlationId },
+        });
+        setState((current) => ({
+          ...current,
+          actionId: null,
+          actionFingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        }));
+        return;
+      }
+      const [resolvedRole] = rolesFromResolution(preview, [roleName], 'suggested');
+      await submitConfirmedRole(entity, resolvedRole || roleName);
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, customRole, getAccessToken, recordFingerprint, state.entity, submitConfirmedRole]);
+
+  const submitManualEntity = useCallback(async ({ canonicalName, aliases, roles, entityType }) => {
     if (!canonicalName) {
       setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
       return;
@@ -890,7 +950,7 @@ export default function EntitiesPage() {
           canonical_name: canonicalName,
           aliases,
           roles,
-          entity_type: createEntityForm.entity_type || 'PERSON',
+          entity_type: entityType || 'PERSON',
           reviewer_note: `Manual entity created from Entities page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}`,
         },
         { token },
@@ -939,7 +999,87 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, contactTargetSearches, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.roles, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
+  }, [caseId, contactTargetSearches, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
+
+  const createManualEntity = useCallback(async () => {
+    const canonicalName = createEntityForm.canonical_name.trim();
+    const aliases = parseCommaList(createEntityForm.aliases);
+    const roles = parseCommaList(createEntityForm.roles);
+    const entityType = createEntityForm.entity_type || 'PERSON';
+    if (!canonicalName) {
+      setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
+      return;
+    }
+    if (!roles.length) {
+      await submitManualEntity({ canonicalName, aliases, roles, entityType });
+      return;
+    }
+    setState((current) => ({ ...current, actionId: 'resolve_roles', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.previewEntityRoleResolution(
+        caseId,
+        {
+          roles,
+          subject_name: canonicalName,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Resolve entity roles');
+      const preview = result.data;
+      if (roleResolutionNeedsReview(preview)) {
+        setRoleResolutionReview({
+          mode: 'create',
+          canonicalName,
+          aliases,
+          roles,
+          entityType,
+          preview,
+          fingerprint: { id: result.requestFingerprintId, correlationId: result.correlationId },
+        });
+        setState((current) => ({
+          ...current,
+          actionId: null,
+          actionFingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        }));
+        return;
+      }
+      await submitManualEntity({
+        canonicalName,
+        aliases,
+        roles: rolesFromResolution(preview, roles, 'suggested'),
+        entityType,
+      });
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.roles, getAccessToken, recordFingerprint, submitManualEntity]);
+
+  const completeRoleResolutionReview = useCallback(async (mode) => {
+    const review = roleResolutionReview;
+    if (!review) {
+      return;
+    }
+    if (mode === 'cancel') {
+      setRoleResolutionReview(null);
+      return;
+    }
+    const resolvedRoles = rolesFromResolution(review.preview, review.roles || [review.roleName], mode === 'original' ? 'original' : 'suggested');
+    setRoleResolutionReview(null);
+    if (review.mode === 'role') {
+      await submitConfirmedRole(review.entity, resolvedRoles[0] || review.roleName);
+      return;
+    }
+    await submitManualEntity({
+      canonicalName: review.canonicalName,
+      aliases: review.aliases,
+      roles: resolvedRoles,
+      entityType: review.entityType,
+    });
+  }, [roleResolutionReview, submitConfirmedRole, submitManualEntity]);
 
   const decideMergeSuggestion = useCallback(async (suggestion, decision) => {
     const people = suggestion.people || [];
@@ -1535,7 +1675,7 @@ export default function EntitiesPage() {
             </h3>
             <div className="mt-3 flex gap-2">
               <input value={customRole} onChange={(event) => setCustomRole(event.target.value)} placeholder={t("Example: dad's partner")} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
-              <button type="button" onClick={addConfirmedRole} disabled={!customRole.trim() || state.actionId === 'custom_role'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+              <button type="button" onClick={addConfirmedRole} disabled={!customRole.trim() || ['custom_role', 'resolve_roles'].includes(state.actionId)} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
                 <Check size={15} aria-hidden="true" />
                 {t('Add')}
               </button>
@@ -1641,6 +1781,81 @@ export default function EntitiesPage() {
         }
       />
 
+      {roleResolutionReview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <section className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-[#101820]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Review Role Resolution')}</h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {t('The system found a possible existing entity reference in the role text. Confirm the suggested collapse or keep your original wording.')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => completeRoleResolutionReview('cancel')}
+                className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10"
+                aria-label={t('Close')}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {(roleResolutionReview.preview?.items || []).map((item) => (
+                <div key={`${item.input_role}-${item.normalized_role}`} className="rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Entered')}</div>
+                      <div className="break-words text-sm font-semibold text-gray-950 dark:text-white">{item.input_role}</div>
+                    </div>
+                    <StatusBadge status={item.decision === 'auto_apply' ? 'succeeded' : 'degraded'} label={`${confidenceLabel(item.confidence)} ${t('confidence')}`} />
+                  </div>
+                  <div className="mt-3 rounded-md bg-sky-50 p-3 text-sm text-sky-950 dark:bg-sky-950/40 dark:text-sky-100">
+                    <span className="text-xs font-semibold uppercase tracking-normal">{t('Suggested save value')}</span>
+                    <div className="mt-1 break-words font-semibold">{item.normalized_role}</div>
+                    {item.related_canonical_name ? (
+                      <div className="mt-1 text-xs">{t('Related entity')}: {item.related_canonical_name}</div>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">{item.reason || t('No explanation provided.')}</p>
+                </div>
+              ))}
+            </div>
+
+            {roleResolutionReview.fingerprint?.id ? (
+              <div className="mt-4">
+                <RequestFingerprint fingerprintId={roleResolutionReview.fingerprint.id} correlationId={roleResolutionReview.fingerprint.correlationId} compact label="Resolution fingerprint" />
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => completeRoleResolutionReview('cancel')}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                {t('Cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => completeRoleResolutionReview('original')}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                {t('Use Original')}
+              </button>
+              <button
+                type="button"
+                onClick={() => completeRoleResolutionReview('suggested')}
+                className="rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                {t('Apply Suggested')}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadEntities} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
 
@@ -1693,7 +1908,7 @@ export default function EntitiesPage() {
               <button
                 type="button"
                 onClick={createManualEntity}
-                disabled={state.actionId === 'create_entity' || !createEntityForm.canonical_name.trim()}
+                disabled={['create_entity', 'resolve_roles'].includes(state.actionId) || !createEntityForm.canonical_name.trim()}
                 className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
               >
                 <Check size={15} aria-hidden="true" />

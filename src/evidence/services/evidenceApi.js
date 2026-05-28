@@ -309,6 +309,12 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  previewEntityRoleResolution: (caseId, payload, options) =>
+    request(casePath(caseId, '/entities/role-resolution/preview'), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   createEntityRole: (caseId, personId, payload, options) =>
     request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/roles`), {
       ...options,
