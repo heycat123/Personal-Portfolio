@@ -1,4 +1,4 @@
-import { ArrowLeft, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Check, HelpCircle, Pencil, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -9,7 +9,27 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
-import { formatDateTime, humanizeKey, truncateMiddle } from '../utils/formatters';
+import { humanizeKey, truncateMiddle } from '../utils/formatters';
+
+const COMMON_RELATIONSHIPS = [
+  'maternal grandmother',
+  'paternal grandmother',
+  'grandmother',
+  'mother',
+  'father',
+  'brother',
+  'sister',
+  'aunt',
+  'uncle',
+  'spouse',
+  'partner',
+  'therapist',
+  'attorney',
+  'teacher',
+  'doctor',
+  'lease tenant',
+  'witness',
+];
 
 function confidenceLabel(value) {
   const number = Number(value);
@@ -30,6 +50,60 @@ function contactPointLabel(link) {
   return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
 
+function normalizeIdentityText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[’‘]/g, "'")
+    .replace(/\b([a-z0-9]+)'s\b/g, '$1')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function latestConfirmedAlternateAliases(entity) {
+  const canonical = normalizeIdentityText(entity?.normalized_name || entity?.canonical_name);
+  const seen = new Set();
+  return (entity?.alias_confirmations || [])
+    .filter((item) => {
+      const normalized = normalizeIdentityText(item.normalized_alias || item.alias);
+      if (!normalized || normalized === canonical || seen.has(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return item.decision === 'confirm';
+    });
+}
+
+function confirmedRoles(entity) {
+  return (entity?.roles || []).filter((role) => Number(role.confirmed_count || 0) > 0);
+}
+
+function contactPointGroups(entity) {
+  const groups = { phone: [], email: [], address: [] };
+  (entity?.contact_links || []).forEach((link) => {
+    if (link.phone_canonical || link.phone_value || link.phone_digits || String(link.contact_point_value || '').match(/^\+?\d/)) {
+      groups.phone.push({ kind: 'synced', key: link.contact_entity_link_id, value: contactPointLabel(link), link });
+    }
+    if (link.email_address || String(link.contact_point_value || '').includes('@')) {
+      groups.email.push({ kind: 'synced', key: `${link.contact_entity_link_id}:email`, value: link.email_address || contactPointLabel(link), link });
+    }
+  });
+  (entity?.manual_contact_points || []).forEach((point) => {
+    if (groups[point.contact_type]) {
+      groups[point.contact_type].push({ kind: 'manual', key: point.contact_point_id, value: point.contact_value, point });
+    }
+  });
+  return groups;
+}
+
+function relationshipTargetChoices(entity, entities, searchedEntities) {
+  const map = new Map();
+  [...(searchedEntities || []), ...(entities || [])]
+    .filter((item) => item?.person_id && item.person_id !== entity?.person_id)
+    .forEach((item) => map.set(item.person_id, item));
+  return [...map.values()].sort((a, b) => String(a.canonical_name || '').localeCompare(String(b.canonical_name || '')));
+}
+
 function InfoTip({ label }) {
   return (
     <button type="button" title={label} aria-label={label} className="inline-flex rounded-full text-gray-400 hover:text-sky-700 dark:hover:text-sky-300">
@@ -48,7 +122,21 @@ export default function EntityDetailPage() {
     error: null,
     entity: null,
     fingerprint: null,
+    actionId: null,
+    actionError: null,
+    actionFingerprint: null,
   });
+  const [nameEditOpen, setNameEditOpen] = useState(false);
+  const [canonicalNameDraft, setCanonicalNameDraft] = useState('');
+  const [aliasAddOpen, setAliasAddOpen] = useState(false);
+  const [customAlias, setCustomAlias] = useState('');
+  const [relationshipAddOpen, setRelationshipAddOpen] = useState(false);
+  const [relationshipForm, setRelationshipForm] = useState({ relationship_label: '', target_person_id: '', target_search: '' });
+  const [relationshipTargetOptions, setRelationshipTargetOptions] = useState([]);
+  const [relationshipTargetLoading, setRelationshipTargetLoading] = useState(false);
+  const [contactAddOpen, setContactAddOpen] = useState(false);
+  const [contactPointForm, setContactPointForm] = useState({ contact_type: 'phone', contact_value: '', label: '' });
+  const [entityOptions, setEntityOptions] = useState([]);
 
   const loadEntity = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -64,6 +152,9 @@ export default function EntityDetailPage() {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
+        actionId: null,
+        actionError: null,
+        actionFingerprint: null,
       });
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -76,6 +167,220 @@ export default function EntityDetailPage() {
   }, [loadEntity]);
 
   const entity = state.entity;
+
+  useEffect(() => {
+    setCanonicalNameDraft(entity?.canonical_name || '');
+  }, [entity?.canonical_name]);
+
+  const searchRelationshipTargets = useCallback(async (query) => {
+    const search = String(query || '').trim();
+    if (!search) {
+      setRelationshipTargetOptions([]);
+      return;
+    }
+    setRelationshipTargetLoading(true);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getEntities(caseId, { limit: 25, offset: 0, q: search, sort_by: 'entity', sort_dir: 'asc' }, { token });
+      recordFingerprint(result, 'Search relationship targets');
+      setRelationshipTargetOptions(result.data?.entities || []);
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setRelationshipTargetLoading(false);
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(async () => {
+      try {
+        const token = await getAccessToken();
+        const result = await evidenceApi.getEntities(caseId, { limit: 100, offset: 0, sort_by: 'entity', sort_dir: 'asc' }, { token });
+        setEntityOptions(result.data?.entities || []);
+      } catch {
+        setEntityOptions([]);
+      }
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [caseId, getAccessToken]);
+
+  useEffect(() => {
+    const search = String(relationshipForm.target_search || '').trim();
+    if (!search) {
+      setRelationshipTargetOptions([]);
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => searchRelationshipTargets(search), 250);
+    return () => window.clearTimeout(timerId);
+  }, [relationshipForm.target_search, searchRelationshipTargets]);
+
+  const refreshAfterAction = useCallback(async (result) => {
+    setState((current) => ({
+      ...current,
+      actionId: null,
+      actionFingerprint: {
+        id: result.requestFingerprintId,
+        correlationId: result.correlationId,
+      },
+    }));
+    await loadEntity();
+  }, [loadEntity]);
+
+  const updateCanonicalName = useCallback(async () => {
+    if (!entity || !canonicalNameDraft.trim() || canonicalNameDraft.trim() === entity.canonical_name) return;
+    setState((current) => ({ ...current, actionId: 'canonical_name', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateEntity(caseId, entity.person_id, {
+        canonical_name: canonicalNameDraft.trim(),
+        reviewer_note: `Corrected canonical entity name from "${entity.canonical_name}" to "${canonicalNameDraft.trim()}".`,
+      }, { token });
+      recordFingerprint(result, 'Update entity canonical name');
+      setNameEditOpen(false);
+      await refreshAfterAction(result);
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [canonicalNameDraft, caseId, entity, getAccessToken, recordFingerprint, refreshAfterAction]);
+
+  const addConfirmedAlias = useCallback(async () => {
+    if (!entity || !customAlias.trim()) return;
+    setState((current) => ({ ...current, actionId: 'custom_alias', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const alias = customAlias.trim();
+      const result = await evidenceApi.reviewEntityAlias(caseId, entity.person_id, {
+        alias,
+        normalized_alias: alias.toLowerCase().replace(/\s+/g, ' '),
+        decision: 'confirm',
+        reviewer_note: `Manually confirmed that "${alias}" resolves to ${entity.canonical_name}.`,
+        confidence: 1,
+        source_json: { source: 'entity_detail_page' },
+      }, { token });
+      recordFingerprint(result, 'Add confirmed entity alias');
+      setCustomAlias('');
+      setAliasAddOpen(false);
+      await refreshAfterAction(result);
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, customAlias, entity, getAccessToken, recordFingerprint, refreshAfterAction]);
+
+  const addRelationship = useCallback(async () => {
+    if (!entity || !relationshipForm.relationship_label.trim() || !relationshipForm.target_person_id) return;
+    setState((current) => ({ ...current, actionId: 'relationship', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createEntityRelationship(caseId, entity.person_id, {
+        relationship_label: relationshipForm.relationship_label.trim(),
+        target_person_id: relationshipForm.target_person_id,
+        reviewer_note: `Confirmed relationship from entity detail page.`,
+        confidence: 0.99,
+      }, { token });
+      recordFingerprint(result, 'Add entity relationship');
+      setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
+      setRelationshipAddOpen(false);
+      await refreshAfterAction(result);
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, entity, getAccessToken, recordFingerprint, refreshAfterAction, relationshipForm.relationship_label, relationshipForm.target_person_id]);
+
+  const addContactPoint = useCallback(async () => {
+    if (!entity || !contactPointForm.contact_value.trim()) return;
+    setState((current) => ({ ...current, actionId: 'contact_point', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createEntityContactPoint(caseId, entity.person_id, {
+        contact_type: contactPointForm.contact_type,
+        contact_value: contactPointForm.contact_value.trim(),
+        label: contactPointForm.label.trim() || null,
+        reviewer_note: `Manually added contact point from entity detail page.`,
+        confidence: 0.99,
+      }, { token });
+      recordFingerprint(result, 'Add entity contact point');
+      setContactPointForm({ contact_type: 'phone', contact_value: '', label: '' });
+      setContactAddOpen(false);
+      await refreshAfterAction(result);
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, contactPointForm.contact_type, contactPointForm.contact_value, contactPointForm.label, entity, getAccessToken, recordFingerprint, refreshAfterAction]);
+
+  const renderConfirmedAliases = () => {
+    const aliases = latestConfirmedAlternateAliases(entity);
+    if (!aliases.length) {
+      return <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{t('No confirmed alternate aliases yet.')}</p>;
+    }
+    return aliases.map((alias) => (
+      <div key={alias.confirmation_id || alias.alias} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="break-words font-semibold text-emerald-950 dark:text-emerald-100">{alias.alias}</span>
+          <StatusBadge status="succeeded" label={t('Confirmed')} />
+        </div>
+        <div className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">{t('Resolves to {name}', { name: entity.canonical_name })}</div>
+      </div>
+    ));
+  };
+
+  const renderConfirmedRelationships = () => {
+    const roleRows = confirmedRoles(entity).map((role) => ({
+      key: `role:${role.role_name}`,
+      label: role.role_name,
+      detail: t('{count} confirmed assertion(s)', { count: role.confirmed_count || 0 }),
+    }));
+    const relationshipRows = (entity?.relationships || []).map((relationship) => ({
+      key: relationship.relationship_id,
+      label: relationship.source_person_id === entity.person_id
+        ? t('{source} is {relationship} of {target}', {
+          source: relationship.source_canonical_name || entity.canonical_name,
+          relationship: relationship.relationship_label,
+          target: relationship.target_canonical_name || relationship.target_person_id,
+        })
+        : t('{source} is {relationship} of {target}', {
+          source: relationship.source_canonical_name || relationship.source_person_id,
+          relationship: relationship.relationship_label,
+          target: relationship.target_canonical_name || entity.canonical_name,
+        }),
+      detail: relationship.reviewer_display_name || relationship.reviewer_email
+        ? t('reviewed by {name}', { name: relationship.reviewer_display_name || relationship.reviewer_email })
+        : t('User-confirmed relationship'),
+    }));
+    const rows = [...relationshipRows, ...roleRows];
+    if (!rows.length) {
+      return <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{t('No confirmed relationships yet.')}</p>;
+    }
+    return rows.map((row) => (
+      <div key={row.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="break-words font-semibold text-emerald-950 dark:text-emerald-100">{row.label}</span>
+          <StatusBadge status="succeeded" label={t('Confirmed')} />
+        </div>
+        <div className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">{row.detail}</div>
+      </div>
+    ));
+  };
+
+  const renderContactGroup = (title, items) => (
+    <div className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+      <div className="text-sm font-semibold text-gray-950 dark:text-white">{t(title)}</div>
+      <div className="mt-2 space-y-2">
+        {items.length ? items.map((item) => (
+          <div key={item.key} className="rounded-md bg-gray-50 p-2 text-sm dark:bg-black/20">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="break-words font-semibold text-gray-950 dark:text-white">{item.value}</div>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {item.kind === 'manual' ? (item.point?.label || t('Manually added')) : (item.link?.contact_display_name || t('Synced contact'))}
+                </div>
+              </div>
+              <StatusBadge status={item.kind === 'manual' ? 'succeeded' : contactLinkBadgeStatus(item.link.link_status)} label={item.kind === 'manual' ? t('Confirmed') : humanizeKey(item.link.link_status)} />
+            </div>
+          </div>
+        )) : <p className="text-sm text-gray-600 dark:text-gray-400">{t('None listed.')}</p>}
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -92,23 +397,85 @@ export default function EntityDetailPage() {
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadEntity} /></div> : null}
+      {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
       {state.fingerprint?.id ? <div className="mb-4"><RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} /></div> : null}
+      {state.actionFingerprint?.id ? <div className="mb-4"><RequestFingerprint fingerprintId={state.actionFingerprint.id} correlationId={state.actionFingerprint.correlationId} label="Action fingerprint" /></div> : null}
 
       {entity ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <div className="space-y-5">
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Aliases')}</h3>
-              <div className="mt-3 grid gap-2 lg:grid-cols-2">
-                {(entity.aliases || []).map((alias) => (
-                  <div key={alias.normalized_alias || alias.alias} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
-                    <div className="font-semibold text-gray-950 dark:text-white">{alias.alias}</div>
-                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {alias.normalized_alias}; {alias.occurrence_count || 0} {t('occurrence(s)')}; {t('confidence')} {confidenceLabel(alias.confidence)}
-                    </div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="break-words text-lg font-semibold text-gray-950 dark:text-white">{entity.canonical_name}</h3>
+                    <button type="button" onClick={() => setNameEditOpen((current) => !current)} title={t('Edit entity name')} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-700 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-sky-300">
+                      <Pencil size={15} aria-hidden="true" />
+                    </button>
                   </div>
-                ))}
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{truncateMiddle(entity.person_id, 42)}</p>
+                </div>
+                <StatusBadge status="configured" label={entity.entity_type || 'entity'} />
               </div>
+              {nameEditOpen ? (
+                <div className="mt-3 flex gap-2">
+                  <input value={canonicalNameDraft} onChange={(event) => setCanonicalNameDraft(event.target.value)} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+                  <button type="button" onClick={updateCanonicalName} disabled={!canonicalNameDraft.trim() || canonicalNameDraft.trim() === entity.canonical_name || state.actionId === 'canonical_name'} className="inline-flex items-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60">
+                    <Check size={15} aria-hidden="true" />
+                    {t('Save')}
+                  </button>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Confirmed Aliases')}</h3>
+                <button type="button" onClick={() => setAliasAddOpen((current) => !current)} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800">
+                  <Plus size={14} aria-hidden="true" />
+                  {t('Add')}
+                </button>
+              </div>
+              {aliasAddOpen ? (
+                <div className="mt-3 flex gap-2">
+                  <input value={customAlias} onChange={(event) => setCustomAlias(event.target.value)} placeholder={t('Example: GMA Maureen')} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+                  <button type="button" onClick={addConfirmedAlias} disabled={!customAlias.trim() || state.actionId === 'custom_alias'} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
+                    <Check size={15} aria-hidden="true" />
+                    {t('Save')}
+                  </button>
+                </div>
+              ) : null}
+              <div className="mt-3 space-y-2">{renderConfirmedAliases()}</div>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Confirmed Relationships')}</h3>
+                <button type="button" onClick={() => setRelationshipAddOpen((current) => !current)} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800">
+                  <Plus size={14} aria-hidden="true" />
+                  {t('Add')}
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">{renderConfirmedRelationships()}</div>
+              {relationshipAddOpen ? (
+                <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
+                  <div className="grid gap-2 lg:grid-cols-2">
+                    <input list="entity-detail-relationship-suggestions" value={relationshipForm.relationship_label} onChange={(event) => setRelationshipForm((current) => ({ ...current, relationship_label: event.target.value }))} placeholder={t('Example: maternal grandmother')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
+                    <input value={relationshipForm.target_search} onChange={(event) => setRelationshipForm((current) => ({ ...current, target_search: event.target.value, target_person_id: '' }))} placeholder={t('Search target, e.g. Tiffany')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
+                    <datalist id="entity-detail-relationship-suggestions">{COMMON_RELATIONSHIPS.map((relationship) => <option key={relationship} value={relationship} />)}</datalist>
+                  </div>
+                  <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+                    <select value={relationshipForm.target_person_id} onChange={(event) => setRelationshipForm((current) => ({ ...current, target_person_id: event.target.value }))} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100">
+                      <option value="">{relationshipTargetLoading ? t('Searching...') : t('Choose related entity...')}</option>
+                      {relationshipTargetChoices(entity, entityOptions, relationshipTargetOptions).map((item) => <option key={item.person_id} value={item.person_id}>{item.canonical_name || item.person_id}</option>)}
+                    </select>
+                    <button type="button" onClick={addRelationship} disabled={!relationshipForm.relationship_label.trim() || !relationshipForm.target_person_id || state.actionId === 'relationship'} className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60">
+                      <Check size={15} aria-hidden="true" />
+                      {t('Save')}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -168,56 +535,45 @@ export default function EntityDetailPage() {
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Human Alias Decisions')}</h3>
-              <div className="mt-3 space-y-2">
-                {(entity.alias_confirmations || []).map((decision) => (
-                  <div key={decision.confirmation_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-gray-950 dark:text-white">{decision.alias}</span>
-                      <StatusBadge status={decision.decision === 'confirm' ? 'succeeded' : decision.decision === 'reject' ? 'failed' : 'degraded'} label={humanizeKey(decision.decision)} />
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      {t('by {name} on {date}', { name: decision.reviewer_display_name || decision.reviewer_email || decision.reviewer_user_id || t('unknown'), date: formatDateTime(decision.created_at) })}
-                    </div>
-                    {decision.reviewer_note ? <div className="mt-2 text-gray-700 dark:text-gray-300">{decision.reviewer_note}</div> : null}
-                  </div>
-                ))}
-                {!(entity.alias_confirmations || []).length ? <p className="text-sm text-gray-600 dark:text-gray-400">{t('No human alias decisions recorded yet.')}</p> : null}
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Contact Points')}</h3>
+                <button type="button" onClick={() => setContactAddOpen((current) => !current)} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800">
+                  <Plus size={14} aria-hidden="true" />
+                  {t('Add')}
+                </button>
               </div>
-            </section>
-
-            <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Contact Points')}</h3>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Phone numbers and emails linked from contact sync and communication address matching.')}</p>
-              <div className="mt-3 space-y-2">
-                {(entity.contact_links || []).map((link) => (
-                  <div key={link.contact_entity_link_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="break-all font-semibold text-gray-950 dark:text-white">{contactPointLabel(link)}</div>
-                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{link.contact_display_name || t('Unnamed contact')}</div>
-                      </div>
-                      <StatusBadge status={contactLinkBadgeStatus(link.link_status)} label={humanizeKey(link.link_status)} />
-                    </div>
-                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                      {t('confidence')} {confidenceLabel(link.confidence)}; {t('{count} communication address match(es)', { count: link.matched_address_count || 0 })}
-                    </div>
+              {contactAddOpen ? (
+                <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
+                  <div className="grid gap-2">
+                    <select value={contactPointForm.contact_type} onChange={(event) => setContactPointForm((current) => ({ ...current, contact_type: event.target.value }))} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100">
+                      <option value="phone">{t('Phone')}</option>
+                      <option value="email">{t('Email')}</option>
+                      <option value="address">{t('Address')}</option>
+                    </select>
+                    <input value={contactPointForm.contact_value} onChange={(event) => setContactPointForm((current) => ({ ...current, contact_value: event.target.value }))} placeholder={t('Contact value')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
+                    <input value={contactPointForm.label} onChange={(event) => setContactPointForm((current) => ({ ...current, label: event.target.value }))} placeholder={t('Optional label')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
+                    <button type="button" onClick={addContactPoint} disabled={!contactPointForm.contact_value.trim() || state.actionId === 'contact_point'} className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60">
+                      <Check size={15} aria-hidden="true" />
+                      {t('Save')}
+                    </button>
                   </div>
-                ))}
-                {!(entity.contact_links || []).length ? <p className="text-sm text-gray-600 dark:text-gray-400">{t('No contact points are linked yet.')}</p> : null}
+                </div>
+              ) : null}
+              <div className="mt-3 space-y-3">
+                {(() => {
+                  const groups = contactPointGroups(entity);
+                  return (
+                    <>
+                      {renderContactGroup('Phone', groups.phone)}
+                      {renderContactGroup('Email', groups.email)}
+                      {renderContactGroup('Address', groups.address)}
+                    </>
+                  );
+                })()}
               </div>
             </section>
 
-            <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Roles')}</h3>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(entity.roles || []).map((role) => (
-                  <span key={role.role_name} className="rounded-md bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-200">
-                    {role.role_name}: {role.occurrence_count}
-                  </span>
-                ))}
-              </div>
-            </section>
           </aside>
         </div>
       ) : !state.loading ? (
