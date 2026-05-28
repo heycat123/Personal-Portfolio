@@ -15,8 +15,17 @@ const COMMON_RELATIONSHIPS = [
   'maternal grandmother',
   'paternal grandmother',
   'grandmother',
+  'maternal grandfather',
+  'paternal grandfather',
+  'grandfather',
+  'grandparent',
   'mother',
   'father',
+  'parent',
+  'son',
+  'daughter',
+  'child',
+  'grandchild',
   'brother',
   'sister',
   'aunt',
@@ -58,6 +67,11 @@ function promotionBadgeStatus(status) {
   if (status === 'suppressed') return 'failed';
   if (status === 'topic_only') return 'degraded';
   return 'configured';
+}
+
+function isInferredRelationship(relationship) {
+  const sourceJson = relationship?.source_json || {};
+  return sourceJson.inferred === true || sourceJson.source === 'relationship_inference';
 }
 
 function contactPointLabel(link) {
@@ -342,24 +356,33 @@ export default function EntityDetailPage() {
       key: `role:${role.role_name}`,
       label: role.role_name,
       detail: t('{count} confirmed assertion(s)', { count: role.confirmed_count || 0 }),
+      badgeLabel: t('Confirmed'),
+      badgeStatus: 'succeeded',
     }));
-    const relationshipRows = (entity?.relationships || []).map((relationship) => ({
-      key: relationship.relationship_id,
-      label: relationship.source_person_id === entity.person_id
-        ? t('{source} is {relationship} of {target}', {
-          source: relationship.source_canonical_name || entity.canonical_name,
-          relationship: relationship.relationship_label,
-          target: relationship.target_canonical_name || relationship.target_person_id,
-        })
-        : t('{source} is {relationship} of {target}', {
-          source: relationship.source_canonical_name || relationship.source_person_id,
-          relationship: relationship.relationship_label,
-          target: relationship.target_canonical_name || entity.canonical_name,
-        }),
-      detail: relationship.reviewer_display_name || relationship.reviewer_email
-        ? t('reviewed by {name}', { name: relationship.reviewer_display_name || relationship.reviewer_email })
-        : t('User-confirmed relationship'),
-    }));
+    const relationshipRows = (entity?.relationships || []).map((relationship) => {
+      const inferred = isInferredRelationship(relationship);
+      return {
+        key: relationship.relationship_id,
+        label: relationship.source_person_id === entity.person_id
+          ? t('{source} is {relationship} of {target}', {
+            source: relationship.source_canonical_name || entity.canonical_name,
+            relationship: relationship.relationship_label,
+            target: relationship.target_canonical_name || relationship.target_person_id,
+          })
+          : t('{source} is {relationship} of {target}', {
+            source: relationship.source_canonical_name || relationship.source_person_id,
+            relationship: relationship.relationship_label,
+            target: relationship.target_canonical_name || entity.canonical_name,
+          }),
+        detail: inferred
+          ? t('System-inferred from confirmed relationship(s); review if important.')
+          : (relationship.reviewer_display_name || relationship.reviewer_email
+            ? t('reviewed by {name}', { name: relationship.reviewer_display_name || relationship.reviewer_email })
+            : t('User-confirmed relationship')),
+        badgeLabel: inferred ? t('Inferred') : t('Confirmed'),
+        badgeStatus: inferred ? 'configured' : 'succeeded',
+      };
+    });
     const rows = [...relationshipRows, ...roleRows];
     if (!rows.length) {
       return <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{t('No confirmed relationships yet.')}</p>;
@@ -368,7 +391,7 @@ export default function EntityDetailPage() {
       <div key={row.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="break-words font-semibold text-emerald-950 dark:text-emerald-100">{row.label}</span>
-          <StatusBadge status="succeeded" label={t('Confirmed')} />
+          <StatusBadge status={row.badgeStatus} label={row.badgeLabel} />
         </div>
         <div className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">{row.detail}</div>
       </div>

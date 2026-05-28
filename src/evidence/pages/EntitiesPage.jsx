@@ -183,8 +183,14 @@ const COMMON_RELATIONSHIPS = [
   'grandmother',
   'maternal grandfather',
   'paternal grandfather',
+  'grandparent',
   'mother',
   'father',
+  'parent',
+  'son',
+  'daughter',
+  'child',
+  'grandchild',
   'brother',
   'sister',
   'aunt',
@@ -344,6 +350,45 @@ function contactDisplayLabel(link) {
 
 function contactPlatformLabel(link) {
   return contactCommunicationPlatforms(link).map((platform) => humanizeKey(platform)).join(', ');
+}
+
+function isInferredRelationship(relationship) {
+  const sourceJson = relationship?.source_json || {};
+  return sourceJson.inferred === true || sourceJson.source === 'relationship_inference';
+}
+
+function entityNameCopy(entityType) {
+  const type = String(entityType || 'PERSON').toUpperCase();
+  if (type === 'ORGANIZATION') {
+    return {
+      label: 'Organization name',
+      placeholder: 'Example: Indian River County Courthouse',
+      helpTitle: 'Organization name',
+      helpText: 'The real organization, business, school, court, agency, or firm name.',
+    };
+  }
+  if (type === 'LOCATION' || type === 'ADDRESS') {
+    return {
+      label: 'Location name',
+      placeholder: 'Example: Tiffany apartment in Sao Paulo',
+      helpTitle: 'Location name',
+      helpText: 'The real place or address label. Addresses can also be added later as contact points.',
+    };
+  }
+  if (type === 'OTHER') {
+    return {
+      label: 'Entity name',
+      placeholder: 'Example: Parenting plan',
+      helpTitle: 'Entity name',
+      helpText: 'The real noun or concept name when it is important enough to track directly.',
+    };
+  }
+  return {
+    label: 'Person name',
+    placeholder: 'Example: Leda Forseen',
+    helpTitle: 'Person name',
+    helpText: 'The real person name. Use a specific name, not relationship-only words like mom or grandma.',
+  };
 }
 
 function getColumnFilterValue(columnFilters, id) {
@@ -1773,24 +1818,33 @@ export default function EntitiesPage() {
       key: `role:${role.role_name}`,
       label: role.role_name,
       detail: t('{count} confirmed assertion(s)', { count: role.confirmed_count || 0 }),
+      badgeLabel: t('Confirmed'),
+      badgeStatus: 'succeeded',
     }));
-    const relationshipRows = (detailEntity?.relationships || []).map((relationship) => ({
-      key: relationship.relationship_id,
-      label: relationship.source_person_id === detailEntity.person_id
-        ? t('{source} is {relationship} of {target}', {
-          source: relationship.source_canonical_name || detailEntity.canonical_name,
-          relationship: relationship.relationship_label,
-          target: relationship.target_canonical_name || relationship.target_person_id,
-        })
-        : t('{source} is {relationship} of {target}', {
-          source: relationship.source_canonical_name || relationship.source_person_id,
-          relationship: relationship.relationship_label,
-          target: relationship.target_canonical_name || detailEntity.canonical_name,
-        }),
-      detail: relationship.reviewer_display_name || relationship.reviewer_email
-        ? t('reviewed by {name}', { name: relationship.reviewer_display_name || relationship.reviewer_email })
-        : t('User-confirmed relationship'),
-    }));
+    const relationshipRows = (detailEntity?.relationships || []).map((relationship) => {
+      const inferred = isInferredRelationship(relationship);
+      return {
+        key: relationship.relationship_id,
+        label: relationship.source_person_id === detailEntity.person_id
+          ? t('{source} is {relationship} of {target}', {
+            source: relationship.source_canonical_name || detailEntity.canonical_name,
+            relationship: relationship.relationship_label,
+            target: relationship.target_canonical_name || relationship.target_person_id,
+          })
+          : t('{source} is {relationship} of {target}', {
+            source: relationship.source_canonical_name || relationship.source_person_id,
+            relationship: relationship.relationship_label,
+            target: relationship.target_canonical_name || detailEntity.canonical_name,
+          }),
+        detail: inferred
+          ? t('System-inferred from confirmed relationship(s); review if important.')
+          : (relationship.reviewer_display_name || relationship.reviewer_email
+            ? t('reviewed by {name}', { name: relationship.reviewer_display_name || relationship.reviewer_email })
+            : t('User-confirmed relationship')),
+        badgeLabel: inferred ? t('Inferred') : t('Confirmed'),
+        badgeStatus: inferred ? 'configured' : 'succeeded',
+      };
+    });
     const rows = [...relationshipRows, ...roleRows];
     if (!rows.length) {
       return (
@@ -1803,7 +1857,7 @@ export default function EntitiesPage() {
       <div key={row.key} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="break-words font-semibold text-emerald-950 dark:text-emerald-100">{row.label}</span>
-          <StatusBadge status="succeeded" label={t('Confirmed')} />
+          <StatusBadge status={row.badgeStatus} label={row.badgeLabel} />
         </div>
         <div className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">{row.detail}</div>
       </div>
@@ -1859,6 +1913,11 @@ export default function EntitiesPage() {
     const counts = new Map((state.contactStatusCounts || []).map((item) => [item.link_status, item.count]));
     return CONTACT_STATUS_OPTIONS.map((option) => ({ ...option, count: counts.get(option.value) || 0 }));
   }, [state.contactStatusCounts]);
+
+  const createEntityNameCopy = useMemo(
+    () => entityNameCopy(createEntityForm.entity_type),
+    [createEntityForm.entity_type],
+  );
 
   const contactAppliedFilters = useMemo(() => normalizedContactFilters.map((filter) => {
     if (filter.id === 'link_status') {
@@ -2548,10 +2607,14 @@ export default function EntitiesPage() {
 
       {createEntityOpen ? (
         <section className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
-          <div className="mb-4 grid gap-3 text-sm text-gray-700 dark:text-gray-300 lg:grid-cols-4">
+          <div className="mb-4 grid gap-3 text-sm text-gray-700 dark:text-gray-300 lg:grid-cols-3">
             <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-              <div className="font-semibold text-gray-950 dark:text-white">{t('Canonical name')}</div>
-              <p className="mt-1">{t('The real person, place, or organization name. Example: Leda Forseen.')}</p>
+              <div className="font-semibold text-gray-950 dark:text-white">{t('Type')}</div>
+              <p className="mt-1">{t('Choose what you are adding first so the form asks for the right kind of name.')}</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
+              <div className="font-semibold text-gray-950 dark:text-white">{t(createEntityNameCopy.helpTitle)}</div>
+              <p className="mt-1">{t(createEntityNameCopy.helpText)}</p>
             </div>
             <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
               <div className="font-semibold text-gray-950 dark:text-white">{t('Aliases')}</div>
@@ -2561,30 +2624,8 @@ export default function EntitiesPage() {
               <div className="font-semibold text-gray-950 dark:text-white">{t('Relationship')}</div>
               <p className="mt-1">{t('How this entity relates to another entity. Example: Leda Forseen is mother of Forest Lee.')}</p>
             </div>
-            <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-              <div className="font-semibold text-gray-950 dark:text-white">{t('Role notes')}</div>
-              <p className="mt-1">{t('Optional descriptive facts, such as lease tenant or therapist. These are not identity aliases.')}</p>
-            </div>
           </div>
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_180px]">
-            <label className="min-w-0 flex-1">
-              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Canonical name')}</span>
-              <input
-                value={createEntityForm.canonical_name}
-                onChange={(event) => setCreateEntityForm((current) => ({ ...current, canonical_name: event.target.value }))}
-                placeholder={t('Example: Leda Forseen')}
-                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              />
-            </label>
-            <label className="min-w-0 flex-1">
-              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Aliases')}</span>
-              <input
-                value={createEntityForm.aliases}
-                onChange={(event) => setCreateEntityForm((current) => ({ ...current, aliases: event.target.value }))}
-                placeholder={t('Specific aliases only, e.g. Leda Mae')}
-                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              />
-            </label>
+          <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
             <label className="min-w-0">
               <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Type')}</span>
               <select
@@ -2597,6 +2638,24 @@ export default function EntitiesPage() {
                 <option value="LOCATION">{t('Location')}</option>
                 <option value="OTHER">{t('Other')}</option>
               </select>
+            </label>
+            <label className="min-w-0 flex-1">
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(createEntityNameCopy.label)}</span>
+              <input
+                value={createEntityForm.canonical_name}
+                onChange={(event) => setCreateEntityForm((current) => ({ ...current, canonical_name: event.target.value }))}
+                placeholder={t(createEntityNameCopy.placeholder)}
+                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
+            </label>
+            <label className="min-w-0 flex-1">
+              <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Aliases')}</span>
+              <input
+                value={createEntityForm.aliases}
+                onChange={(event) => setCreateEntityForm((current) => ({ ...current, aliases: event.target.value }))}
+                placeholder={t('Specific aliases only, e.g. Leda Mae')}
+                className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              />
             </label>
           </div>
           {vagueKinshipAliases(parseCommaList(createEntityForm.aliases)).length ? (
@@ -2654,6 +2713,9 @@ export default function EntitiesPage() {
                 {createEntityForm.canonical_name.trim()} {t('is')} {createEntityForm.relationship_label.trim()} {t('of')} {
                   relationshipTargetChoices(null, state.entities, relationshipTargetOptions).find((item) => item.person_id === createEntityForm.relationship_target_person_id)?.canonical_name || createEntityForm.relationship_target_person_id
                 }.
+                <div className="mt-1 text-xs">
+                  {t('When safe, the system will also add inferred family relationships, such as grandparent links from existing parent and child links. Inferred relationships are marked separately.')}
+                </div>
               </div>
             ) : null}
           </div>
