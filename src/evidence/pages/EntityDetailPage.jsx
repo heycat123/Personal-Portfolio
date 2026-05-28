@@ -611,7 +611,7 @@ export default function EntityDetailPage() {
                   <div className="grid gap-2 lg:grid-cols-2">
                     <input list="entity-detail-relationship-suggestions" value={relationshipForm.relationship_label} onChange={(event) => setRelationshipForm((current) => ({ ...current, relationship_label: event.target.value }))} placeholder={t('Example: maternal grandmother')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
                     <EntityTargetTypeahead
-                      label={t('Target entity')}
+                      label={t('Related entity')}
                       placeholder={t('Search target, e.g. Forest Lee')}
                       value={relationshipForm.target_person_id}
                       search={relationshipForm.target_search}

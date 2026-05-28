@@ -263,21 +263,28 @@ function EntityTargetTypeahead({
   loading,
   onSearchChange,
   onSelect,
+  tone = 'default',
   t,
 }) {
   const selected = selectedRelationshipTarget(value, baseEntities, options);
   const matches = relationshipTargetMatches(currentEntity, baseEntities, options, search);
   const showMatches = Boolean(String(search || '').trim()) && !value;
+  const labelClass = tone === 'sky'
+    ? 'text-xs font-semibold uppercase tracking-normal text-sky-900 dark:text-sky-100'
+    : 'text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400';
+  const inputClass = tone === 'sky'
+    ? 'mt-1 w-full rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100'
+    : 'mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100';
   return (
     <div className="min-w-0">
       <label className="block">
-        <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</span>
+        <span className={labelClass}>{label}</span>
         <input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder={placeholder}
           autoComplete="off"
-          className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+          className={inputClass}
         />
       </label>
       {selected ? (
@@ -2441,7 +2448,7 @@ export default function EntitiesPage() {
                   </datalist>
                 </label>
                 <EntityTargetTypeahead
-                  label={t('Target entity')}
+                  label={t('Related entity')}
                   placeholder={t('Search target, e.g. Forest Lee')}
                   value={relationshipForm.target_person_id}
                   search={relationshipForm.target_search}
@@ -2451,6 +2458,7 @@ export default function EntitiesPage() {
                   loading={relationshipTargetLoading}
                   onSearchChange={(nextSearch) => setRelationshipForm((current) => ({ ...current, target_search: nextSearch, target_person_id: '' }))}
                   onSelect={(personId, label) => setRelationshipForm((current) => ({ ...current, target_person_id: personId, target_search: label }))}
+                  tone="sky"
                   t={t}
                 />
               </div>
