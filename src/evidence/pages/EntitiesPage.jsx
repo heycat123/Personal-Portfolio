@@ -129,11 +129,16 @@ function InfoTip({ label }) {
 }
 
 function latestAliasDecision(confirmations, alias) {
-  const normalized = alias?.normalized_alias;
-  if (!normalized) {
+  const normalized = String(alias?.normalized_alias || alias?.alias || '').toLowerCase();
+  const aliasId = alias?.alias_id || '';
+  if (!normalized && !aliasId) {
     return null;
   }
-  return confirmations.find((item) => item.normalized_alias === normalized) || null;
+  return confirmations.find((item) => {
+    const itemAliasId = item.alias_id || '';
+    const itemNormalized = String(item.normalized_alias || item.alias || '').toLowerCase();
+    return (aliasId && itemAliasId === aliasId) || (normalized && itemNormalized === normalized);
+  }) || null;
 }
 
 function decisionStatus(decision) {
@@ -631,6 +636,14 @@ export default function EntitiesPage() {
         { token },
       );
       recordFingerprint(result, 'Review entity alias');
+      const refreshedEntity = result.data?.entity || null;
+      if (refreshedEntity) {
+        setState((current) => ({
+          ...current,
+          entity: current.entity?.person_id === refreshedEntity.person_id ? refreshedEntity : current.entity,
+        }));
+        setRowDetails((current) => ({ ...current, [refreshedEntity.person_id]: refreshedEntity }));
+      }
       setState((current) => ({
         ...current,
         actionId: null,
@@ -1018,8 +1031,6 @@ export default function EntitiesPage() {
   }, [caseId, getAccessToken, loadContactLinks, loadEntityDetail, recordFingerprint, selectedContactIds, selectedContactLinks, selectedPersonId]);
 
   const entity = state.entity;
-  const confirmations = useMemo(() => entity?.alias_confirmations || [], [entity]);
-  const confirmedAliases = useMemo(() => confirmations.filter((item) => item.decision === 'confirm'), [confirmations]);
   const activeEntityFilter = getColumnFilterValue(normalizedFilters, 'canonical_name');
   const appliedFilterLabels = normalizedFilters.map((filter) => ({
     id: filter.id,
@@ -1041,6 +1052,8 @@ export default function EntitiesPage() {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
     return (detailEntity?.aliases || []).slice(0, compact ? 12 : 40).map((alias) => {
       const decision = latestAliasDecision(detailConfirmations, alias);
+      const isConfirmed = decision?.decision === 'confirm';
+      const isRejected = decision?.decision === 'reject';
       const targetKey = `${detailEntity.person_id}:${alias.normalized_alias || alias.alias}`;
       const actionBase = `${detailEntity.person_id}_${alias.normalized_alias || alias.alias}`;
       return (
@@ -1066,21 +1079,29 @@ export default function EntitiesPage() {
               type="button"
               title={t('Confirm alias "{alias}" should resolve to {name}.', { alias: alias.alias, name: detailEntity.canonical_name })}
               onClick={() => reviewAlias(detailEntity, alias, 'confirm')}
-              disabled={state.actionId === `${actionBase}_confirm`}
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+              disabled={isConfirmed || state.actionId === `${actionBase}_confirm`}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:opacity-70 ${
+                isConfirmed
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
+                  : 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800'
+              }`}
             >
               <Check size={13} aria-hidden="true" />
-              {t('Confirm here')}
+              {isConfirmed ? t('Confirmed') : t('Confirm here')}
             </button>
             <button
               type="button"
               title={t('Reject alias "{alias}" for {name}.', { alias: alias.alias, name: detailEntity.canonical_name })}
               onClick={() => reviewAlias(detailEntity, alias, 'reject')}
-              disabled={state.actionId === `${actionBase}_reject`}
-              className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+              disabled={isRejected || state.actionId === `${actionBase}_reject`}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold disabled:opacity-70 ${
+                isRejected
+                  ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'
+                  : 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40'
+              }`}
             >
               <X size={13} aria-hidden="true" />
-              {t('Reject here')}
+              {isRejected ? t('Rejected') : t('Reject here')}
             </button>
             <select
               value={reassignTargets[targetKey] || ''}
@@ -1378,7 +1399,7 @@ export default function EntitiesPage() {
             </div>
             <div>
               <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Confirmed')} <InfoTip label={t('Human alias confirmations for this entity. The confirmation record includes who confirmed it.')} /></div>
-              <div className="text-gray-950 dark:text-white">{confirmedAliases.length}</div>
+              <div className="text-gray-950 dark:text-white">{(detailEntity.alias_confirmations || []).filter((item) => item.decision === 'confirm').length}</div>
             </div>
           </div>
         ) : null}
