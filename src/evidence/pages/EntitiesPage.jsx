@@ -806,6 +806,37 @@ export default function EntitiesPage() {
     }
   }, [caseId, getAccessToken, loadSuggestions, mergeNote, recordFingerprint]);
 
+  const selectedContactIds = useMemo(
+    () => Object.entries(contactSelection).filter(([, selected]) => selected).map(([id]) => id),
+    [contactSelection],
+  );
+
+  const selectedContactLinks = useMemo(() => {
+    const selected = new Set(selectedContactIds);
+    return state.contactLinks.filter((link) => selected.has(link.contact_entity_link_id));
+  }, [selectedContactIds, state.contactLinks]);
+
+  const toggleContactSelection = useCallback((contactEntityLinkId) => {
+    setContactSelection((current) => ({
+      ...current,
+      [contactEntityLinkId]: !current[contactEntityLinkId],
+    }));
+  }, []);
+
+  const selectVisibleContactLinks = useCallback(() => {
+    setContactSelection((current) => {
+      const next = { ...current };
+      state.contactLinks.forEach((link) => {
+        if (link.contact_entity_link_id) {
+          next[link.contact_entity_link_id] = true;
+        }
+      });
+      return next;
+    });
+  }, [state.contactLinks]);
+
+  const clearContactSelection = useCallback(() => setContactSelection({}), []);
+
   const reviewContactLink = useCallback(async (link, decision) => {
     if (!link?.contact_entity_link_id) {
       return;
@@ -1018,37 +1049,6 @@ export default function EntitiesPage() {
     }
     return { id: filter.id, label: `${t('Contact contains')}: ${filter.value}` };
   }), [normalizedContactFilters, t]);
-
-  const selectedContactIds = useMemo(
-    () => Object.entries(contactSelection).filter(([, selected]) => selected).map(([id]) => id),
-    [contactSelection],
-  );
-
-  const selectedContactLinks = useMemo(() => {
-    const selected = new Set(selectedContactIds);
-    return state.contactLinks.filter((link) => selected.has(link.contact_entity_link_id));
-  }, [selectedContactIds, state.contactLinks]);
-
-  const toggleContactSelection = useCallback((contactEntityLinkId) => {
-    setContactSelection((current) => ({
-      ...current,
-      [contactEntityLinkId]: !current[contactEntityLinkId],
-    }));
-  }, []);
-
-  const selectVisibleContactLinks = useCallback(() => {
-    setContactSelection((current) => {
-      const next = { ...current };
-      state.contactLinks.forEach((link) => {
-        if (link.contact_entity_link_id) {
-          next[link.contact_entity_link_id] = true;
-        }
-      });
-      return next;
-    });
-  }, [state.contactLinks]);
-
-  const clearContactSelection = useCallback(() => setContactSelection({}), []);
 
   const renderContactActions = useCallback((link) => {
     const selectedTarget = contactTargets[link.contact_entity_link_id] || link.person_id || '';
