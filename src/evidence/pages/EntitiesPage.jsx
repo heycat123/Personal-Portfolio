@@ -153,6 +153,49 @@ function contactPointLabel(link) {
   return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
 
+function asTextArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+  const text = String(value || '').trim();
+  return text ? [text] : [];
+}
+
+function evidenceMatchedAddresses(link) {
+  const evidence = link?.evidence_json || {};
+  return Array.isArray(evidence.matched_addresses) ? evidence.matched_addresses : [];
+}
+
+function contactCommunicationNames(link) {
+  const names = asTextArray(link?.communication_display_names);
+  evidenceMatchedAddresses(link).forEach((address) => {
+    const name = String(address?.display_name || '').trim();
+    if (name) {
+      names.push(name);
+    }
+  });
+  return [...new Set(names)];
+}
+
+function contactCommunicationPlatforms(link) {
+  const platforms = asTextArray(link?.communication_platforms);
+  evidenceMatchedAddresses(link).forEach((address) => {
+    const platform = String(address?.platform || '').trim();
+    if (platform) {
+      platforms.push(platform);
+    }
+  });
+  return [...new Set(platforms)];
+}
+
+function contactDisplayLabel(link) {
+  return String(link?.contact_display_name || '').trim() || contactCommunicationNames(link)[0] || '';
+}
+
+function contactPlatformLabel(link) {
+  return contactCommunicationPlatforms(link).map((platform) => humanizeKey(platform)).join(', ');
+}
+
 function getColumnFilterValue(columnFilters, id) {
   const match = columnFilters.find((filter) => filter.id === id);
   if (match?.value === undefined || match?.value === null) {
@@ -736,6 +779,13 @@ export default function EntitiesPage() {
   const contactContextData = state.contactContext || {};
   const contactContextLink = contactContextData.link || null;
   const contactContextSummary = contactContextData.summary || {};
+  const contactContextDisplayLabel = contactDisplayLabel(contactContextLink)
+    || (contactContextData.communication_addresses || []).map((address) => String(address.display_name || '').trim()).find(Boolean)
+    || '';
+  const contactContextPlatformLabel = contactPlatformLabel(contactContextLink)
+    || [...new Set((contactContextData.communication_addresses || []).map((address) => String(address.platform || '').trim()).filter(Boolean))]
+      .map((platform) => humanizeKey(platform))
+      .join(', ');
 
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
@@ -904,8 +954,11 @@ export default function EntitiesPage() {
       className: 'min-w-[240px]',
       render: (link) => (
         <div className="min-w-0">
-          <div className="break-words font-semibold text-gray-950 dark:text-white">{link.contact_display_name || t('Unnamed contact')}</div>
+          <div className="break-words font-semibold text-gray-950 dark:text-white">{contactDisplayLabel(link) || t('Unnamed contact')}</div>
           <div className="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">{contactPointLabel(link)}</div>
+          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {contactPlatformLabel(link) ? `${contactPlatformLabel(link)} ${t('communication')}` : t('No communication platform matched')}
+          </div>
           <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{link.external_account_email || t('source account hidden')}</div>
         </div>
       ),
@@ -949,11 +1002,16 @@ export default function EntitiesPage() {
       header: t('Evidence'),
       help: t('Why this contact point was linked or marked for review.'),
       render: (link) => (
-        <div className="text-sm">
-          <div className="text-gray-700 dark:text-gray-300">{link.reason || t('No reason recorded.')}</div>
-          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('{count} communication address match(es)', { count: link.matched_address_count || 0 })}</div>
-        </div>
-      ),
+          <div className="text-sm">
+            <div className="text-gray-700 dark:text-gray-300">{link.reason || t('No reason recorded.')}</div>
+            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('{count} communication address match(es)', { count: link.matched_address_count || 0 })}</div>
+            {contactCommunicationNames(link).length ? (
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {t('Communication name')}: {contactCommunicationNames(link).join(', ')}
+              </div>
+            ) : null}
+          </div>
+        ),
     },
     {
       id: 'actions',
@@ -1064,7 +1122,9 @@ export default function EntitiesPage() {
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="break-words font-semibold text-gray-950 dark:text-white">{contactPointLabel(link)}</div>
-                      <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{link.contact_display_name || t('Unnamed contact')} - {link.external_account_email || t('source account hidden')}</div>
+                      <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
+                        {contactDisplayLabel(link) || t('Unnamed contact')} - {contactPlatformLabel(link) || t('platform unknown')} - {link.external_account_email || t('source account hidden')}
+                      </div>
                     </div>
                     <StatusBadge status={contactLinkBadgeStatus(link.link_status)} label={humanizeKey(link.link_status)} />
                   </div>
@@ -1203,7 +1263,7 @@ export default function EntitiesPage() {
             onFilterChange={setContactFilterValue}
             onClearFilter={clearContactFilter}
             onClearAllFilters={resetContactTable}
-            mobileTitle={(item) => item.contact_display_name || t('Unnamed contact')}
+            mobileTitle={(item) => contactDisplayLabel(item) || t('Unnamed contact')}
             mobileSubtitle={(item) => contactPointLabel(item)}
             mobileMetrics={(item) => contactColumns.filter((column) => !['contact', 'actions'].includes(column.id)).map((column) => ({
               ...column,
@@ -1365,7 +1425,7 @@ export default function EntitiesPage() {
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-gray-950 dark:text-white">{t('Communication Context')}</div>
                 <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
-                  {contactContextLink?.contact_display_name || t('Unnamed contact')} - {contactContextLink ? contactPointLabel(contactContextLink) : t('No contact point selected')}
+                  {contactContextDisplayLabel || t('Unnamed contact')} - {contactContextPlatformLabel || t('platform unknown')} - {contactContextLink ? contactPointLabel(contactContextLink) : t('No contact point selected')}
                 </div>
               </div>
               <button
