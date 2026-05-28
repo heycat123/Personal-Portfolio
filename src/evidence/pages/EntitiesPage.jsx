@@ -240,6 +240,7 @@ export default function EntitiesPage() {
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [rowDetails, setRowDetails] = useState({});
+  const [canonicalNameDraft, setCanonicalNameDraft] = useState('');
   const [customAlias, setCustomAlias] = useState('');
   const [customRole, setCustomRole] = useState('');
   const [mergeNote, setMergeNote] = useState('');
@@ -504,6 +505,10 @@ export default function EntitiesPage() {
     return () => window.clearTimeout(timerId);
   }, [loadEntityDetail, selectedPersonId]);
 
+  useEffect(() => {
+    setCanonicalNameDraft(state.entity?.canonical_name || '');
+  }, [state.entity?.canonical_name, state.entity?.person_id]);
+
   const refreshEntityWorkspace = useCallback(async () => {
     await loadEntities();
     await loadSuggestions();
@@ -723,6 +728,40 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
   }, [caseId, customAlias, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
+
+  const updateCanonicalName = useCallback(async () => {
+    const entity = state.entity;
+    const canonicalName = canonicalNameDraft.trim();
+    if (!entity || !canonicalName || canonicalName === entity.canonical_name) {
+      return;
+    }
+    setState((current) => ({ ...current, actionId: 'canonical_name', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateEntity(
+        caseId,
+        entity.person_id,
+        {
+          canonical_name: canonicalName,
+          reviewer_note: `Corrected canonical entity name from "${entity.canonical_name}" to "${canonicalName}".`,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Update entity canonical name');
+      setState((current) => ({
+        ...current,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await loadEntityDetail(entity.person_id);
+      await loadEntities();
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [canonicalNameDraft, caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
   const addConfirmedRole = useCallback(async () => {
     const entity = state.entity;
@@ -1353,6 +1392,25 @@ export default function EntitiesPage() {
 
       {detailEntity ? (
         <>
+          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
+              {t('Correct Canonical Name')}
+              <InfoTip label={t('Use this when the extracted entity is the right person, but the displayed full name is incomplete or misspelled. The old name is kept as a confirmed alias.')} />
+            </h3>
+            <div className="mt-3 flex gap-2">
+              <input value={canonicalNameDraft} onChange={(event) => setCanonicalNameDraft(event.target.value)} placeholder={t('Example: Cheryl Diane McClenney')} className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100" />
+              <button
+                type="button"
+                onClick={updateCanonicalName}
+                disabled={!canonicalNameDraft.trim() || canonicalNameDraft.trim() === detailEntity.canonical_name || state.actionId === 'canonical_name'}
+                className="inline-flex items-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
+              >
+                <Check size={15} aria-hidden="true" />
+                {t('Save')}
+              </button>
+            </div>
+          </section>
+
           <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <h3 className="flex items-center gap-1 text-base font-semibold text-gray-950 dark:text-white">
               {t('Add Confirmed Alias')}
