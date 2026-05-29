@@ -379,6 +379,14 @@ function promotionBadgeStatus(status) {
   return 'configured';
 }
 
+function entityReviewStatus(entity) {
+  return entity?.effective_review_status || entity?.review_status || 'candidate';
+}
+
+function entityPromotionState(entity) {
+  return entity?.effective_promotion_state || entity?.promotion_state || 'candidate';
+}
+
 function contactPointLabel(link) {
   return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
@@ -2154,6 +2162,31 @@ export default function EntitiesPage() {
       .map((platform) => humanizeKey(platform))
       .join(', ');
 
+  const renderReviewActionButtons = (detailEntity) => {
+    const currentStatus = entityReviewStatus(detailEntity);
+    return (
+      <div className="flex flex-wrap gap-2">
+        {[
+          ['confirmed', 'Confirm tracked entity'],
+          ['candidate', 'Mark reviewed'],
+          ['suppressed', 'Suppress'],
+          ['topic_only', 'Topic only'],
+        ].map(([nextStatus, label]) => (
+          <button
+            key={nextStatus}
+            type="button"
+            onClick={() => updateEntityReviewStatus(detailEntity, nextStatus)}
+            disabled={currentStatus === nextStatus || state.actionId === `entity_review_${nextStatus}`}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+          >
+            <Check size={13} aria-hidden="true" />
+            {t(label)}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   const renderAliasRows = (detailEntity, compact = false) => {
     const detailConfirmations = detailEntity?.alias_confirmations || [];
     const canonical = normalizeIdentityText(detailEntity.normalized_name || detailEntity.canonical_name);
@@ -2707,6 +2740,22 @@ export default function EntitiesPage() {
 
   const renderEntityDetailPanel = (detailEntity, { inDrawer = false } = {}) => (
     <aside className={inDrawer ? 'h-full overflow-auto overflow-x-hidden p-3 sm:p-4' : 'space-y-5'}>
+      {detailEntity && inDrawer ? (
+        <section className="sticky top-0 z-10 mb-3 rounded-lg border border-sky-200 bg-white p-3 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1 text-sm font-semibold text-gray-950 dark:text-white">
+                {t('Resolve review')}
+                <InfoTip label={t('These actions are always available so a reviewed entity does not stay in Needs review forever.')} />
+              </div>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                {t('Current state')}: {t(humanizeKey(entityReviewStatus(detailEntity)))} - {t(humanizeKey(entityPromotionState(detailEntity)))}
+              </p>
+            </div>
+            {renderReviewActionButtons(detailEntity)}
+          </div>
+        </section>
+      ) : null}
       <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -2732,8 +2781,8 @@ export default function EntitiesPage() {
           {detailEntity ? (
             <div className="flex flex-wrap justify-end gap-2">
               <StatusBadge status="configured" label={humanizeKey(detailEntity.effective_entity_type || detailEntity.entity_type || 'entity')} />
-              <StatusBadge status={reviewBadgeStatus(detailEntity.review_status)} label={humanizeKey(detailEntity.review_status || 'candidate')} />
-              <StatusBadge status={promotionBadgeStatus(detailEntity.promotion_state)} label={humanizeKey(detailEntity.promotion_state || 'candidate')} />
+              <StatusBadge status={reviewBadgeStatus(entityReviewStatus(detailEntity))} label={humanizeKey(entityReviewStatus(detailEntity))} />
+              <StatusBadge status={promotionBadgeStatus(entityPromotionState(detailEntity))} label={humanizeKey(entityPromotionState(detailEntity))} />
             </div>
           ) : null}
         </div>
@@ -2787,25 +2836,7 @@ export default function EntitiesPage() {
             <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
               {t('Choose what this entity should become in the review queue.')}
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {[
-                ['confirmed', 'Confirm tracked entity'],
-                ['candidate', 'Mark reviewed'],
-                ['suppressed', 'Suppress'],
-                ['topic_only', 'Topic only'],
-              ].map(([nextStatus, label]) => (
-                <button
-                  key={nextStatus}
-                  type="button"
-                  onClick={() => updateEntityReviewStatus(detailEntity, nextStatus)}
-                  disabled={detailEntity.review_status === nextStatus || state.actionId === `entity_review_${nextStatus}`}
-                  className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
-                >
-                  <Check size={13} aria-hidden="true" />
-                  {t(label)}
-                </button>
-              ))}
-            </div>
+            <div className="mt-3">{renderReviewActionButtons(detailEntity)}</div>
           </div>
         ) : null}
         {detailEntity ? (
