@@ -780,6 +780,7 @@ export default function EntitiesPage() {
   const [nameEditOpen, setNameEditOpen] = useState(false);
   const [aliasAddOpen, setAliasAddOpen] = useState(false);
   const [relationshipAddOpen, setRelationshipAddOpen] = useState(false);
+  const [editingRelationship, setEditingRelationship] = useState(null);
   const [contactAddOpen, setContactAddOpen] = useState(false);
   const [relationshipForm, setRelationshipForm] = useState({
     relationship_label: '',
@@ -1139,6 +1140,7 @@ export default function EntitiesPage() {
     setNameEditOpen(false);
     setAliasAddOpen(false);
     setRelationshipAddOpen(false);
+    setEditingRelationship(null);
     setContactAddOpen(false);
   }, [selectedPersonId]);
 
@@ -1429,21 +1431,36 @@ export default function EntitiesPage() {
     try {
       const token = await getAccessToken();
       const targetName = [...relationshipTargetOptions, ...state.entities].find((item) => item.person_id === targetPersonId)?.canonical_name || targetPersonId;
-      const result = await evidenceApi.createEntityRelationship(
-        caseId,
-        entity.person_id,
-        {
-          relationship_label: relationshipLabel,
-          target_person_id: targetPersonId,
-          reviewer_note: `Confirmed relationship: ${entity.canonical_name} is ${relationshipLabel} of ${targetName}.`,
-          confidence: 0.99,
-        },
-        { token },
-      );
-      recordFingerprint(result, 'Add entity relationship');
+      const result = editingRelationship?.relationship_id
+        ? await evidenceApi.updateEntityRelationship(
+          caseId,
+          entity.person_id,
+          editingRelationship.relationship_id,
+          {
+            relationship_label: relationshipLabel,
+            target_person_id: targetPersonId,
+            reviewer_note: `Edited relationship: ${entity.canonical_name} is ${relationshipLabel} of ${targetName}.`,
+            confidence: 0.99,
+          },
+          { token },
+        )
+        : await evidenceApi.createEntityRelationship(
+          caseId,
+          entity.person_id,
+          {
+            relationship_label: relationshipLabel,
+            target_person_id: targetPersonId,
+            reviewer_note: `Confirmed relationship: ${entity.canonical_name} is ${relationshipLabel} of ${targetName}.`,
+            confidence: 0.99,
+          },
+          { token },
+        );
+      recordFingerprint(result, editingRelationship?.relationship_id ? 'Edit entity relationship' : 'Add entity relationship');
       const refreshedEntity = result.data?.entity || null;
       setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
       setRelationshipTargetOptions([]);
+      setEditingRelationship(null);
+      setRelationshipAddOpen(false);
       if (refreshedEntity) {
         setState((current) => ({
           ...current,
@@ -1470,7 +1487,66 @@ export default function EntitiesPage() {
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, relationshipForm.relationship_label, relationshipForm.target_person_id, relationshipTargetOptions, state.entities, state.entity]);
+  }, [caseId, editingRelationship, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, relationshipForm.relationship_label, relationshipForm.target_person_id, relationshipTargetOptions, state.entities, state.entity]);
+
+  const startEditRelationship = useCallback((detailEntity, relationship) => {
+    if (!detailEntity || !relationship) {
+      return;
+    }
+    if (relationship.source_person_id !== detailEntity.person_id) {
+      setState((current) => ({
+        ...current,
+        actionError: new Error('Open the source entity to edit this relationship. You can remove it here if it is wrong.'),
+      }));
+      return;
+    }
+    setEditingRelationship(relationship);
+    setRelationshipForm({
+      relationship_label: relationship.relationship_label || '',
+      target_person_id: relationship.target_person_id || '',
+      target_search: relationship.target_canonical_name || relationship.target_person_id || '',
+    });
+    setRelationshipTargetOptions([]);
+    setRelationshipAddOpen(true);
+  }, []);
+
+  const removeEntityRelationship = useCallback(async (detailEntity, relationship) => {
+    if (!detailEntity || !relationship?.relationship_id) {
+      return;
+    }
+    setState((current) => ({ ...current, actionId: `relationship_${relationship.relationship_id}_remove`, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateEntityRelationship(
+        caseId,
+        detailEntity.person_id,
+        relationship.relationship_id,
+        {
+          status: 'rejected',
+          reviewer_note: `Removed relationship from entity review: ${relationship.relationship_label}.`,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Remove entity relationship');
+      setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
+      setRelationshipTargetOptions([]);
+      setEditingRelationship(null);
+      setRelationshipAddOpen(false);
+      setState((current) => ({
+        ...current,
+        entity: result.data?.entity || current.entity,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await loadEntityDetail(detailEntity.person_id);
+      await loadEntities();
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
 
   const addEntityContactPoint = useCallback(async () => {
     const entity = state.entity;
@@ -2185,6 +2261,9 @@ export default function EntitiesPage() {
             : t('User-confirmed relationship')),
         badgeLabel: inferred ? t('Inferred') : t('Confirmed'),
         badgeStatus: inferred ? 'configured' : 'succeeded',
+        relationship,
+        canEdit: !inferred && relationship.source_person_id === detailEntity.person_id,
+        canRemove: true,
       };
     });
     const rows = [...relationshipRows, ...roleRows];
@@ -2202,6 +2281,31 @@ export default function EntitiesPage() {
           <StatusBadge status={row.badgeStatus} label={row.badgeLabel} />
         </div>
         <div className="mt-1 text-xs text-emerald-800 dark:text-emerald-200">{row.detail}</div>
+        {row.relationship ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {row.canEdit ? (
+              <button
+                type="button"
+                onClick={() => startEditRelationship(detailEntity, row.relationship)}
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 dark:border-emerald-900 dark:bg-[#101820] dark:text-emerald-100 dark:hover:bg-emerald-950/40"
+              >
+                <Pencil size={13} aria-hidden="true" />
+                {t('Edit')}
+              </button>
+            ) : null}
+            {row.canRemove ? (
+              <button
+                type="button"
+                onClick={() => removeEntityRelationship(detailEntity, row.relationship)}
+                disabled={state.actionId === `relationship_${row.relationship.relationship_id}_remove`}
+                className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:bg-[#101820] dark:text-red-300 dark:hover:bg-red-950/40"
+              >
+                <X size={13} aria-hidden="true" />
+                {t('Remove')}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     ));
   };
@@ -2662,7 +2766,11 @@ export default function EntitiesPage() {
               </h3>
               <button
                 type="button"
-                onClick={() => setRelationshipAddOpen((current) => !current)}
+                onClick={() => {
+                  setEditingRelationship(null);
+                  setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
+                  setRelationshipAddOpen((current) => !current);
+                }}
                 className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800"
                 title={t('Add confirmed relationship')}
               >
@@ -2674,7 +2782,9 @@ export default function EntitiesPage() {
             {relationshipAddOpen ? (
               <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 dark:border-sky-900/70 dark:bg-sky-950/30">
                 <p className="text-xs text-sky-800 dark:text-sky-200">
-                  {t('Format: this entity is a relationship of another entity. Example: Maureen is maternal grandmother of Tiffany Curcio.')}
+                  {editingRelationship
+                    ? t('Edit this relationship. Saving will replace the old relationship row and keep the audit trail.')
+                    : t('Format: this entity is a relationship of another entity. Example: Maureen is maternal grandmother of Tiffany Curcio.')}
                 </p>
               <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <label className="min-w-0">
@@ -2713,7 +2823,19 @@ export default function EntitiesPage() {
                   className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:opacity-60"
                 >
                   <Check size={15} aria-hidden="true" />
-                  {t('Add Relationship')}
+                  {editingRelationship ? t('Save Relationship') : t('Add Relationship')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
+                    setRelationshipTargetOptions([]);
+                    setEditingRelationship(null);
+                    setRelationshipAddOpen(false);
+                  }}
+                  className="ml-2 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+                >
+                  {t('Cancel')}
                 </button>
               </div>
             </div>

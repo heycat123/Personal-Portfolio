@@ -329,6 +329,12 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  updateEntityRelationship: (caseId, personId, relationshipId, payload, options) =>
+    request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/relationships/${encodeURIComponent(relationshipId)}`), {
+      ...options,
+      method: 'PATCH',
+      body: payload,
+    }),
   createEntityContactPoint: (caseId, personId, payload, options) =>
     request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/contact-points`), {
       ...options,
