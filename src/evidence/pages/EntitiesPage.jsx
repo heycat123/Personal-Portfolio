@@ -18,6 +18,16 @@ const CONTACT_PAGE_SIZE = 25;
 
 const DEFAULT_SORTING = [{ id: 'review_priority', desc: true }];
 
+const EMPTY_CREATE_ENTITY_FORM = {
+  canonical_name: '',
+  aliases: '',
+  roles: '',
+  entity_type: 'PERSON',
+  relationship_label: '',
+  relationship_target_person_id: '',
+  relationship_target_search: '',
+};
+
 const SORT_PARAM_BY_COLUMN = {
   canonical_name: 'entity',
   entity_type: 'entity_type',
@@ -710,15 +720,7 @@ export default function EntitiesPage() {
   const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
   const [createEntityOpen, setCreateEntityOpen] = useState(false);
   const [createEntityContactLink, setCreateEntityContactLink] = useState(null);
-  const [createEntityForm, setCreateEntityForm] = useState({
-    canonical_name: '',
-    aliases: '',
-    roles: '',
-    entity_type: 'PERSON',
-    relationship_label: '',
-    relationship_target_person_id: '',
-    relationship_target_search: '',
-  });
+  const [createEntityForm, setCreateEntityForm] = useState({ ...EMPTY_CREATE_ENTITY_FORM });
   const [roleResolutionReview, setRoleResolutionReview] = useState(null);
   const [state, setState] = useState({
     loading: true,
@@ -1112,6 +1114,19 @@ export default function EntitiesPage() {
     setContactTargetOptions({});
     setContactTargetLoading({});
     setContactSelection({});
+  }, []);
+
+  const closeCreateEntityDrawer = useCallback(() => {
+    setCreateEntityOpen(false);
+    setCreateEntityContactLink(null);
+  }, []);
+
+  const openBlankCreateEntityDrawer = useCallback(() => {
+    setCreateEntityContactLink(null);
+    setCreateEntityForm({ ...EMPTY_CREATE_ENTITY_FORM });
+    setRelationshipTargetOptions([]);
+    setCreateEntityOpen(true);
+    setState((current) => ({ ...current, actionError: null }));
   }, []);
 
   const handleColumnFiltersChange = useCallback((updater) => {
@@ -1517,15 +1532,7 @@ export default function EntitiesPage() {
           }),
         ));
       }
-      setCreateEntityForm({
-        canonical_name: '',
-        aliases: '',
-        roles: '',
-        entity_type: 'PERSON',
-        relationship_label: '',
-        relationship_target_person_id: '',
-        relationship_target_search: '',
-      });
+      setCreateEntityForm({ ...EMPTY_CREATE_ENTITY_FORM });
       setCreateEntityOpen(false);
       setCreateEntityContactLink(null);
       setState((current) => ({
@@ -1850,9 +1857,6 @@ export default function EntitiesPage() {
         ? null
         : new Error('This contact does not have a usable display name. Enter a person name manually before creating the entity.'),
     }));
-    window.setTimeout(() => {
-      document.getElementById('create-entity-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 0);
   }, []);
 
   const entity = state.entity;
@@ -2676,10 +2680,7 @@ export default function EntitiesPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                setCreateEntityContactLink(null);
-                setCreateEntityOpen((current) => !current);
-              }}
+              onClick={openBlankCreateEntityDrawer}
               className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
             >
               <Plus size={16} aria-hidden="true" />
@@ -2799,8 +2800,36 @@ export default function EntitiesPage() {
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
 
       {createEntityOpen ? (
-        <section id="create-entity-panel" className="mb-5 rounded-lg border border-sky-200 bg-white p-4 shadow-sm dark:border-sky-900/70 dark:bg-[#101820]">
-          <div className="mb-4 grid gap-3 text-sm text-gray-700 dark:text-gray-300 lg:grid-cols-3">
+        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label={t('Close create entity drawer')}
+            onClick={closeCreateEntityDrawer}
+            className="absolute inset-0 bg-black/50"
+          />
+          <aside id="create-entity-panel" className="absolute bottom-0 right-0 top-0 flex w-screen max-w-full flex-col overflow-hidden border-l border-gray-200 bg-gray-50 shadow-2xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-[#101820]">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-950 dark:text-white">
+                  {createEntityContactLink ? t('Create Entity From Contact') : t('New Entity')}
+                </div>
+                <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
+                  {createEntityContactLink
+                    ? `${contactEntityName(createEntityContactLink) || t('Unnamed contact')} - ${contactPointLabel(createEntityContactLink)}`
+                    : t('Add a canonical entity, aliases, and an optional relationship.')}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeCreateEntityDrawer}
+                className="shrink-0 rounded-md border border-gray-300 p-2 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                aria-label={t('Close')}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto overflow-x-hidden p-4 sm:p-5">
+          <div className="mb-4 grid gap-3 text-sm text-gray-700 dark:text-gray-300 sm:grid-cols-2">
             <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
               <div className="font-semibold text-gray-950 dark:text-white">{t('Type')}</div>
               <p className="mt-1">{t('Choose what you are adding first so the form asks for the right kind of name.')}</p>
@@ -2829,7 +2858,7 @@ export default function EntitiesPage() {
               </p>
             </div>
           ) : null}
-          <div className="grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="min-w-0">
               <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Type')}</span>
               <select
@@ -2875,7 +2904,7 @@ export default function EntitiesPage() {
               {t('Optional relationship')}
               <InfoTip label={t('Use this when the new person is someone else’s mom, father, therapist, lawyer, brother, or similar relationship.')} />
             </div>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="min-w-0">
                 <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Relationship type')}</span>
                 <input
@@ -2914,7 +2943,7 @@ export default function EntitiesPage() {
               </div>
             ) : null}
           </div>
-          <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <label className="min-w-0">
               <span className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Role notes')}</span>
               <input
@@ -2936,10 +2965,7 @@ export default function EntitiesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setCreateEntityOpen(false);
-                  setCreateEntityContactLink(null);
-                }}
+                onClick={closeCreateEntityDrawer}
                 className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
               >
                 {t('Cancel')}
@@ -2949,7 +2975,9 @@ export default function EntitiesPage() {
           <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
             {t('Use this when you know a real person or organization belongs in the case but ingestion did not create a clean canonical entity. Specific aliases are recorded as user-confirmed; relationship words are recorded as relationships so they do not collapse onto the wrong person.')}
           </p>
-        </section>
+            </div>
+          </aside>
+        </div>
       ) : null}
 
       <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
