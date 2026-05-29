@@ -1980,20 +1980,28 @@ export default function EntitiesPage() {
     });
   }, [roleResolutionReview, submitManualEntity]);
 
-  const decideMergeSuggestion = useCallback(async (suggestion, decision) => {
+  const decideMergeSuggestion = useCallback(async (suggestion, decision, targetPersonId = null) => {
     const people = suggestion.people || [];
     if (people.length < 2) {
       return;
     }
-    const actionId = `${suggestion.suggestion_type}_${suggestion.match_value}_${decision}`;
+    const targetPerson = targetPersonId ? people.find((person) => person.person_id === targetPersonId) : people[1];
+    const sourcePerson = targetPersonId
+      ? people.find((person) => person.person_id !== targetPersonId)
+      : people[0];
+    if (!sourcePerson?.person_id || !targetPerson?.person_id || sourcePerson.person_id === targetPerson.person_id) {
+      setState((current) => ({ ...current, actionError: new Error('Choose which entity should stay before merging.') }));
+      return;
+    }
+    const actionId = `${suggestion.suggestion_type}_${suggestion.match_value}_${decision}${targetPersonId ? `_${targetPersonId}` : ''}`;
     setState((current) => ({ ...current, actionId, actionError: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.createEntityMergeDecision(
         caseId,
         {
-          source_person_id: people[0].person_id,
-          target_person_id: people[1].person_id,
+          source_person_id: sourcePerson.person_id,
+          target_person_id: targetPerson.person_id,
           decision,
           reviewer_note: mergeNote || `${humanizeKey(decision)} from merge suggestion review.`,
           suggestion_source: suggestion.suggestion_type,
@@ -2001,6 +2009,8 @@ export default function EntitiesPage() {
             match_value: suggestion.match_value,
             aliases: suggestion.aliases || [],
             people,
+            source_person: sourcePerson,
+            target_person: targetPerson,
             confidence: suggestion.confidence,
           },
         },
@@ -2016,11 +2026,12 @@ export default function EntitiesPage() {
           correlationId: result.correlationId,
         },
       }));
+      await loadEntities();
       await loadSuggestions();
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, getAccessToken, loadSuggestions, mergeNote, recordFingerprint]);
+  }, [caseId, getAccessToken, loadEntities, loadSuggestions, mergeNote, recordFingerprint]);
 
   const selectedContactIds = useMemo(
     () => Object.entries(contactSelection).filter(([, selected]) => selected).map(([id]) => id),
@@ -3712,15 +3723,28 @@ export default function EntitiesPage() {
                       ))}
                     </ul>
                     {people.length >= 2 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button type="button" onClick={() => decideMergeSuggestion(suggestion, 'merge')} disabled={state.actionId === `${actionBase}_merge`} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
-                          <GitMerge size={13} aria-hidden="true" />
-                          {t('Merge first pair')}
-                        </button>
-                        <button type="button" onClick={() => decideMergeSuggestion(suggestion, 'reject')} disabled={state.actionId === `${actionBase}_reject`} className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40">
-                          <X size={13} aria-hidden="true" />
-                          {t('Reject pair')}
-                        </button>
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                          {t('Choose the name that should stay. The other duplicate entity will be folded into it, and aliases, mentions, contacts, and relationships will move to the survivor.')}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {people.slice(0, 4).map((person) => (
+                            <button
+                              key={person.person_id}
+                              type="button"
+                              onClick={() => decideMergeSuggestion(suggestion, 'merge', person.person_id)}
+                              disabled={state.actionId === `${actionBase}_merge_${person.person_id}`}
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+                            >
+                              <GitMerge size={13} aria-hidden="true" />
+                              {t('Keep {name}', { name: person.canonical_name || person.person_id })}
+                            </button>
+                          ))}
+                          <button type="button" onClick={() => decideMergeSuggestion(suggestion, 'reject')} disabled={state.actionId === `${actionBase}_reject`} className="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40">
+                            <X size={13} aria-hidden="true" />
+                            {t('These are different people')}
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
