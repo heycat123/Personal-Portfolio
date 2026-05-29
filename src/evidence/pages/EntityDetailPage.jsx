@@ -27,7 +27,7 @@ const COMMON_RELATIONSHIPS = [
   'child',
   'grandchild',
   'brother',
-  'baby sister',
+  'babysitter',
   'half brother',
   'half sister',
   'sister',

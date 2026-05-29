@@ -203,7 +203,7 @@ const COMMON_RELATIONSHIPS = [
   'child',
   'grandchild',
   'brother',
-  'baby sister',
+  'babysitter',
   'half brother',
   'half sister',
   'sister',
@@ -381,6 +381,17 @@ function contactPointLabel(link) {
   return link.contact_point_value || link.phone_canonical || link.phone_value || link.email_address || link.contact_point_key || 'Unknown';
 }
 
+function contactPointTypeLabel(link) {
+  const point = String(contactPointLabel(link) || '').trim();
+  if (link?.email_address || point.includes('@')) {
+    return 'Email';
+  }
+  if (link?.phone_canonical || link?.phone_value || link?.phone_digits || point.match(/^\+?[\d\s().-]{7,}$/)) {
+    return 'Phone number';
+  }
+  return 'Contact point';
+}
+
 function contactPointGroups(entity) {
   const groups = { phone: [], email: [], address: [] };
   (entity?.contact_links || []).forEach((link) => {
@@ -449,11 +460,13 @@ function contactAliasText(link) {
     ...contactCommunicationNames(link),
     String(link?.contact_display_name || '').trim(),
   ].filter(Boolean);
+  const contactPoint = normalizeIdentityText(contactPointLabel(link));
   const seen = new Set();
   return aliases
     .filter((alias) => {
       const normalized = normalizeIdentityText(alias);
-      if (!normalized || normalized === name || seen.has(normalized)) {
+      const looksLikeContactPoint = alias.includes('@') || alias.replace(/\D/g, '').length >= 7;
+      if (!normalized || normalized === name || normalized === contactPoint || looksLikeContactPoint || seen.has(normalized)) {
         return false;
       }
       seen.add(normalized);
@@ -2815,7 +2828,7 @@ export default function EntitiesPage() {
                 </div>
                 <div className="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">
                   {createEntityContactLink
-                    ? `${contactEntityName(createEntityContactLink) || t('Unnamed contact')} - ${contactPointLabel(createEntityContactLink)}`
+                    ? `${contactEntityName(createEntityContactLink) || t('Unnamed contact')} - ${t(contactPointTypeLabel(createEntityContactLink))}: ${contactPointLabel(createEntityContactLink)}`
                     : t('Add a canonical entity, aliases, and an optional relationship.')}
                 </div>
               </div>
@@ -2851,7 +2864,7 @@ export default function EntitiesPage() {
             <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100">
               <div className="font-semibold">{t('Creating from contact')}</div>
               <div className="mt-1 break-words">
-                {contactEntityName(createEntityContactLink) || t('Unnamed contact')} · {contactPointLabel(createEntityContactLink)}
+                {contactEntityName(createEntityContactLink) || t('Unnamed contact')} - {t(contactPointTypeLabel(createEntityContactLink))}: {contactPointLabel(createEntityContactLink)}
               </div>
               <p className="mt-1 text-xs">
                 {t('Create the entity and optionally add a relationship below. After creation, this contact point will be confirmed for the new entity.')}
