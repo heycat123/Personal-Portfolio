@@ -549,8 +549,11 @@ function inverseRelationshipLabel(label) {
   if (normalized === 'grandson' || normalized === 'granddaughter' || normalized === 'grandchild') {
     return { label: 'grandparent' };
   }
-  if (normalized === 'brother' || normalized === 'sister' || normalized === 'half brother' || normalized === 'half sister' || normalized === 'sibling') {
+  if (normalized === 'sibling') {
     return { label: 'sibling' };
+  }
+  if (normalized === 'brother' || normalized === 'sister' || normalized === 'half brother' || normalized === 'half sister') {
+    return { label: null, note: 'No inverse suggestion is made because the inverse depends on the other person’s confirmed gender.' };
   }
   if (normalized === 'aunt' || normalized === 'auntie' || normalized === 'uncle') {
     return { label: 'niece or nephew' };
@@ -589,7 +592,7 @@ function createRelationshipReviewPreview({ canonicalName, relationshipLabel, rel
     target_name: sourceName,
     reason: 'Direct inverse of the relationship you entered.',
   }] : [];
-  return { error: null, direct, suggestions };
+  return { error: null, direct, suggestions, note: inverse.note || null };
 }
 
 function getColumnFilterValue(columnFilters, id) {
@@ -798,6 +801,7 @@ export default function EntitiesPage() {
   const [contactTargetSearches, setContactTargetSearches] = useState({});
   const [contactTargetOptions, setContactTargetOptions] = useState({});
   const [contactTargetLoading, setContactTargetLoading] = useState({});
+  const [contactPointActionOpen, setContactPointActionOpen] = useState({});
   const [relationshipTargetOptions, setRelationshipTargetOptions] = useState([]);
   const [relationshipTargetLoading, setRelationshipTargetLoading] = useState(false);
   const [contactSelection, setContactSelection] = useState({});
@@ -1142,6 +1146,7 @@ export default function EntitiesPage() {
     setRelationshipAddOpen(false);
     setEditingRelationship(null);
     setContactAddOpen(false);
+    setContactPointActionOpen({});
   }, [selectedPersonId]);
 
   useEffect(() => {
@@ -2325,13 +2330,29 @@ export default function EntitiesPage() {
                     : `${contactDisplayLabel(item.link) || t('Unnamed contact')} - ${contactPlatformLabel(item.link) || t('platform unknown')}`}
                 </div>
               </div>
-              {item.kind === 'manual' ? (
-                <StatusBadge status="succeeded" label={t('Confirmed')} />
-              ) : (
-                <StatusBadge status={contactLinkBadgeStatus(item.link.link_status)} label={humanizeKey(item.link.link_status)} />
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {item.kind === 'manual' ? (
+                  <StatusBadge status="succeeded" label={t('Confirmed')} />
+                ) : (
+                  <>
+                    <StatusBadge status={contactLinkBadgeStatus(item.link.link_status)} label={t(humanizeKey(item.link.link_status))} />
+                    <button
+                      type="button"
+                      onClick={() => setContactPointActionOpen((current) => ({
+                        ...current,
+                        [item.key]: !current[item.key],
+                      }))}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10"
+                      title={t('Review contact point')}
+                      aria-label={t('Review contact point')}
+                    >
+                      <Pencil size={13} aria-hidden="true" />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            {item.kind === 'synced' ? <div className="mt-2">{renderContactActions(item.link)}</div> : null}
+            {item.kind === 'synced' && contactPointActionOpen[item.key] ? <div className="mt-2">{renderContactActions(item.link)}</div> : null}
           </div>
         )) : (
           <p className="text-sm text-gray-600 dark:text-gray-400">{t('None listed.')}</p>
@@ -3124,7 +3145,9 @@ export default function EntitiesPage() {
                 ))}
                 {!(relationshipCreateReview.preview.suggestions || []).length ? (
                   <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-400">
-                    {t('No inferred relationships will be created for this relationship type.')}
+                    {relationshipCreateReview.preview.note
+                      ? t(relationshipCreateReview.preview.note)
+                      : t('No inferred relationships will be created for this relationship type.')}
                   </div>
                 ) : null}
               </div>
