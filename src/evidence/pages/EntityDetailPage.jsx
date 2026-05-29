@@ -82,6 +82,31 @@ function entityPromotionState(entity) {
   return entity?.effective_promotion_state || entity?.promotion_state || 'candidate';
 }
 
+function entityReviewActionOptions() {
+  return [
+    {
+      status: 'confirmed',
+      title: 'This is important. Track it.',
+      description: 'Use this for a real person, place, organization, identifier, or important case item that should stay visible in review, search, and graph work.',
+    },
+    {
+      status: 'candidate',
+      title: 'Looks okay. No action needed.',
+      description: 'Use this when the entity is acceptable but you are not saying it is important. This clears Needs review.',
+    },
+    {
+      status: 'topic_only',
+      title: 'This is only a topic.',
+      description: 'Use this for concepts such as travel, school, relocation, payments, or other topics that are not a specific person or contact identity.',
+    },
+    {
+      status: 'suppressed',
+      title: 'Hide this from review.',
+      description: 'Use this for noise, OCR mistakes, fragments, or unimportant terms. It remains stored, but it will not keep appearing in the review queue.',
+    },
+  ];
+}
+
 function isInferredRelationship(relationship) {
   const sourceJson = relationship?.source_json || {};
   return sourceJson.inferred === true || sourceJson.source === 'relationship_inference';
@@ -414,24 +439,30 @@ export default function EntityDetailPage() {
   const renderReviewActionButtons = () => {
     const currentStatus = entityReviewStatus(entity);
     return (
-      <div className="flex flex-wrap gap-2">
-        {[
-          ['confirmed', 'Confirm tracked entity'],
-          ['candidate', 'Mark reviewed'],
-          ['suppressed', 'Suppress'],
-          ['topic_only', 'Topic only'],
-        ].map(([nextStatus, label]) => (
+      <div className="grid gap-2 sm:grid-cols-2">
+        {entityReviewActionOptions().map((option) => {
+          const selected = currentStatus === option.status;
+          return (
           <button
-            key={nextStatus}
+            key={option.status}
             type="button"
-            onClick={() => updateReviewStatus(nextStatus)}
-            disabled={currentStatus === nextStatus || state.actionId === `entity_review_${nextStatus}`}
-            className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+            onClick={() => updateReviewStatus(option.status)}
+            disabled={selected || state.actionId === `entity_review_${option.status}`}
+            className={`flex min-h-[86px] flex-col items-start gap-1 rounded-md border p-3 text-left text-xs disabled:opacity-70 ${
+              selected
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10'
+            }`}
           >
-            <Check size={13} aria-hidden="true" />
-            {t(label)}
+            <span className="flex items-center gap-1 font-semibold">
+              <Check size={13} aria-hidden="true" />
+              {t(option.title)}
+              {selected ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-100">{t('Current')}</span> : null}
+            </span>
+            <span className="leading-snug text-gray-600 dark:text-gray-400">{t(option.description)}</span>
           </button>
-        ))}
+          );
+        })}
       </div>
     );
   };
@@ -694,9 +725,9 @@ export default function EntityDetailPage() {
                 </div>
               ) : null}
               <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
-                <div className="font-semibold text-gray-950 dark:text-white">{t('Review actions')}</div>
+                <div className="font-semibold text-gray-950 dark:text-white">{t('What should happen with this entity?')}</div>
                 <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                  {t('These actions are always available so a reviewed entity does not stay in Needs review forever.')}
+                  {t('Choose the plain-language outcome. The system saves the technical status behind the scenes.')}
                 </p>
                 <div className="mt-3">{renderReviewActionButtons()}</div>
               </div>
@@ -844,9 +875,9 @@ export default function EntityDetailPage() {
                 </div>
               ) : null}
               <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
-                <div className="font-semibold text-gray-950 dark:text-white">{t('Review actions')}</div>
+                <div className="font-semibold text-gray-950 dark:text-white">{t('What should happen with this entity?')}</div>
                 <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                  {t('Use these actions to clear a needs-review entity when no alias, contact point, or relationship change is needed. Manual choices are preserved during later promotion audits.')}
+                  {t('Use this when no alias, phone, email, or relationship change is needed.')}
                 </p>
                 <div className="mt-3">{renderReviewActionButtons()}</div>
               </div>
