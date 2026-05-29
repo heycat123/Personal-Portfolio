@@ -278,6 +278,12 @@ export const evidenceApi = {
       method: 'PATCH',
       body: payload,
     }),
+  updateEntityReviewStatus: (caseId, personId, payload = {}, options = {}) =>
+    request(casePath(caseId, `/entities/${encodeURIComponent(personId)}/review-status`), {
+      ...options,
+      method: 'PATCH',
+      body: payload,
+    }),
   getEntityMergeSuggestions: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/entities/merge-suggestions'), { ...options, query: params }),
   getContactEntityLinks: (caseId, params = {}, options = {}) =>

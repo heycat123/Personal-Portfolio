@@ -380,6 +380,29 @@ export default function EntityDetailPage() {
     }
   }, [canonicalNameDraft, caseId, entity, getAccessToken, recordFingerprint, refreshAfterAction]);
 
+  const updateReviewStatus = useCallback(async (reviewStatus) => {
+    if (!entity?.person_id) return;
+    const reviewNotes = {
+      confirmed: `Confirmed ${entity.canonical_name} as a tracked entity from the entity detail page.`,
+      candidate: `Reviewed ${entity.canonical_name}; no immediate action is needed.`,
+      suppressed: `Suppressed ${entity.canonical_name} from normal entity review.`,
+      topic_only: `Marked ${entity.canonical_name} as a topic/concept rather than an identity review item.`,
+      needs_review: `Kept ${entity.canonical_name} in entity review.`,
+    };
+    setState((current) => ({ ...current, actionId: `entity_review_${reviewStatus}`, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateEntityReviewStatus(caseId, entity.person_id, {
+        review_status: reviewStatus,
+        reviewer_note: reviewNotes[reviewStatus] || reviewNotes.needs_review,
+      }, { token });
+      recordFingerprint(result, 'Update entity review status');
+      await refreshAfterAction(result);
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, entity, getAccessToken, recordFingerprint, refreshAfterAction]);
+
   const addConfirmedAlias = useCallback(async () => {
     if (!entity || !customAlias.trim()) return;
     setState((current) => ({ ...current, actionId: 'custom_alias', actionError: null }));
@@ -780,6 +803,31 @@ export default function EntityDetailPage() {
                   <p className="mt-1">{entity.review_reason}</p>
                 </div>
               ) : null}
+              <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
+                <div className="font-semibold text-gray-950 dark:text-white">{t('Review actions')}</div>
+                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  {t('Use these actions to clear a needs-review entity when no alias, contact point, or relationship change is needed. Manual choices are preserved during later promotion audits.')}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[
+                    ['confirmed', 'Confirm tracked entity'],
+                    ['candidate', 'Mark reviewed'],
+                    ['suppressed', 'Suppress'],
+                    ['topic_only', 'Topic only'],
+                  ].map(([nextStatus, label]) => (
+                    <button
+                      key={nextStatus}
+                      type="button"
+                      onClick={() => updateReviewStatus(nextStatus)}
+                      disabled={entity.review_status === nextStatus || state.actionId === `entity_review_${nextStatus}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+                    >
+                      <Check size={13} aria-hidden="true" />
+                      {t(label)}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">

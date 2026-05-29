@@ -1641,6 +1641,50 @@ export default function EntitiesPage() {
     }
   }, [canonicalNameDraft, caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
+  const updateEntityReviewStatus = useCallback(async (detailEntity, reviewStatus) => {
+    if (!detailEntity?.person_id) {
+      return;
+    }
+    const reviewNotes = {
+      confirmed: `Confirmed ${detailEntity.canonical_name} as a tracked entity from the entity drawer.`,
+      candidate: `Reviewed ${detailEntity.canonical_name}; no immediate action is needed.`,
+      suppressed: `Suppressed ${detailEntity.canonical_name} from normal entity review.`,
+      topic_only: `Marked ${detailEntity.canonical_name} as a topic/concept rather than an identity review item.`,
+      needs_review: `Kept ${detailEntity.canonical_name} in entity review.`,
+    };
+    setState((current) => ({ ...current, actionId: `entity_review_${reviewStatus}`, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateEntityReviewStatus(
+        caseId,
+        detailEntity.person_id,
+        {
+          review_status: reviewStatus,
+          reviewer_note: reviewNotes[reviewStatus] || reviewNotes.needs_review,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Update entity review status');
+      const refreshedEntity = result.data?.entity || null;
+      setState((current) => ({
+        ...current,
+        entity: refreshedEntity || current.entity,
+        actionId: null,
+        actionFingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      if (refreshedEntity) {
+        setRowDetails((current) => ({ ...current, [refreshedEntity.person_id]: refreshedEntity }));
+      }
+      await loadEntityDetail(detailEntity.person_id);
+      await loadEntities();
+    } catch (error) {
+      setState((current) => ({ ...current, actionId: null, actionError: error }));
+    }
+  }, [caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint]);
+
   const submitManualEntity = useCallback(async ({
     canonicalName,
     aliases,
@@ -2732,6 +2776,36 @@ export default function EntitiesPage() {
           <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100">
             <div className="font-semibold">{t('Why this appears here')}</div>
             <p className="mt-1">{detailEntity.review_reason}</p>
+          </div>
+        ) : null}
+        {detailEntity ? (
+          <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
+            <div className="flex items-center gap-1 font-semibold text-gray-950 dark:text-white">
+              {t('Review actions')}
+              <InfoTip label={t('Use these actions to clear a needs-review entity when no alias, contact point, or relationship change is needed. Manual choices are preserved during later promotion audits.')} />
+            </div>
+            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+              {t('Choose what this entity should become in the review queue.')}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                ['confirmed', 'Confirm tracked entity'],
+                ['candidate', 'Mark reviewed'],
+                ['suppressed', 'Suppress'],
+                ['topic_only', 'Topic only'],
+              ].map(([nextStatus, label]) => (
+                <button
+                  key={nextStatus}
+                  type="button"
+                  onClick={() => updateEntityReviewStatus(detailEntity, nextStatus)}
+                  disabled={detailEntity.review_status === nextStatus || state.actionId === `entity_review_${nextStatus}`}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+                >
+                  <Check size={13} aria-hidden="true" />
+                  {t(label)}
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
         {detailEntity ? (
