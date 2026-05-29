@@ -28,6 +28,8 @@ const EMPTY_CREATE_ENTITY_FORM = {
   relationship_target_search: '',
 };
 
+const NEW_ENTITY_PLACEHOLDER_ID = '__new_entity__';
+
 const SORT_PARAM_BY_COLUMN = {
   canonical_name: 'entity',
   entity_type: 'entity_type',
@@ -522,6 +524,74 @@ function relationshipDisplay(label, t) {
   return t(String(label || '').trim());
 }
 
+function inverseRelationshipLabel(label) {
+  const normalized = normalizeIdentityText(label);
+  if (normalized === 'baby sister') {
+    return { error: 'Use babysitter for a care/provider relationship, or sister/half sister for a family sibling relationship.' };
+  }
+  if (normalized === 'mother' || normalized === 'father' || normalized === 'parent') {
+    return { label: 'child' };
+  }
+  if (normalized === 'son' || normalized === 'daughter' || normalized === 'child') {
+    return { label: 'parent' };
+  }
+  if ([
+    'maternal grandmother',
+    'paternal grandmother',
+    'grandmother',
+    'maternal grandfather',
+    'paternal grandfather',
+    'grandfather',
+    'grandparent',
+  ].includes(normalized)) {
+    return { label: 'grandchild' };
+  }
+  if (normalized === 'grandson' || normalized === 'granddaughter' || normalized === 'grandchild') {
+    return { label: 'grandparent' };
+  }
+  if (normalized === 'brother' || normalized === 'sister' || normalized === 'half brother' || normalized === 'half sister' || normalized === 'sibling') {
+    return { label: 'sibling' };
+  }
+  if (normalized === 'aunt' || normalized === 'auntie' || normalized === 'uncle') {
+    return { label: 'niece or nephew' };
+  }
+  if (normalized === 'niece' || normalized === 'nephew') {
+    return { label: 'aunt or uncle' };
+  }
+  if (normalized === 'spouse' || normalized === 'husband' || normalized === 'wife' || normalized === 'partner') {
+    return { label: normalized };
+  }
+  return { label: null };
+}
+
+function createRelationshipReviewPreview({ canonicalName, relationshipLabel, relationshipTargetPersonId, relationshipTargetName }) {
+  const relationship = String(relationshipLabel || '').trim();
+  const sourceName = String(canonicalName || '').trim();
+  const targetName = String(relationshipTargetName || relationshipTargetPersonId || '').trim();
+  const inverse = inverseRelationshipLabel(relationship);
+  if (inverse.error) {
+    return { error: inverse.error, direct: null, suggestions: [] };
+  }
+  const direct = {
+    id: 'direct',
+    source_person_id: NEW_ENTITY_PLACEHOLDER_ID,
+    source_name: sourceName,
+    relationship_label: relationship,
+    target_person_id: relationshipTargetPersonId,
+    target_name: targetName,
+  };
+  const suggestions = inverse.label ? [{
+    id: 'direct_inverse',
+    source_person_id: relationshipTargetPersonId,
+    source_name: targetName,
+    relationship_label: inverse.label,
+    target_person_id: NEW_ENTITY_PLACEHOLDER_ID,
+    target_name: sourceName,
+    reason: 'Direct inverse of the relationship you entered.',
+  }] : [];
+  return { error: null, direct, suggestions };
+}
+
 function getColumnFilterValue(columnFilters, id) {
   const match = columnFilters.find((filter) => filter.id === id);
   if (match?.value === undefined || match?.value === null) {
@@ -735,6 +805,8 @@ export default function EntitiesPage() {
   const [createEntityContactLink, setCreateEntityContactLink] = useState(null);
   const [createEntityForm, setCreateEntityForm] = useState({ ...EMPTY_CREATE_ENTITY_FORM });
   const [roleResolutionReview, setRoleResolutionReview] = useState(null);
+  const [relationshipCreateReview, setRelationshipCreateReview] = useState(null);
+  const [relationshipCreateSelection, setRelationshipCreateSelection] = useState({});
   const [state, setState] = useState({
     loading: true,
     contactLoading: true,
@@ -1132,6 +1204,8 @@ export default function EntitiesPage() {
   const closeCreateEntityDrawer = useCallback(() => {
     setCreateEntityOpen(false);
     setCreateEntityContactLink(null);
+    setRelationshipCreateReview(null);
+    setRelationshipCreateSelection({});
   }, []);
 
   const openBlankCreateEntityDrawer = useCallback(() => {
@@ -1486,7 +1560,16 @@ export default function EntitiesPage() {
     }
   }, [canonicalNameDraft, caseId, getAccessToken, loadEntities, loadEntityDetail, recordFingerprint, state.entity]);
 
-  const submitManualEntity = useCallback(async ({ canonicalName, aliases, roles, entityType, relationshipLabel = '', relationshipTargetPersonId = '', sourceContactLink = null }) => {
+  const submitManualEntity = useCallback(async ({
+    canonicalName,
+    aliases,
+    roles,
+    entityType,
+    relationshipLabel = '',
+    relationshipTargetPersonId = '',
+    sourceContactLink = null,
+    acceptedInferredRelationships = [],
+  }) => {
     if (!canonicalName) {
       setState((current) => ({ ...current, actionError: new Error('Enter a canonical entity name first.') }));
       return;
@@ -1510,6 +1593,7 @@ export default function EntitiesPage() {
           entity_type: entityType || 'PERSON',
           relationship_label: relationshipLabel || null,
           relationship_target_person_id: relationshipTargetPersonId || null,
+          infer_relationships: false,
           reviewer_note: `Manual entity created from Entities page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}${relationshipLabel ? ` Relationship: ${canonicalName} is ${relationshipLabel}.` : ''}`,
         },
         { token },
@@ -1530,6 +1614,28 @@ export default function EntitiesPage() {
         );
         recordFingerprint(attachResult, 'Attach contact to created entity');
       }
+      if (personId && acceptedInferredRelationships.length) {
+        for (const item of acceptedInferredRelationships) {
+          const sourcePersonId = item.source_person_id === NEW_ENTITY_PLACEHOLDER_ID ? personId : item.source_person_id;
+          const targetPersonId = item.target_person_id === NEW_ENTITY_PLACEHOLDER_ID ? personId : item.target_person_id;
+          if (!sourcePersonId || !targetPersonId || sourcePersonId === targetPersonId || !item.relationship_label) {
+            continue;
+          }
+          const inferredResult = await evidenceApi.createEntityRelationship(
+            caseId,
+            sourcePersonId,
+            {
+              relationship_label: item.relationship_label,
+              target_person_id: targetPersonId,
+              reviewer_note: `User accepted relationship suggestion while creating ${canonicalName}.`,
+              confidence: 0.99,
+              infer_relationships: false,
+            },
+            { token },
+          );
+          recordFingerprint(inferredResult, 'Create accepted relationship suggestion');
+        }
+      }
       if (createdEntity) {
         setState((current) => ({
           ...current,
@@ -1548,6 +1654,8 @@ export default function EntitiesPage() {
       setCreateEntityForm({ ...EMPTY_CREATE_ENTITY_FORM });
       setCreateEntityOpen(false);
       setCreateEntityContactLink(null);
+      setRelationshipCreateReview(null);
+      setRelationshipCreateSelection({});
       setState((current) => ({
         ...current,
         actionId: null,
@@ -1577,7 +1685,7 @@ export default function EntitiesPage() {
     }
   }, [caseId, contactTargetSearches, getAccessToken, loadContactLinks, loadEntities, loadEntityDetail, recordFingerprint]);
 
-  const createManualEntity = useCallback(async () => {
+  const createManualEntity = useCallback(async (options = {}) => {
     const canonicalName = createEntityForm.canonical_name.trim();
     const aliases = parseCommaList(createEntityForm.aliases);
     const roles = parseCommaList(createEntityForm.roles);
@@ -1599,6 +1707,33 @@ export default function EntitiesPage() {
       setState((current) => ({ ...current, actionError: new Error('Choose both a relationship and a related entity, or leave both blank.') }));
       return;
     }
+    if (relationshipLabel && relationshipTargetPersonId && !options.skipRelationshipReview) {
+      const targetName = relationshipTargetChoices(null, state.entities, relationshipTargetOptions)
+        .find((item) => item.person_id === relationshipTargetPersonId)?.canonical_name || relationshipTargetPersonId;
+      const preview = createRelationshipReviewPreview({
+        canonicalName,
+        relationshipLabel,
+        relationshipTargetPersonId,
+        relationshipTargetName: targetName,
+      });
+      if (preview.error) {
+        setState((current) => ({ ...current, actionError: new Error(preview.error) }));
+        return;
+      }
+      setRelationshipCreateReview({
+        canonicalName,
+        aliases,
+        roles,
+        entityType,
+        relationshipLabel,
+        relationshipTargetPersonId,
+        sourceContactLink: createEntityContactLink,
+        preview,
+      });
+      setRelationshipCreateSelection(Object.fromEntries((preview.suggestions || []).map((item) => [item.id, true])));
+      return;
+    }
+    const acceptedInferredRelationships = options.acceptedInferredRelationships || [];
     if (!roles.length) {
       await submitManualEntity({
         canonicalName,
@@ -1608,6 +1743,7 @@ export default function EntitiesPage() {
         relationshipLabel,
         relationshipTargetPersonId,
         sourceContactLink: createEntityContactLink,
+        acceptedInferredRelationships,
       });
       return;
     }
@@ -1634,6 +1770,7 @@ export default function EntitiesPage() {
           relationshipLabel,
           relationshipTargetPersonId,
           sourceContactLink: createEntityContactLink,
+          acceptedInferredRelationships,
           preview,
           fingerprint: { id: result.requestFingerprintId, correlationId: result.correlationId },
         });
@@ -1655,11 +1792,12 @@ export default function EntitiesPage() {
         relationshipLabel,
         relationshipTargetPersonId,
         sourceContactLink: createEntityContactLink,
+        acceptedInferredRelationships,
       });
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
     }
-  }, [caseId, createEntityContactLink, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.relationship_label, createEntityForm.relationship_target_person_id, createEntityForm.roles, getAccessToken, recordFingerprint, submitManualEntity]);
+  }, [caseId, createEntityContactLink, createEntityForm.aliases, createEntityForm.canonical_name, createEntityForm.entity_type, createEntityForm.relationship_label, createEntityForm.relationship_target_person_id, createEntityForm.roles, getAccessToken, recordFingerprint, relationshipTargetOptions, state.entities, submitManualEntity]);
 
   const completeRoleResolutionReview = useCallback(async (mode) => {
     const review = roleResolutionReview;
@@ -1680,6 +1818,7 @@ export default function EntitiesPage() {
       relationshipLabel: review.relationshipLabel,
       relationshipTargetPersonId: review.relationshipTargetPersonId,
       sourceContactLink: review.sourceContactLink,
+      acceptedInferredRelationships: review.acceptedInferredRelationships || [],
     });
   }, [roleResolutionReview, submitManualEntity]);
 
@@ -2809,6 +2948,95 @@ export default function EntitiesPage() {
         </div>
       ) : null}
 
+      {relationshipCreateReview ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <section className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-[#101820]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Review Relationship Before Create')}</h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {t('Confirm the exact relationship being saved. Only selected suggested relationships will be created.')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setRelationshipCreateReview(null);
+                  setRelationshipCreateSelection({});
+                }}
+                className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10"
+                aria-label={t('Close')}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+              <div className="text-xs font-semibold uppercase tracking-normal">{t('Relationship you entered')}</div>
+              <div className="mt-1 font-semibold">
+                {relationshipCreateReview.preview.direct.source_name} {t('is')} {relationshipDisplay(relationshipCreateReview.preview.direct.relationship_label, t)} {t('of')} {relationshipCreateReview.preview.direct.target_name}.
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Suggested related relationships')}</h3>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {t('These are not saved unless selected. Leave a suggestion unchecked unless it is unquestionably true.')}
+              </p>
+              <div className="mt-3 space-y-2">
+                {(relationshipCreateReview.preview.suggestions || []).map((item) => (
+                  <label key={item.id} className="flex gap-3 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(relationshipCreateSelection[item.id])}
+                      onChange={(event) => setRelationshipCreateSelection((current) => ({ ...current, [item.id]: event.target.checked }))}
+                      className="mt-1"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-gray-950 dark:text-white">
+                        {item.source_name} {t('is')} {relationshipDisplay(item.relationship_label, t)} {t('of')} {item.target_name}.
+                      </span>
+                      <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(item.reason)}</span>
+                    </span>
+                  </label>
+                ))}
+                {!(relationshipCreateReview.preview.suggestions || []).length ? (
+                  <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-400">
+                    {t('No inferred relationships will be created for this relationship type.')}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setRelationshipCreateReview(null);
+                  setRelationshipCreateSelection({});
+                }}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                {t('Back')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const review = relationshipCreateReview;
+                  const accepted = (review.preview.suggestions || []).filter((item) => relationshipCreateSelection[item.id]);
+                  setRelationshipCreateReview(null);
+                  setRelationshipCreateSelection({});
+                  createManualEntity({ skipRelationshipReview: true, acceptedInferredRelationships: accepted });
+                }}
+                className="rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                {t('Create Entity')}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadEntities} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
 
@@ -2969,7 +3197,7 @@ export default function EntitiesPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={createManualEntity}
+                onClick={() => createManualEntity()}
                 disabled={['create_entity', 'resolve_roles'].includes(state.actionId) || !createEntityForm.canonical_name.trim()}
                 className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
               >
