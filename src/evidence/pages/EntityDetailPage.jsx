@@ -405,7 +405,7 @@ export default function EntityDetailPage() {
         canonical_name: canonicalNameDraft.trim(),
         reviewer_note: `Corrected person/contact record name from "${entity.canonical_name}" to "${canonicalNameDraft.trim()}".`,
       }, { token });
-      recordFingerprint(result, 'Update entity display name');
+      recordFingerprint(result, 'Update person/contact display name');
       setNameEditOpen(false);
       await refreshAfterAction(result);
     } catch (error) {
@@ -419,7 +419,7 @@ export default function EntityDetailPage() {
       confirmed: `Confirmed ${entity.canonical_name} as a tracked person/contact record from the detail page.`,
       candidate: `Reviewed ${entity.canonical_name}; no immediate action is needed.`,
       suppressed: `Suppressed ${entity.canonical_name} from normal people/contact review.`,
-      topic_only: `Marked ${entity.canonical_name} as a topic/concept rather than an identity review item.`,
+      topic_only: `Marked ${entity.canonical_name} as a topic/concept rather than a people/contact review item.`,
       needs_review: `Kept ${entity.canonical_name} in people/contact review.`,
     };
     setState((current) => ({ ...current, actionId: `entity_review_${reviewStatus}`, actionError: null }));
