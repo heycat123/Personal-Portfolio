@@ -16,7 +16,7 @@ function targetDescription(target) {
   return target.label || target.id;
 }
 
-export default function AxiomHelpDrawer() {
+export default function AxiomHelpDrawer({ trigger = 'icon', onOpen }) {
   const location = useLocation();
   const { activeCase } = useCaseContext();
   const { getAccessToken } = useEvidenceAuth();
@@ -65,6 +65,11 @@ export default function AxiomHelpDrawer() {
     setQuestion(pageQuestion);
     setOpen(true);
     await askAxiom(null, pageQuestion);
+  };
+
+  const openDrawer = () => {
+    setOpen(true);
+    onOpen?.();
   };
 
   const drawer = open ? (
@@ -179,12 +184,15 @@ export default function AxiomHelpDrawer() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDrawer}
         title={t('Ask Axiom for help')}
         aria-label={t('Ask Axiom for help')}
-        className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+        className={trigger === 'sidebar'
+          ? 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
+          : 'rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'}
       >
         <HelpCircle size={16} aria-hidden="true" />
+        {trigger === 'sidebar' ? <span>{t('Ask Axiom')}</span> : null}
       </button>
 
       {drawer && typeof document !== 'undefined' ? createPortal(drawer, document.body) : drawer}
