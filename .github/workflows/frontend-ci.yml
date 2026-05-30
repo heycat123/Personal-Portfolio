@@ -15,7 +15,6 @@ env:
   VITE_AWS_REGION: ${{ vars.VITE_AWS_REGION || 'us-east-2' }}
   VITE_COGNITO_USER_POOL_ID: ${{ vars.VITE_COGNITO_USER_POOL_ID || 'us-east-2_SfO4Yq5qb' }}
   VITE_COGNITO_USER_POOL_CLIENT_ID: ${{ vars.VITE_COGNITO_USER_POOL_CLIENT_ID || '46hn6m1uviifa47b3ogrhg7lg8' }}
-  VITE_EVIDENCE_SITE_VERSION: ${{ github.sha }}
 
 jobs:
   verify:
@@ -38,6 +37,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Set Evidence build version
+        run: echo "VITE_EVIDENCE_SITE_VERSION=ci-${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
       - name: Build static app
         run: npm run build
