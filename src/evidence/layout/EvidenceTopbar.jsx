@@ -1,4 +1,4 @@
-import { Languages, LogOut, Menu, RefreshCw, Shield, UserCircle } from 'lucide-react';
+import { Bug, Languages, LogOut, Menu, RefreshCw, Shield, UserCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
@@ -26,6 +26,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
     openPreviewTab,
     previewRole,
     previewRoles,
+    setDebugEnabled,
     setPreviewRole,
   } = useOperatorMode();
   const showOperatorChrome = canSeeOperations || debugEnabled;
@@ -53,7 +54,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
           </button>
           <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">{t(showOperatorChrome ? 'Evidence Control Plane' : 'Evidence Workspace')}</h1>
+            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Evidence Workspace')}</h1>
             <StatusBadge status={activeCase.status} />
             {isPreviewing ? <StatusBadge status="running" label={t('Preview: {role}', { role: effectiveCaseRole })} /> : null}
           </div>
@@ -92,6 +93,22 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
               </button>
             </div>
           ) : null}
+          {canSeeOperations ? (
+            <button
+              type="button"
+              onClick={() => setDebugEnabled(!debugEnabled)}
+              title={debugEnabled ? t('Hide support diagnostics') : t('Show support diagnostics')}
+              aria-label={debugEnabled ? t('Hide support diagnostics') : t('Show support diagnostics')}
+              className={`inline-flex items-center gap-2 rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+                debugEnabled
+                  ? 'border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-900/50'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
+              }`}
+            >
+              <Bug size={15} aria-hidden="true" />
+              <span className="hidden sm:inline">{t('Support mode')}</span>
+            </button>
+          ) : null}
           <AxiomHelpDrawer />
           <SupportFeedbackDrawer />
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
@@ -124,6 +141,9 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
           <div className="flex min-w-0 max-w-[11rem] items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 sm:max-w-xs sm:px-3">
             <Shield size={16} aria-hidden="true" />
             <span className="truncate">{user?.displayName || t('Evidence User')}</span>
+            <span className="hidden rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300 sm:inline">
+              {effectiveCaseRole}
+            </span>
             {showOperatorChrome ? <span className="hidden text-xs text-gray-500 sm:inline">({authMode})</span> : null}
           </div>
           <Link

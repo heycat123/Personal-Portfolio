@@ -1,5 +1,5 @@
-import { Activity, Briefcase, Database, FileText, MessageSquare, Users } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Activity, Briefcase, Database, FileText, LifeBuoy, MessageSquare, UploadCloud, Users } from 'lucide-react';
+import { createElement, useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
@@ -16,6 +16,30 @@ import { formatDateTime, sumCounts, truncateMiddle } from '../utils/formatters';
 
 function fulfilledValue(result) {
   return result.status === 'fulfilled' ? result.value : null;
+}
+
+function QuickActionCard({ icon, title, detail, to, tone = 'default' }) {
+  const toneClasses = {
+    default: 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-gray-700',
+    primary: 'border-sky-200 bg-sky-50 hover:border-sky-300 dark:border-sky-900/60 dark:bg-sky-950/20 dark:hover:border-sky-800',
+    good: 'border-emerald-200 bg-emerald-50 hover:border-emerald-300 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:hover:border-emerald-800',
+  };
+  return (
+    <Link
+      to={to}
+      className={`block rounded-lg border p-4 shadow-sm transition-colors ${toneClasses[tone] || toneClasses.default}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="rounded-md border border-black/10 bg-white/70 p-2 text-gray-700 dark:border-white/10 dark:bg-white/10 dark:text-gray-100">
+          {createElement(icon, { size: 18, 'aria-hidden': true })}
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-gray-950 dark:text-white">{title}</div>
+          <div className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-400">{detail}</div>
+        </div>
+      </div>
+    </Link>
+  );
 }
 
 export default function DashboardPage() {
@@ -113,9 +137,56 @@ export default function DashboardPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
 
+      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Start Here')}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {canSeeOperations
+                ? t('Use this page to confirm the case is ready, then move into documents, query, intake, or operations checks.')
+                : t('Use documents to review the file set, query to ask evidence questions, and add documents when you need to contribute new material.')}
+            </p>
+          </div>
+          <Link
+            to={`/evidence/cases/${caseId}/documents`}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            {t('Open documents')}
+          </Link>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <QuickActionCard
+            icon={MessageSquare}
+            title={t('Ask the evidence')}
+            detail={t('Ask a question and open cited documents from the answer.')}
+            to={`/evidence/cases/${caseId}/query`}
+            tone="primary"
+          />
+          <QuickActionCard
+            icon={FileText}
+            title={t('Review documents')}
+            detail={t('Search, filter, preview, and open case files.')}
+            to={`/evidence/cases/${caseId}/documents`}
+          />
+          <QuickActionCard
+            icon={UploadCloud}
+            title={t('Add documents')}
+            detail={t('Connect a source or upload files into controlled storage.')}
+            to={`/evidence/cases/${caseId}/intake`}
+            tone="good"
+          />
+          <QuickActionCard
+            icon={LifeBuoy}
+            title={t('Get help')}
+            detail={t('Ask Axiom, suggest an idea, or report a problem.')}
+            to={`/evidence/cases/${caseId}/support`}
+          />
+        </div>
+      </section>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricTile icon={FileText} label={t('Documents')} value={documentFiles} detail={t('Unique extracted source files')} />
-        <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" />
+        {canSeeOperations ? <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" /> : null}
         {canSeeOperations ? <MetricTile
           icon={Activity}
           label="Cloud Copy Coverage"
@@ -123,13 +194,13 @@ export default function DashboardPage() {
           tone={s3CoverageOk ? 'good' : documentFiles ? 'warn' : 'default'}
           detail={documentFiles ? `${missingS3Files} extracted files still need cloud-copy proof` : 'No extracted files counted yet'}
         /> : null}
-        <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail="Communication rows" />
-        <MetricTile
+        <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail={canSeeOperations ? 'Communication rows' : t('Indexed communication records')} />
+        {canSeeOperations ? <MetricTile
           icon={Users}
           label={t('Entities')}
           value={sumCounts(counts, ['canonical_people', 'person_aliases', 'entity_mentions'])}
           detail={t('People, aliases, and mentions')}
-        />
+        /> : null}
         {canSeeOperations ? <MetricTile icon={Activity} label={t('API Requests')} value={counts.api_requests || 0} detail="Logged fingerprints" /> : null}
         {canSeeOperations ? <MetricTile icon={Briefcase} label={t('Jobs')} value={state.jobs?.total || 0} detail={t('Case-scoped background work')} /> : null}
         {canSeeOperations ? <MetricTile

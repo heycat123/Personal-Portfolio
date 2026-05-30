@@ -733,9 +733,9 @@ export default function IntakePage() {
   return (
     <div>
       <PageHeader
-        title="Intake"
-        description="Source coverage and ingestion entry points. Source files keep their original language; only the interface translates."
-        actions={<StatusBadge status={state.step === 'registered' ? 'succeeded' : state.step === 'failed' ? 'failed' : 'pending'} label={state.step} />}
+        title="Add Documents"
+        description="Connect file sources, select folders or files, and upload new documents into this case. Source files keep their original language; only the interface translates."
+        actions={state.step !== 'ready' ? <StatusBadge status={state.step === 'registered' ? 'succeeded' : state.step === 'failed' ? 'failed' : 'pending'} label={state.step} /> : null}
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Intake failed" error={state.error} /></div> : null}
@@ -746,6 +746,41 @@ export default function IntakePage() {
         </div>
       ) : null}
 
+      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Document intake flow')}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+              {t('Pick files from a connected account or upload files from this browser. The system keeps a controlled storage copy before extraction, graphing, vectors, or legal classification run.')}
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300">
+            {activeGoogleConnection
+              ? t('Connected as {email}', { email: activeGoogleConnection.external_account_email || activeGoogleConnection.display_name || 'Google Drive' })
+              : t('No connected document account yet')}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {[
+            ['1', 'Choose source', 'Connect Google Drive or select a local file upload.'],
+            ['2', 'Select files', 'Include folders/files and exclude anything that should not enter the case.'],
+            ['3', 'Sync and process', 'Mirror selected files to controlled storage, then queue extraction and graph/vector work.'],
+          ].map(([number, title, detail]) => (
+            <div key={number} className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+              <div className="flex items-start gap-3">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-white dark:text-gray-950">
+                  {number}
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-gray-950 dark:text-white">{t(title)}</div>
+                  <div className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-400">{t(detail)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-5">
           <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -755,8 +790,8 @@ export default function IntakePage() {
                   <Link2 size={18} aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source Connectors')}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Connected accounts are visible to case members. Only the connected-account owner can browse, select folders, or sync that account; case owners/admins can disconnect a source if needed.')}</p>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Connected File Accounts')}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Connect the accounts that contain case documents. Other case members can see that a source exists, but only the connected-account owner can browse and manage its files unless they have owner/admin rights.')}</p>
                 </div>
               </div>
               <button
@@ -864,8 +899,8 @@ export default function IntakePage() {
                     <FolderOpen size={18} aria-hidden="true" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Document Source Intake')}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select Google Drive folders/files for document intake and mirror new files into controlled cloud copy storage.')}</p>
+                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Google Drive Documents')}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select the Drive folders or files that should be part of this case, then sync them into controlled storage for processing.')}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
                   </div>
                 </div>
@@ -886,7 +921,7 @@ export default function IntakePage() {
                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
                   >
                     <CheckCircle2 size={15} aria-hidden="true" />
-                    {t('Resolve')}
+                    {t('Verify selections')}
                   </button>
                   <button
                     type="button"
@@ -895,7 +930,7 @@ export default function IntakePage() {
                     className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <UploadCloud size={15} aria-hidden="true" />
-                    {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Sync Drive to Cloud Copy')}
+                    {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Sync selected Drive files')}
                   </button>
                   <button
                     type="button"
@@ -904,7 +939,7 @@ export default function IntakePage() {
                     className="inline-flex items-center gap-2 rounded-md border border-violet-300 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:text-violet-200 dark:hover:bg-violet-950/40"
                   >
                     <Eye size={15} aria-hidden="true" />
-                    {driveReview.loading ? t('Reviewing') : t('Review Google Docs')}
+                    {driveReview.loading ? t('Reviewing') : t('Review Google Docs/Sheets')}
                   </button>
                 </div>
               </div>
@@ -918,7 +953,7 @@ export default function IntakePage() {
                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
                   <div className="font-semibold">{t('Google Drive sync queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
-                  <div className="mt-2 text-xs">{t('The worker will mirror selected Drive files, including supported Google Docs exports, into controlled cloud copy storage and queue new files for registration.')}</div>
+                  <div className="mt-2 text-xs">{t('The worker will copy selected Drive files, including supported Google Docs exports, into controlled storage and queue new files for registration.')}</div>
                 </div>
               ) : null}
               {driveReview.error ? (
@@ -1381,8 +1416,8 @@ export default function IntakePage() {
                 <FileUp size={18} aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Manual Document Upload')}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Phase 7.5 registers uploads only; ingestion starts in a later job.')}</p>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Upload From This Computer')}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Uploaded files are copied into controlled storage first. Processing can be started after registration.')}</p>
               </div>
             </div>
 
@@ -1397,14 +1432,14 @@ export default function IntakePage() {
               </label>
 
               <label className="block">
-                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Source of Truth')}</span>
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Where did this file come from?')}</span>
                 <select
                   value={sourceMode}
                   onChange={(event) => setSourceMode(event.target.value)}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 >
-                  <option value="web_upload">{t('Web upload')}</option>
-                  <option value="google_drive_mirror">{t('Google Drive mirror')}</option>
+                  <option value="web_upload">{t('Uploaded from this browser')}</option>
+                  <option value="google_drive_mirror">{t('Copied from Google Drive')}</option>
                 </select>
               </label>
 
@@ -1423,7 +1458,7 @@ export default function IntakePage() {
                 className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <UploadCloud size={16} aria-hidden="true" />
-                {state.busy ? t('Working') : t('Upload and Register')}
+                {state.busy ? t('Working') : t('Upload file')}
               </button>
             </div>
           </section>

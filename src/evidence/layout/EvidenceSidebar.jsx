@@ -20,19 +20,19 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 
 const NAV_ITEMS = [
-  { label: 'My Cases', to: '/evidence/cases', icon: Briefcase },
-  { label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
-  { label: 'Documents', path: 'documents', icon: FileText },
-  { label: 'Intake', path: 'intake', icon: Upload, requiresContribute: true },
-  { label: 'Query', path: 'query', icon: MessageSquare },
-  { label: 'Entities', path: 'entities', icon: Network },
-  { label: 'Settings', path: 'settings', icon: Settings },
-  { label: 'Support', path: 'support', icon: LifeBuoy },
-  { label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
-  { label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
-  { label: 'Health', path: 'health', icon: Activity, requiresOperations: true },
-  { label: 'Tests', path: 'tests', icon: ClipboardCheck, requiresOperations: true },
-  { label: 'Admin', path: 'admin', icon: ShieldCheck, requiresAdmin: true },
+  { group: 'Workspace', label: 'My Cases', to: '/evidence/cases', icon: Briefcase },
+  { group: 'Workspace', label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
+  { group: 'Workspace', label: 'Documents', path: 'documents', icon: FileText },
+  { group: 'Workspace', label: 'Query', path: 'query', icon: MessageSquare },
+  { group: 'Workspace', label: 'Add Documents', path: 'intake', icon: Upload, requiresContribute: true },
+  { group: 'Workspace', label: 'Settings', path: 'settings', icon: Settings },
+  { group: 'Workspace', label: 'Support', path: 'support', icon: LifeBuoy },
+  { group: 'Review', label: 'Entities', path: 'entities', icon: Network, requiresOperations: true },
+  { group: 'Operations', label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
+  { group: 'Operations', label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
+  { group: 'Operations', label: 'Health', path: 'health', icon: Activity, requiresOperations: true },
+  { group: 'Operations', label: 'Tests', path: 'tests', icon: ClipboardCheck, requiresOperations: true },
+  { group: 'Administration', label: 'Admin', path: 'admin', icon: ShieldCheck, requiresAdmin: true },
 ];
 
 export default function EvidenceSidebar({ open = false, onClose }) {
@@ -52,6 +52,14 @@ export default function EvidenceSidebar({ open = false, onClose }) {
     }
     return true;
   });
+  const groupedItems = visibleItems.reduce((groups, item) => {
+    const group = item.group || 'Workspace';
+    return {
+      ...groups,
+      [group]: [...(groups[group] || []), item],
+    };
+  }, {});
+  const groupOrder = ['Workspace', 'Review', 'Operations', 'Administration'];
 
   return (
     <>
@@ -91,25 +99,40 @@ export default function EvidenceSidebar({ open = false, onClose }) {
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-        {visibleItems.map((item) => {
-          const Icon = item.icon;
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+        {groupOrder.map((group) => {
+          const items = groupedItems[group] || [];
+          if (!items.length) {
+            return null;
+          }
           return (
-            <NavLink
-              key={item.to || item.path}
-              to={item.to || `${basePath}/${item.path}`}
-              onClick={onClose}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-950'
-                    : 'text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
-                }`
-              }
-            >
-              <Icon size={16} aria-hidden="true" />
-              {t(item.label)}
-            </NavLink>
+            <div key={group}>
+              <div className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-500">
+                {t(group)}
+              </div>
+              <div className="space-y-1">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to || item.path}
+                      to={item.to || `${basePath}/${item.path}`}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-950'
+                            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
+                        }`
+                      }
+                    >
+                      <Icon size={16} aria-hidden="true" />
+                      {t(item.label)}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </nav>
