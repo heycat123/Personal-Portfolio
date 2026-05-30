@@ -74,6 +74,10 @@ Axiom Help answers product-usage questions. It is page-aware because it sends th
 
 Case-evidence questions should go through the Query page, not Axiom Help.
 
+## UI Standard
+
+Evidence UI work should follow `docs/EVIDENCE_UI_COMPONENT_STANDARD.md`. That standard defines the component baseline, visual rules, accessibility expectations, and multilingual requirements for customer-facing and operator-facing Evidence surfaces.
+
 ## Documentation Gaps
 
 - Add screenshots or short visual checks after the UI stabilizes.
