@@ -1,21 +1,94 @@
-import { Activity, Briefcase, Database, FileText, LifeBuoy, MessageSquare, UploadCloud, Users } from 'lucide-react';
-import { createElement, useCallback, useEffect, useState } from 'react';
+import {
+  Activity,
+  CheckCircle2,
+  CircleAlert,
+  Cloud,
+  FileText,
+  LifeBuoy,
+  MessageSquare,
+  RefreshCw,
+  UploadCloud,
+} from 'lucide-react';
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
-import MetricTile from '../components/MetricTile';
 import PageHeader from '../components/PageHeader';
-import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
-import { formatDateTime, sumCounts, truncateMiddle } from '../utils/formatters';
+import { formatDateTime, sumCounts } from '../utils/formatters';
 
 function fulfilledValue(result) {
   return result.status === 'fulfilled' ? result.value : null;
+}
+
+function latestConnectorTime(connection) {
+  return connection?.last_successful_sync_at
+    || connection?.last_synced_at
+    || connection?.last_sync_at
+    || connection?.updated_at
+    || connection?.created_at
+    || null;
+}
+
+function statusTone(status) {
+  if (status === 'ready') {
+    return {
+      icon: CheckCircle2,
+      iconClass: 'text-emerald-700 dark:text-emerald-300',
+      border: 'border-emerald-200 dark:border-emerald-900/60',
+      background: 'bg-emerald-50 dark:bg-emerald-950/20',
+      badge: 'configured',
+    };
+  }
+  if (status === 'working') {
+    return {
+      icon: Activity,
+      iconClass: 'text-sky-700 dark:text-sky-300',
+      border: 'border-sky-200 dark:border-sky-900/60',
+      background: 'bg-sky-50 dark:bg-sky-950/20',
+      badge: 'running',
+    };
+  }
+  return {
+    icon: CircleAlert,
+    iconClass: 'text-amber-700 dark:text-amber-300',
+    border: 'border-amber-200 dark:border-amber-900/60',
+    background: 'bg-amber-50 dark:bg-amber-950/20',
+    badge: 'pending',
+  };
+}
+
+function ReadinessCard({ title, status, label, detail, actionLabel, to }) {
+  const tone = statusTone(status);
+  const Icon = tone.icon;
+  return (
+    <section className={`rounded-lg border p-4 shadow-sm ${tone.border} ${tone.background}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="rounded-md border border-black/10 bg-white/70 p-2 dark:border-white/10 dark:bg-white/10">
+            <Icon className={tone.iconClass} size={18} aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{title}</h3>
+            <p className="mt-1 text-sm leading-5 text-gray-700 dark:text-gray-300">{detail}</p>
+          </div>
+        </div>
+        <StatusBadge status={tone.badge} label={label} />
+      </div>
+      {to && actionLabel ? (
+        <Link
+          to={to}
+          className="mt-4 inline-flex items-center rounded-md border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-white dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+        >
+          {actionLabel}
+        </Link>
+      ) : null}
+    </section>
+  );
 }
 
 function QuickActionCard({ icon, title, detail, to, tone = 'default' }) {
@@ -47,14 +120,13 @@ export default function DashboardPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const { canSeeOperations } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     error: null,
     summary: null,
+    connectors: [],
     health: null,
-    jobs: null,
-    fingerprints: [],
   });
 
   const loadDashboard = useCallback(async () => {
@@ -62,12 +134,10 @@ export default function DashboardPage() {
     const token = await getAccessToken();
     const requests = [
       { key: 'summary', label: 'Case summary', promise: evidenceApi.getCaseSummary(caseId, { token }) },
+      { key: 'connectors', label: 'Source connectors', promise: evidenceApi.getSourceConnectors(caseId, { token }) },
     ];
     if (canSeeOperations) {
-      requests.push(
-        { key: 'health', label: 'Case health', promise: evidenceApi.getCaseHealth(caseId, { token }) },
-        { key: 'jobs', label: 'Latest jobs', promise: evidenceApi.getJobs(caseId, { limit: 5, offset: 0 }, { token }) },
-      );
+      requests.push({ key: 'health', label: 'Case health', promise: evidenceApi.getCaseHealth(caseId, { token }) });
     }
     const results = await Promise.allSettled(requests.map((request) => request.promise));
 
@@ -80,19 +150,12 @@ export default function DashboardPage() {
       requests.map((request, index) => [request.key, fulfilledValue(results[index])?.data || null]),
     );
 
-    const firstError = results.find((result) => result.status === 'rejected')?.reason || null;
     setState({
       loading: false,
-      error: firstError,
+      error: results.find((result) => result.status === 'rejected')?.reason || null,
       summary: fulfilledByKey.summary || null,
+      connectors: fulfilledByKey.connectors?.providers || [],
       health: fulfilledByKey.health || null,
-      jobs: fulfilledByKey.jobs || null,
-      fingerprints: results
-        .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
-        .map((result) => ({
-          id: result.value.requestFingerprintId,
-          correlationId: result.value.correlationId,
-        })),
     });
   }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
 
@@ -105,31 +168,89 @@ export default function DashboardPage() {
   }, [loadDashboard]);
 
   const counts = state.summary?.counts || state.health?.summary?.counts || {};
-  const latestJobs = state.jobs?.jobs || [];
+  const google = useMemo(
+    () => state.connectors.find((provider) => provider.provider === 'google_drive') || null,
+    [state.connectors],
+  );
+  const activeGoogleConnection = useMemo(() => (
+    google?.connections?.find((connection) => connection.status === 'active' && (connection.can_browse || connection.owned_by_current_user)) || null
+  ), [google]);
+  const activeGoogleEmail = activeGoogleConnection?.account_email
+    || activeGoogleConnection?.email
+    || activeGoogleConnection?.display_name
+    || t('Connected account');
+  const googleSyncTime = latestConnectorTime(activeGoogleConnection);
+
+  const documentFiles = counts.document_files || counts.document_extractions || 0;
+  const indexedRecords = sumCounts(counts, ['communication_messages', 'canonical_people', 'person_aliases', 'entity_mentions']);
+  const missingS3Files = counts.extracted_files_missing_s3 || 0;
   const graph = state.health?.graph || {};
   const vectorCoverage = graph.chunk_embedding_coverage || {};
   const parentGaps = graph.child_parent_link_gaps || {};
-  const childChunks = vectorCoverage.child_chunks || 0;
-  const embeddedChildChunks = vectorCoverage.embedded_child_chunks || 0;
   const missingChildEmbeddings = vectorCoverage.missing_child_embeddings || 0;
   const missingParentEdges = parentGaps.missing_parent_edges || 0;
-  const vectorOk = Boolean(graph.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
-  const documentFiles = counts.document_files || counts.document_extractions || 0;
-  const syncedExtractedFiles = counts.extracted_files_synced_to_s3 || 0;
-  const missingS3Files = counts.extracted_files_missing_s3 || 0;
-  const s3CoverageOk = Boolean(documentFiles > 0 && missingS3Files === 0);
+  const systemReady = documentFiles > 0
+    && (!canSeeOperations || (missingS3Files === 0 && (!graph.configured || (graph.ok && missingChildEmbeddings === 0 && missingParentEdges === 0))));
+  const systemWorking = documentFiles > 0 || indexedRecords > 0;
+
+  const readiness = [
+    {
+      title: t('Google Drive'),
+      status: state.loading ? 'working' : activeGoogleConnection ? 'ready' : google?.configured ? 'attention' : 'attention',
+      label: state.loading ? t('Checking') : activeGoogleConnection ? t('Connected') : t('Needs connection'),
+      detail: state.loading
+        ? t('Checking source connection.')
+        : activeGoogleConnection
+          ? t('Connected as {account}{time}', {
+            account: activeGoogleEmail,
+            time: googleSyncTime ? ` | ${formatDateTime(googleSyncTime)}` : '',
+          })
+          : t('Connect Google Drive to bring case files into Evidence.'),
+      actionLabel: activeGoogleConnection ? t('Manage source') : t('Connect Google Drive'),
+      to: `/evidence/cases/${caseId}/intake`,
+    },
+    {
+      title: t('Google Contacts'),
+      status: state.loading ? 'working' : activeGoogleConnection?.can_sync_contacts ? 'ready' : activeGoogleConnection ? 'attention' : 'attention',
+      label: state.loading ? t('Checking') : activeGoogleConnection?.can_sync_contacts ? t('Ready') : t('Needs permission'),
+      detail: state.loading
+        ? t('Checking contact permission.')
+        : activeGoogleConnection?.can_sync_contacts
+          ? t('Contacts can be synced from the connected Google account.')
+          : activeGoogleConnection
+            ? t('Reconnect Google with contact permission to sync contacts.')
+            : t('Connect Google before syncing contacts.'),
+      actionLabel: activeGoogleConnection?.can_sync_contacts ? t('Sync Contacts') : t('Review contacts setup'),
+      to: `/evidence/cases/${caseId}/intake`,
+    },
+    {
+      title: t('Evidence Propagation'),
+      status: state.loading ? 'working' : systemReady ? 'ready' : systemWorking ? 'working' : 'attention',
+      label: state.loading ? t('Checking') : systemReady ? t('Ready') : systemWorking ? t('Processing') : t('Waiting'),
+      detail: state.loading
+        ? t('Checking whether files are ready to search.')
+        : systemReady
+          ? t('Files are ready to search and review.')
+          : systemWorking
+            ? t('Evidence is still catching up across storage, graph, or search.')
+            : t('Add or connect source files to start propagation.'),
+      actionLabel: canSeeOperations ? t('Open operations metrics') : t('Open documents'),
+      to: canSeeOperations ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/documents`,
+    },
+  ];
 
   return (
     <div>
       <PageHeader
         title="Case Dashboard"
-        description={canSeeOperations ? 'Live case status from the Evidence API.' : 'Search, review, and organize the evidence available in this case.'}
+        description="Case readiness and the next useful steps."
         actions={
           <button
             type="button"
             onClick={loadDashboard}
-            className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
+            <RefreshCw size={15} aria-hidden="true" />
             {t('Refresh')}
           </button>
         }
@@ -137,14 +258,34 @@ export default function DashboardPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
 
-      <section className="mb-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <section className="mb-5">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Case readiness')}</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">{t('Source connections and search readiness for this case.')}</p>
+          </div>
+          {canSeeOperations ? (
+            <Link
+              to={`/evidence/cases/${caseId}/health`}
+              className="text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+            >
+              {t('Open operations metrics')}
+            </Link>
+          ) : null}
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {readiness.map((item) => (
+            <ReadinessCard key={item.title} {...item} />
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Start Here')}</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-              {canSeeOperations
-                ? t('Use this page to confirm the case is ready, then move into documents, query, intake, or operations checks.')
-                : t('Use documents to review the file set, query to ask evidence questions, and add documents when you need to contribute new material.')}
+              {t('Choose the next task for this case.')}
             </p>
           </div>
           <Link
@@ -178,114 +319,35 @@ export default function DashboardPage() {
           <QuickActionCard
             icon={LifeBuoy}
             title={t('Get help')}
-            detail={t('Ask Axiom, suggest an idea, or report a problem.')}
+            detail={t('Ask Axiom or send the support team an idea or issue.')}
             to={`/evidence/cases/${caseId}/support`}
           />
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricTile icon={FileText} label={t('Documents')} value={documentFiles} detail={t('Unique extracted source files')} />
-        {canSeeOperations ? <MetricTile icon={Database} label={t('Pages')} value={counts.document_pages || 0} detail={t('Extracted page rows')} tone="info" /> : null}
-        {canSeeOperations ? <MetricTile
-          icon={Activity}
-          label="Cloud Copy Coverage"
-          value={`${syncedExtractedFiles}/${documentFiles}`}
-          tone={s3CoverageOk ? 'good' : documentFiles ? 'warn' : 'default'}
-          detail={documentFiles ? `${missingS3Files} extracted files still need cloud-copy proof` : 'No extracted files counted yet'}
-        /> : null}
-        <MetricTile icon={MessageSquare} label={t('Messages')} value={counts.communication_messages || 0} detail={canSeeOperations ? 'Communication rows' : t('Indexed communication records')} />
-        {canSeeOperations ? <MetricTile
-          icon={Users}
-          label={t('Entities')}
-          value={sumCounts(counts, ['canonical_people', 'person_aliases', 'entity_mentions'])}
-          detail={t('People, aliases, and mentions')}
-        /> : null}
-        {canSeeOperations ? <MetricTile icon={Activity} label={t('API Requests')} value={counts.api_requests || 0} detail="Logged fingerprints" /> : null}
-        {canSeeOperations ? <MetricTile icon={Briefcase} label={t('Jobs')} value={state.jobs?.total || 0} detail={t('Case-scoped background work')} /> : null}
-        {canSeeOperations ? <MetricTile
-          icon={Database}
-          label={t('Database')}
-          value={state.health?.database?.ok ? 'Online' : state.loading ? 'Checking' : 'Unknown'}
-          tone={state.health?.database?.ok ? 'good' : 'warn'}
-          detail={state.health?.database?.database_name || 'No database payload'}
-        /> : null}
-        {canSeeOperations ? <MetricTile
-          icon={Activity}
-          label="Cloud Storage"
-          value={state.health?.storage?.ok ? 'Configured' : state.loading ? 'Checking' : 'Unknown'}
-          tone={state.health?.storage?.ok ? 'good' : 'warn'}
-          detail={state.health?.storage?.bucket || state.health?.storage?.reason || 'No storage payload'}
-        /> : null}
-        {canSeeOperations ? <MetricTile
-          icon={Activity}
-          label={t('Graph')}
-          value={graph.ok ? 'Online' : state.loading ? 'Checking' : 'Unknown'}
-          tone={graph.ok ? 'good' : graph.configured ? 'bad' : 'warn'}
-          detail={graph.ok ? `${graph.case_totals?.nodes || 0} case nodes` : graph.error_message || graph.reason || 'No graph payload'}
-        /> : null}
-        {canSeeOperations ? <MetricTile
-          icon={Activity}
-          label={t('Vectors')}
-          value={vectorOk ? 'Covered' : graph.ok ? 'Review' : 'Unknown'}
-          tone={vectorOk ? 'good' : graph.ok ? 'warn' : 'default'}
-          detail={graph.ok ? `${embeddedChildChunks}/${childChunks} child chunks embedded` : 'Graph connection required'}
-        /> : null}
-      </div>
-
-      {canSeeOperations || debugEnabled ? <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        {canSeeOperations ? (
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Latest Jobs')}</h3>
-            <Link to={`/evidence/cases/${caseId}/jobs`} className="text-sm font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100">
-              {t('View all')}
+      {canSeeOperations ? (
+        <section className="mt-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-2 text-gray-700 dark:border-gray-800 dark:bg-[#0b1117] dark:text-gray-200">
+                <Cloud size={18} aria-hidden="true" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Operations metrics')}</h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {t('Detailed jobs, database, storage, graph, vector, and source proof checks live in Health.')}
+                </p>
+              </div>
+            </div>
+            <Link
+              to={`/evidence/cases/${caseId}/health`}
+              className="inline-flex items-center justify-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              {t('Open operations metrics')}
             </Link>
           </div>
-          <DataTable
-            rows={latestJobs}
-            rowKey={(job) => job.job_id}
-            emptyTitle={t('No jobs returned')}
-            columns={[
-              {
-                key: 'job_type',
-                header: t('Type'),
-                render: (job) => (
-                  <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
-                    {job.job_type}
-                  </Link>
-                ),
-              },
-              { key: 'status', header: t('Status'), render: (job) => <StatusBadge status={job.status} /> },
-              { key: 'created_at', header: t('Created'), render: (job) => formatDateTime(job.created_at) },
-              {
-                key: 'request_fingerprint_id',
-                header: t('Fingerprint'),
-                render: (job) => truncateMiddle(job.request_fingerprint_id, 24),
-              },
-            ]}
-          />
-        </div>
-        ) : null}
-
-        {debugEnabled ? <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Request Fingerprints')}</h3>
-          <div className="mt-3 space-y-2">
-            {state.fingerprints.length ? (
-              state.fingerprints.map((fingerprint) => (
-                <RequestFingerprint
-                  key={fingerprint.id}
-                  fingerprintId={fingerprint.id}
-                  correlationId={fingerprint.correlationId}
-                  compact
-                />
-              ))
-            ) : (
-              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No successful request fingerprint captured yet.')}</p>
-            )}
-          </div>
-        </div> : null}
-      </div> : null}
+        </section>
+      ) : null}
     </div>
   );
 }

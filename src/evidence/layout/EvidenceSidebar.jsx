@@ -5,16 +5,21 @@ import {
   Database,
   FileText,
   LayoutDashboard,
+  LogOut,
   MessageSquare,
   Network,
   Search,
   Settings,
   ShieldCheck,
+  UserCircle,
   LifeBuoy,
   Upload,
   X,
 } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
+import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
+import SupportFeedbackDrawer from '../components/SupportFeedbackDrawer';
+import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
@@ -27,7 +32,7 @@ const NAV_ITEMS = [
   { group: 'Workspace', label: 'Query', path: 'query', icon: MessageSquare },
   { group: 'Workspace', label: 'Add Documents', path: 'intake', icon: Upload, requiresContribute: true },
   { group: 'Workspace', label: 'Settings', path: 'settings', icon: Settings },
-  { group: 'Workspace', label: 'Support', path: 'support', icon: LifeBuoy },
+  { group: 'Help', label: 'Support Records', path: 'support', icon: LifeBuoy },
   { group: 'Review', label: 'Entities', path: 'entities', icon: Network, requiresOperations: true },
   { group: 'Operations', label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
   { group: 'Operations', label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
@@ -38,6 +43,7 @@ const NAV_ITEMS = [
 
 export default function EvidenceSidebar({ open = false, onClose }) {
   const { activeCase } = useCaseContext();
+  const { authMode, signOut, user } = useEvidenceAuth();
   const { t } = useLocaleSettings();
   const { canContribute, canSeeAdmin, canSeeOperations, isPreviewing, effectiveCaseRole } = useOperatorMode();
   const basePath = evidenceCasePath(activeCase);
@@ -60,7 +66,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
       [group]: [...(groups[group] || []), item],
     };
   }, {});
-  const groupOrder = ['Workspace', 'Review', 'Operations', 'Administration'];
+  const groupOrder = ['Workspace', 'Help', 'Review', 'Operations', 'Administration'];
 
   return (
     <>
@@ -112,6 +118,12 @@ export default function EvidenceSidebar({ open = false, onClose }) {
                 {t(group)}
               </div>
               <div className="space-y-1">
+                {group === 'Help' ? (
+                  <>
+                    <AxiomHelpDrawer trigger="sidebar" onOpen={onClose} />
+                    <SupportFeedbackDrawer trigger="sidebar" onOpen={onClose} />
+                  </>
+                ) : null}
                 {items.map((item) => {
                   const Icon = item.icon;
                   return (
@@ -137,6 +149,40 @@ export default function EvidenceSidebar({ open = false, onClose }) {
           );
         })}
       </nav>
+      <div className="border-t border-gray-200 p-3 dark:border-gray-800">
+        <div className="mb-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-[#0b1117]">
+          <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-gray-950 dark:text-white">
+            <UserCircle size={16} aria-hidden="true" />
+            <span className="truncate">{user?.displayName || t('Evidence User')}</span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span>{effectiveCaseRole}</span>
+            <span aria-hidden="true">|</span>
+            <span>{authMode}</span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            to="/evidence/account"
+            onClick={onClose}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <UserCircle size={16} aria-hidden="true" />
+            {t('Account')}
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              onClose?.();
+              signOut();
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <LogOut size={16} aria-hidden="true" />
+            {t('Sign out')}
+          </button>
+        </div>
+      </div>
     </aside>
     </>
   );

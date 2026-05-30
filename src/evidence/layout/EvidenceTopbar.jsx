@@ -1,11 +1,7 @@
-import { Bug, Languages, LogOut, Menu, RefreshCw, Shield, UserCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
+import { Bug, Languages, Menu, RefreshCw } from 'lucide-react';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import StatusBadge from '../components/StatusBadge';
-import SupportFeedbackDrawer from '../components/SupportFeedbackDrawer';
 import { useApiStatus } from '../context/ApiStatusContext';
-import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
@@ -14,7 +10,6 @@ import { formatDateTime } from '../utils/formatters';
 
 export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) {
   const { status, latestFingerprint, checkApiHealth } = useApiStatus();
-  const { user, authMode, signOut } = useEvidenceAuth();
   const { activeCase } = useCaseContext();
   const { preferences, supportedLanguages, t, updatePreferences, saving: savingLocale } = useLocaleSettings();
   const {
@@ -109,8 +104,6 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
               <span className="hidden sm:inline">{t('Support mode')}</span>
             </button>
           ) : null}
-          <AxiomHelpDrawer />
-          <SupportFeedbackDrawer />
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
           <label className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5 text-gray-700 dark:border-gray-800 dark:text-gray-300">
             <Languages size={16} aria-hidden="true" />
@@ -138,31 +131,6 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
           >
             <RefreshCw size={16} aria-hidden="true" />
           </button> : null}
-          <div className="flex min-w-0 max-w-[11rem] items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-gray-700 dark:border-gray-800 dark:text-gray-300 sm:max-w-xs sm:px-3">
-            <Shield size={16} aria-hidden="true" />
-            <span className="truncate">{user?.displayName || t('Evidence User')}</span>
-            <span className="hidden rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300 sm:inline">
-              {effectiveCaseRole}
-            </span>
-            {showOperatorChrome ? <span className="hidden text-xs text-gray-500 sm:inline">({authMode})</span> : null}
-          </div>
-          <Link
-            to="/evidence/account"
-            title={t('Account')}
-            aria-label={t('Account')}
-            className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <UserCircle size={16} aria-hidden="true" />
-          </Link>
-          <button
-            type="button"
-            onClick={signOut}
-            title={t('Sign out')}
-            aria-label={t('Sign out')}
-            className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
-          >
-            <LogOut size={16} aria-hidden="true" />
-          </button>
         </div>
       </div>
 
