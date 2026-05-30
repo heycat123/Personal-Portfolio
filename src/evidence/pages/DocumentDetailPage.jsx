@@ -10,6 +10,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
@@ -53,7 +54,7 @@ function formatTranslationTargets(targets, t) {
 
 function factorLabel(code, t) {
   if (!code) {
-    return t('No factor tag');
+    return t('No issue tag');
   }
   if (code === 'review_needed') {
     return t('Needs review');
@@ -64,7 +65,7 @@ function factorLabel(code, t) {
 function FactorTags({ document, t }) {
   const codes = Array.isArray(document?.legal_factor_codes) ? document.legal_factor_codes : [];
   if (!codes.length) {
-    const label = document?.graph_status === 'complete' ? t('No factor tag') : t('Not graphed');
+    const label = document?.graph_status === 'complete' ? t('No issue tag') : t('Needs review');
     return <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>;
   }
   return (
@@ -104,7 +105,7 @@ function DocumentPreviewPanel({ previewUrl, contentType, fileName, t }) {
       <p>{t('Inline preview is not available for this file type.')}</p>
       <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800">
         <ExternalLink size={16} aria-hidden="true" />
-        {t('Open raw file')}
+        {t('Open source file')}
       </a>
     </div>
   );
@@ -115,6 +116,7 @@ export default function DocumentDetailPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -195,6 +197,7 @@ export default function DocumentDetailPage() {
 
   const document = state.document;
   const lowTextPages = useMemo(() => parseLowTextPages(document?.low_text_pages_json), [document]);
+  const showDiagnostics = canSeeOperations || debugEnabled;
 
   const queueLanguageJob = useCallback(async (jobType) => {
     if (!document?.file_id) {
@@ -273,9 +276,8 @@ export default function DocumentDetailPage() {
     <div>
       <PageHeader
         title={document?.original_filename || 'Document Detail'}
-        description={document?.file_id || fileId}
+        description={document ? t('Source file details and extracted text status.') : t('Loading document details.')}
         translateTitle={!document?.original_filename}
-        translateDescription={false}
         actions={
           <>
             <button
@@ -301,7 +303,7 @@ export default function DocumentDetailPage() {
               onClick={requestDocumentRemovalPlan}
               disabled={!document || state.removalBusy}
               className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
-              title={t('Queues a non-destructive cleanup review. It does not delete source, S3, Postgres, vector, or graph records.')}
+              title={t('Queues a non-destructive cleanup review. It does not delete the source file, secure workspace copy, search index, or relationship data.')}
             >
               <Trash2 size={16} aria-hidden="true" />
               {state.removalBusy ? t('Queueing') : t('Request cleanup review')}
@@ -320,12 +322,12 @@ export default function DocumentDetailPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocument} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title={t('Language job failed')} error={state.actionError} /></div> : null}
 
-      {state.fingerprint?.id ? (
+      {showDiagnostics && state.fingerprint?.id ? (
         <div className="mb-5">
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
         </div>
       ) : null}
-      {state.languageJob?.fingerprint?.id ? (
+      {showDiagnostics && state.languageJob?.fingerprint?.id ? (
         <div className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
           <div className="font-semibold">{t('Language job queued')}</div>
           <div className="mt-1 break-words">
@@ -368,34 +370,37 @@ export default function DocumentDetailPage() {
 
           <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Raw File Preview')}</h3>
-              {document.s3_key ? <StatusBadge status="configured" label={t('Cloud copy')} /> : <StatusBadge status="degraded" label={t('No cloud copy')} />}
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source file preview')}</h3>
+              {document.s3_key ? <StatusBadge status="configured" label={t('Secure workspace copy')} /> : <StatusBadge status="degraded" label={t('No secure copy')} />}
             </div>
             {state.previewLoading ? (
-              <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading raw file preview...')}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>
             ) : state.previewError ? (
-              <ErrorPanel title="Raw preview failed" error={state.previewError} />
+              <ErrorPanel title={t('Source file preview failed')} error={state.previewError} />
             ) : state.previewUrl ? (
               <DocumentPreviewPanel previewUrl={state.previewUrl} contentType={state.previewContentType} fileName={document.original_filename} t={t} />
             ) : (
-              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No raw file preview is available for this document yet.')}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No source file preview is available for this document yet.')}</p>
             )}
           </div>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Metadata')}</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{showDiagnostics ? t('Support details') : t('Source details')}</h3>
               <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
                 {[
-                  ['File ID', document.file_id],
-                  ['Version ID', document.current_file_version_id],
-                  ['Content Hash', document.content_hash],
                   ['Original Path', document.original_filepath],
-                  ['Drive File ID', document.source_details?.drive_file_id],
-                  ['Drive MD5', document.source_details?.drive_md5],
-                  ['S3 Key', document.s3_key],
+                  ['File Size', document.content_length ? `${document.content_length} ${t('bytes')}` : null],
                   ['Created', formatDateTime(document.created_at)],
                   ['Updated', formatDateTime(document.updated_at)],
+                  ...(showDiagnostics ? [
+                    ['File ID', document.file_id],
+                    ['Version ID', document.current_file_version_id],
+                    ['Content Hash', document.content_hash],
+                    ['Drive File ID', document.source_details?.drive_file_id],
+                    ['Drive MD5', document.source_details?.drive_md5],
+                    ['Storage key', document.s3_key],
+                  ] : []),
                 ].map(([label, value]) => (
                   <div key={label} className="min-w-0">
                     <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(label)}</dt>
@@ -417,24 +422,24 @@ export default function DocumentDetailPage() {
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Coverage Flags')}</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Review status')}</h3>
               <div className="mt-4 space-y-3 text-sm">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Low Text Pages')}</p>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages needing text review')}</p>
                   <p className="mt-1 text-gray-900 dark:text-gray-100">
                     {lowTextPages.length ? lowTextPages.map((item) => String(item)).join(', ') : t('None reported')}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Graph Status')}</p>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Relationship links')}</p>
                   <StatusBadge status={document.graph_status || 'pending'} label={document.graph_status || t('pending')} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Vector Status')}</p>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</p>
                   <StatusBadge status={document.vector_status || 'pending'} label={document.vector_status || t('pending')} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Factor Tags')}</p>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Issue tags')}</p>
                   <div className="mt-1"><FactorTags document={document} t={t} /></div>
                 </div>
                 <div>
@@ -458,13 +463,13 @@ export default function DocumentDetailPage() {
 
           <div className="mt-6">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Page Extraction Rows')}</h3>
-              <span className="text-sm text-gray-600 dark:text-gray-400">{document.pages?.length || 0} {t('row(s)')}</span>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Pages / extracted text')}</h3>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{document.pages?.length || 0} {t('page(s)')}</span>
             </div>
             <DataTable
               rows={document.pages || []}
               rowKey={(page) => `${page.page_number}-${page.text_source}`}
-              emptyTitle={t('No page extraction rows returned')}
+              emptyTitle={t('No page text returned')}
               columns={[
                 { key: 'page_number', header: t('Page'), render: (page) => page.page_number },
                 { key: 'text_source', header: t('Text Source'), render: (page) => page.text_source || t('unknown') },

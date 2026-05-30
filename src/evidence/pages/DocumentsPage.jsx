@@ -9,6 +9,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 
@@ -35,7 +36,7 @@ const FACTOR_LABELS = Object.fromEntries(STATUTE_FACTOR_OPTIONS.map((item) => [i
 
 function factorLabel(code, t) {
   if (!code) {
-    return t('No factor tag');
+    return t('No issue tag');
   }
   if (code === 'review_needed') {
     return t('Needs review');
@@ -92,7 +93,7 @@ function DocumentPreviewPanel({ previewUrl, contentType, fileName, t }) {
       <p>{t('Inline preview is not available for this file type.')}</p>
       <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800">
         <ExternalLink size={16} aria-hidden="true" />
-        {t('Open raw file')}
+        {t('Open source file')}
       </a>
     </div>
   );
@@ -154,7 +155,7 @@ function StorageSyncBadge({ document }) {
       ? 'Secure copy pending'
       : status === 'needs_s3_sync'
         ? 'Needs secure copy'
-        : statusText(status);
+        : 'Not processed yet';
   return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
 }
 
@@ -174,9 +175,9 @@ function PipelineDot({ label, status, colorClass }) {
 function PipelineDots({ document, showLabels = false }) {
   const statuses = document?.pipeline_status || {};
   const items = [
-    { key: 'postgres', label: 'Document record', status: statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
-    { key: 'vector', label: 'Search index', status: statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
-    { key: 'graph', label: 'Connections', status: statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
+    { key: 'postgres', label: 'Document ready', status: statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
+    { key: 'vector', label: 'Search ready', status: statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
+    { key: 'graph', label: 'Relationship links', status: statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
   ];
   if (!showLabels) {
     return (
@@ -307,6 +308,8 @@ export default function DocumentsPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const showDiagnostics = canSeeOperations || debugEnabled;
   const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
   const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
   const [filterValues, setFilterValues] = useState(initialTableState.filterValues || {});
@@ -713,15 +716,15 @@ export default function DocumentsPage() {
     },
     {
       key: 'pipeline_status',
-      header: t('Propagation'),
+      header: t('Processing status'),
       headerClassName: 'w-[9%]',
       filterable: true,
       sortable: false,
       filterMulti: true,
       filterOptions: facetOptions(state.facets, 'pipeline_status'),
-      filterLabel: t('Require completed domains'),
-      filterHint: t('Selected propagation filters are combined with AND.'),
-      help: t('Processing coverage for document record, search index, and connections. Lit dots mean that step has processed this document.'),
+      filterLabel: t('Require completed steps'),
+      filterHint: t('Selected processing filters are combined with AND.'),
+      help: t('Processing coverage for document readiness, search, and relationship links. Lit dots mean that step has processed this document.'),
       render: (document) => <PipelineDots document={document} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
@@ -815,7 +818,7 @@ export default function DocumentsPage() {
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure Copies')}</div>
           <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{s3SyncedFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('stored cloud intake records')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('secure workspace copy records')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs Secure Copy')}</div>
@@ -823,9 +826,9 @@ export default function DocumentsPage() {
           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Processed documents missing secure-copy confirmation')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cloud Only')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Not processed yet')}</div>
           <div className="mt-1 text-2xl font-semibold text-sky-700 dark:text-sky-300">{s3OnlyFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Mirrored files not extracted yet')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Files copied to the workspace but not processed yet')}</div>
         </div>
       </div>
 
@@ -881,10 +884,10 @@ export default function DocumentsPage() {
             </button>
           ) : null}
         </form>
-        {state.fingerprint?.id ? (
+        {showDiagnostics && state.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
         ) : null}
-        {exportState.fingerprint?.id ? (
+        {showDiagnostics && exportState.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={exportState.fingerprint.id} correlationId={exportState.fingerprint.correlationId} label={t('Export fingerprint')} />
         ) : null}
       </div>
@@ -932,18 +935,18 @@ export default function DocumentsPage() {
           const detail = detailState?.document;
           const pages = detail?.pages || [];
           if (detailState?.error) {
-            return <ErrorPanel title="Document sub-document load failed" error={detailState.error} />;
+            return <ErrorPanel title={t('Document page text load failed')} error={detailState.error} />;
           }
           if (detailState?.loading) {
-            return <div className="text-sm text-gray-600 dark:text-gray-400">{t('Loading sub-documents...')}</div>;
+            return <div className="text-sm text-gray-600 dark:text-gray-400">{t('Loading pages / extracted text...')}</div>;
           }
           return (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Sub-documents')}</div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages / extracted text')}</div>
                   <div className="text-sm text-gray-700 dark:text-gray-300">
-                    {pages.length ? t('{size} page extraction rows', { size: pages.length }) : t('No page extraction rows are available yet.')}
+                    {pages.length ? t('{size} page(s) with extracted text', { size: pages.length }) : t('No page text is available yet.')}
                   </div>
                 </div>
                 <PipelineDots document={detail || document} />
@@ -1009,7 +1012,7 @@ export default function DocumentsPage() {
                 <div className="truncate text-sm font-semibold text-gray-950 dark:text-white">
                   {drawer.document?.original_filename || t('Document Preview')}
                 </div>
-                <div className="truncate text-xs text-gray-500 dark:text-gray-400">{drawer.document?.file_id || t('Loading document')}</div>
+                <div className="truncate text-xs text-gray-500 dark:text-gray-400">{drawer.document?.original_filepath || t('Loading document')}</div>
               </div>
               <button
                 type="button"
@@ -1022,7 +1025,7 @@ export default function DocumentsPage() {
 
             <div className="h-full overflow-auto overflow-x-hidden p-3 sm:p-4">
               {drawer.error ? <div className="mb-4"><ErrorPanel title="Document preview failed" error={drawer.error} /></div> : null}
-              {drawer.fingerprint?.id ? (
+              {showDiagnostics && drawer.fingerprint?.id ? (
                 <div className="mb-4">
                   <RequestFingerprint fingerprintId={drawer.fingerprint.id} correlationId={drawer.fingerprint.correlationId} label={t('Preview fingerprint')} />
                 </div>
@@ -1055,11 +1058,11 @@ export default function DocumentsPage() {
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.evidence_type_label || 'Document'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Storage')}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure Copy')}</div>
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.canonical_storage_label || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Propagation')}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing status')}</div>
                     <div className="mt-2"><PipelineDots document={drawer.document} /></div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
@@ -1079,11 +1082,13 @@ export default function DocumentsPage() {
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                   {[
                     [t('Updated'), formatDateTime(drawer.document?.updated_at || drawer.document?.created_at)],
-                    [t('Content Hash'), drawer.document?.content_hash],
-                    [t('Version ID'), drawer.document?.current_file_version_id],
                     [t('Media Type'), drawer.document?.media_type],
-                    [t('Drive File ID'), drawer.document?.source_details?.drive_file_id],
                     [t('File Size'), drawer.document?.content_length ? `${drawer.document.content_length} ${t('bytes')}` : null],
+                    ...(showDiagnostics ? [
+                      [t('Content Hash'), drawer.document?.content_hash],
+                      [t('Version ID'), drawer.document?.current_file_version_id],
+                      [t('Drive File ID'), drawer.document?.source_details?.drive_file_id],
+                    ] : []),
                   ].map(([label, value]) => (
                     <div key={label} className="min-w-0">
                       <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</dt>
@@ -1104,12 +1109,12 @@ export default function DocumentsPage() {
                 ) : null}
 
                 <div className="mt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing Domains')}</div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing status')}</div>
                   <PipelineDots document={drawer.document} showLabels />
                 </div>
 
                 <div className="mt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Factor Tags')}</div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Issue tags')}</div>
                   <FactorTags document={drawer.document} t={t} />
                 </div>
 
@@ -1133,7 +1138,7 @@ export default function DocumentsPage() {
                     onClick={requestDocumentRemovalPlan}
                     disabled={drawer.removalBusy || !drawer.document?.file_id}
                     className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
-                    title={t('Queues a non-destructive cleanup review. It does not delete source, S3, Postgres, vector, or graph records.')}
+                    title={t('Queues a non-destructive cleanup review. It does not delete the source file, secure workspace copy, search index, or relationship data.')}
                   >
                     <Trash2 size={16} aria-hidden="true" />
                     {drawer.removalBusy ? t('Queueing') : t('Request cleanup review')}
@@ -1143,13 +1148,13 @@ export default function DocumentsPage() {
 
               <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Raw File Preview')}</h3>
-                  {drawer.document?.s3_key ? <StatusBadge status="configured" label={t('Cloud copy')} /> : <StatusBadge status="degraded" label={t('No cloud copy')} />}
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source file preview')}</h3>
+                  {drawer.document?.s3_key ? <StatusBadge status="configured" label={t('Secure workspace copy')} /> : <StatusBadge status="degraded" label={t('No secure copy')} />}
                 </div>
                 {drawer.previewLoading ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading raw file preview...')}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>
                 ) : drawer.previewError ? (
-                  <ErrorPanel title="Raw preview failed" error={drawer.previewError} />
+                  <ErrorPanel title={t('Source file preview failed')} error={drawer.previewError} />
                 ) : drawer.previewUrl ? (
                   <DocumentPreviewPanel
                     previewUrl={drawer.previewUrl}
@@ -1158,14 +1163,14 @@ export default function DocumentsPage() {
                     t={t}
                   />
                 ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('No raw file preview is available for this document yet.')}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('No source file preview is available for this document yet.')}</p>
                 )}
               </section>
 
               <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Page Extraction Rows')}</h3>
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('{size} rows', { size: drawer.document?.pages?.length || 0 })}</span>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Pages / extracted text')}</h3>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('{size} page(s)', { size: drawer.document?.pages?.length || 0 })}</span>
                 </div>
                 <DataTable
                   rows={drawer.document?.pages || []}

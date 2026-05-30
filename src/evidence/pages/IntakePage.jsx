@@ -751,7 +751,7 @@ export default function IntakePage() {
           <div>
             <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Document intake flow')}</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
-              {t('Pick files from a connected account or upload files from this browser. The system keeps a controlled storage copy before extraction, graphing, vectors, or legal classification run.')}
+              {t('Pick files from a connected account or upload files from this browser. Evidence AI keeps a secure workspace copy before document text and review labels are processed.')}
             </p>
           </div>
           <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300">
@@ -764,7 +764,7 @@ export default function IntakePage() {
           {[
             ['1', 'Choose source', 'Connect Google Drive or select a local file upload.'],
             ['2', 'Select files', 'Include folders/files and exclude anything that should not enter the case.'],
-            ['3', 'Sync and process', 'Mirror selected files to controlled storage, then queue extraction and graph/vector work.'],
+            ['3', 'Sync and process', 'Copy selected files into the secure workspace, then prepare text, search, and relationship links.'],
           ].map(([number, title, detail]) => (
             <div key={number} className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
               <div className="flex items-start gap-3">
@@ -900,7 +900,7 @@ export default function IntakePage() {
                   </div>
                   <div>
                     <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Google Drive Documents')}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select the Drive folders or files that should be part of this case, then sync them into controlled storage for processing.')}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select the Drive folders or files that should be part of this case, then sync them into the secure workspace for processing.')}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
                   </div>
                 </div>
@@ -953,7 +953,7 @@ export default function IntakePage() {
                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
                   <div className="font-semibold">{t('Google Drive sync queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
-                  <div className="mt-2 text-xs">{t('The worker will copy selected Drive files, including supported Google Docs exports, into controlled storage and queue new files for registration.')}</div>
+                  <div className="mt-2 text-xs">{t('Evidence AI will copy selected Drive files, including supported Google Docs exports, into the secure workspace and queue new files for processing.')}</div>
                 </div>
               ) : null}
               {driveReview.error ? (
@@ -1007,7 +1007,7 @@ export default function IntakePage() {
                                     <span>{item.already_mirrored ? t('Already mirrored') : t('Needs review')}</span>
                                   </div>
                                 </div>
-                                <StatusBadge status={item.already_mirrored ? 'succeeded' : 'pending'} label={item.already_mirrored ? 'cloud copy' : 'review'} />
+                                <StatusBadge status={item.already_mirrored ? 'succeeded' : 'pending'} label={item.already_mirrored ? t('secure copy') : t('review')} />
                               </div>
                               {item.relative_path ? <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{item.relative_path}</div> : null}
                             </button>
@@ -1417,7 +1417,7 @@ export default function IntakePage() {
               </div>
               <div>
                 <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Upload From This Computer')}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Uploaded files are copied into controlled storage first. Processing can be started after registration.')}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Uploaded files are copied into the secure workspace first. Processing can be started after registration.')}</p>
               </div>
             </div>
 
