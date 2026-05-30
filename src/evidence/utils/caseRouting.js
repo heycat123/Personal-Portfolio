@@ -5,7 +5,12 @@ export function getCaseRouteId(item) {
   if (typeof item === 'string') {
     return item || null;
   }
-  return item.caseUrlId || item.case_url_id || item.routeCaseId || item.route_case_id || item.caseId || item.case_id || null;
+  const explicitRouteId = item.caseUrlId || item.case_url_id || item.routeCaseId || item.route_case_id;
+  if (explicitRouteId) {
+    return explicitRouteId;
+  }
+  const backendId = item.caseId || item.case_id;
+  return String(backendId || '').startsWith('case_') ? backendId : null;
 }
 
 export function getCaseBackendId(item) {
@@ -23,9 +28,7 @@ export function caseMatchesRouteId(item, routeId) {
   if (!normalizedRouteId) {
     return false;
   }
-  return [getCaseRouteId(item), getCaseBackendId(item)]
-    .filter(Boolean)
-    .some((candidate) => String(candidate) === normalizedRouteId);
+  return String(getCaseRouteId(item) || '') === normalizedRouteId;
 }
 
 export function evidenceCasePath(caseOrRouteId, suffix = '') {
