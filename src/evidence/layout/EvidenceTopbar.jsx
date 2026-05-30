@@ -1,4 +1,5 @@
 import { Bug, Languages, Menu, RefreshCw } from 'lucide-react';
+import CognitoViewDrawer from '../components/CognitoViewDrawer';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
@@ -18,11 +19,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
     effectiveCaseRole,
     isPreviewing,
     isRootAdmin,
-    openPreviewTab,
-    previewRole,
-    previewRoles,
     setDebugEnabled,
-    setPreviewRole,
   } = useOperatorMode();
   const showOperatorChrome = canSeeOperations || debugEnabled;
 
@@ -67,27 +64,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
             {EVIDENCE_API_BASE_URL}
           </div> : null}
           {showOperatorChrome ? <StatusBadge status={status.state} /> : null}
-          {isRootAdmin ? (
-            <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-              <span className="text-xs font-semibold">{t('View as')}</span>
-              <select
-                value={previewRole}
-                onChange={(event) => setPreviewRole(event.target.value)}
-                className="bg-transparent text-xs font-semibold outline-none dark:bg-amber-950"
-                title={t('Preview lower case role')}
-              >
-                <option value="">{t('Root admin')}</option>
-                {previewRoles.map((role) => <option key={role} value={role}>{role}</option>)}
-              </select>
-              <button
-                type="button"
-                onClick={() => openPreviewTab(previewRole || 'contributor')}
-                className="rounded border border-amber-300 px-2 py-1 text-xs font-semibold hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/50"
-              >
-                {t('New tab')}
-              </button>
-            </div>
-          ) : null}
+          {isRootAdmin ? <CognitoViewDrawer /> : null}
           {canSeeOperations ? (
             <button
               type="button"
