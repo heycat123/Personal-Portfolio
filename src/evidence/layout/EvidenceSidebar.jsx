@@ -26,7 +26,6 @@ import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceCasePath } from '../utils/caseRouting';
 
 const NAV_ITEMS = [
-  { group: 'Workspace', label: 'My Cases', to: '/evidence/cases', icon: Briefcase },
   { group: 'Workspace', label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
   { group: 'Workspace', label: 'Documents', path: 'documents', icon: FileText },
   { group: 'Workspace', label: 'Query', path: 'query', icon: MessageSquare },
@@ -38,12 +37,12 @@ const NAV_ITEMS = [
   { group: 'Operations', label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
   { group: 'Operations', label: 'Health', path: 'health', icon: Activity, requiresOperations: true },
   { group: 'Operations', label: 'Tests', path: 'tests', icon: ClipboardCheck, requiresOperations: true },
-  { group: 'Administration', label: 'Admin', path: 'admin', icon: ShieldCheck, requiresAdmin: true },
+  { group: 'Operations', label: 'Admin', path: 'admin', icon: ShieldCheck, requiresAdmin: true },
 ];
 
 export default function EvidenceSidebar({ open = false, onClose }) {
   const { activeCase } = useCaseContext();
-  const { authMode, signOut, user } = useEvidenceAuth();
+  const { signOut, user } = useEvidenceAuth();
   const { t } = useLocaleSettings();
   const { canContribute, canSeeAdmin, canSeeOperations, isPreviewing, effectiveCaseRole } = useOperatorMode();
   const basePath = evidenceCasePath(activeCase);
@@ -66,7 +65,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
       [group]: [...(groups[group] || []), item],
     };
   }, {});
-  const groupOrder = ['Workspace', 'Help', 'Review', 'Operations', 'Administration'];
+  const groupOrder = ['Workspace', 'Review', 'Operations', 'Help'];
 
   return (
     <>
@@ -84,12 +83,20 @@ export default function EvidenceSidebar({ open = false, onClose }) {
         }`}
       >
       <div className="flex items-start gap-3 px-4 py-4 lg:px-5">
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-[#0c1218]">
+        <div className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-[#0c1218]">
           <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
             <Database size={16} aria-hidden="true" />
             {t('Evidence')}
           </div>
           <p className="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-400">{activeCase.caseName}</p>
+          <Link
+            to="/evidence/cases"
+            onClick={onClose}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white"
+          >
+            <Briefcase size={15} aria-hidden="true" />
+            {t('My Cases')}
+          </Link>
           {isPreviewing ? (
             <p className="mt-2 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
               {t('Previewing {role}', { role: effectiveCaseRole })}
@@ -154,11 +161,6 @@ export default function EvidenceSidebar({ open = false, onClose }) {
           <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-gray-950 dark:text-white">
             <UserCircle size={16} aria-hidden="true" />
             <span className="truncate">{user?.displayName || t('Evidence User')}</span>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <span>{effectiveCaseRole}</span>
-            <span aria-hidden="true">|</span>
-            <span>{authMode}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
