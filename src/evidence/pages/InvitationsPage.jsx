@@ -1,4 +1,4 @@
-import { CheckCircle2, Mail, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Mail, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { caseMatchesRouteId, evidenceCasePath } from '../utils/caseRouting';
 
@@ -14,6 +15,7 @@ export default function InvitationsPage() {
   const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
   const { registerCases } = useCaseContext();
+  const { t } = useLocaleSettings();
   const [state, setState] = useState({
     loading: true,
     saving: false,
@@ -78,6 +80,15 @@ export default function InvitationsPage() {
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Invitation action failed" error={state.error} /></div> : null}
+
+      <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+          <p>
+            {t('Only accept workspace access if you are authorized to see this case information. Family-law records may include private, privileged, child-related, financial, medical, school, or safety-sensitive information.')}
+          </p>
+        </div>
+      </section>
 
       <section className="mb-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <h3 className="text-base font-semibold text-gray-950 dark:text-white">Enter invite code</h3>

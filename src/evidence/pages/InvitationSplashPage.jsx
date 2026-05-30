@@ -104,7 +104,7 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
                   {state.invitation?.case_name || t('Evidence case')}
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
-                  {inviter} {t('invited you to join this Evidence AI workspace.')}
+                  {inviter} {t('invited you to receive workspace access for this Evidence AI case.')}
                 </p>
 
                 <dl className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -136,6 +136,15 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
                     {state.invitation.message}
                   </div>
                 ) : null}
+
+                <div className="mt-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+                    <p>
+                      {t('Only accept workspace access if you are authorized to see this case information. Family-law records may include private, privileged, child-related, financial, medical, school, or safety-sensitive information.')}
+                    </p>
+                  </div>
+                </div>
 
                 <div className="mt-5 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                   <div className="flex items-start gap-2">

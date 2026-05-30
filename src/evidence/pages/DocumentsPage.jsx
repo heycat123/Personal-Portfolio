@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Info, Search, Trash2, X } from 'lucide-react';
+import { Download, ExternalLink, FileText, Info, Search, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -46,7 +46,7 @@ function factorLabel(code, t) {
 function FactorTags({ document, t, compact = false }) {
   const codes = Array.isArray(document?.legal_factor_codes) ? document.legal_factor_codes : [];
   if (!codes.length) {
-    const label = document?.graph_status === 'complete' ? t('No factor tag') : t('Not graphed');
+    const label = document?.graph_status === 'complete' ? t('Uncategorized') : t('Needs review');
     return <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>;
   }
   const visibleCodes = compact ? codes.slice(0, 3) : codes;
@@ -143,13 +143,17 @@ function statusText(status) {
 }
 
 function StorageSyncBadge({ document }) {
-  const status = document?.canonical_storage_status || 'unknown';
+  const status = document?.source_status?.storage || document?.canonical_storage_status || 'unknown';
+  const sourceLabel = document?.source_status?.label;
+  if (sourceLabel) {
+    return <StatusBadge status={status === 'canonical' || status === 'synced' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={sourceLabel} />;
+  }
   const label = status === 'canonical'
-    ? 'Cloud copy complete'
+    ? 'Secure copy complete'
     : status === 'pending_verification'
-      ? 'Cloud copy pending'
+      ? 'Secure copy pending'
       : status === 'needs_s3_sync'
-        ? 'Needs cloud copy'
+        ? 'Needs secure copy'
         : statusText(status);
   return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
 }
@@ -170,9 +174,9 @@ function PipelineDot({ label, status, colorClass }) {
 function PipelineDots({ document, showLabels = false }) {
   const statuses = document?.pipeline_status || {};
   const items = [
-    { key: 'postgres', label: 'Postgres', status: statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
-    { key: 'vector', label: 'Vector', status: statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
-    { key: 'graph', label: 'Graph', status: statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
+    { key: 'postgres', label: 'Document record', status: statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
+    { key: 'vector', label: 'Search index', status: statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
+    { key: 'graph', label: 'Connections', status: statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
   ];
   if (!showLabels) {
     return (
@@ -204,11 +208,97 @@ function facetOptions(facets, key) {
   }));
 }
 
+function ClassificationOverview({ classificationOptions, issueTagOptions, filterValues, onFilter, t }) {
+  const activeClassification = filterValues.evidence_type_label || '';
+  const activeIssueTag = filterValues.legal_factor_code || '';
+  const visibleClassifications = classificationOptions.slice(0, 8);
+  const reviewOption = issueTagOptions.find((option) => option.value === 'review_needed');
+
+  return (
+    <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-3xl">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Evidence classification')}</div>
+          <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{t('Organize documents by label')}</h2>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            {t('Labels help organize your documents. They do not decide whether a document is admissible, legally important, or enough to prove a claim.')}
+          </p>
+        </div>
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+            <span>{t('Uncategorized or needs-review items may need a person to confirm the label, source, date, or text before relying on them in query.')}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {visibleClassifications.length ? visibleClassifications.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onFilter('evidence_type_label', activeClassification === option.value ? '' : option.value)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              activeClassification === option.value
+                ? 'border-sky-700 bg-sky-700 text-white'
+                : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-700 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30'
+            }`}
+          >
+            {option.label || option.value}
+            <span className="ml-1 opacity-70">{option.count}</span>
+          </button>
+        )) : (
+          <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:border-gray-700 dark:bg-black/20 dark:text-gray-300">
+            {t('Classification data is still processing')}
+          </span>
+        )}
+        {reviewOption ? (
+          <button
+            type="button"
+            onClick={() => onFilter('legal_factor_code', activeIssueTag === reviewOption.value ? '' : reviewOption.value)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              activeIssueTag === reviewOption.value
+                ? 'border-amber-700 bg-amber-700 text-white'
+                : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100'
+            }`}
+          >
+            {t('Needs review')}
+            <span className="ml-1 opacity-70">{reviewOption.count}</span>
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 function selectedPipelineDomains(value) {
   return String(value || '')
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function exportGuardrailMessage(guardrails, t) {
+  const lines = [
+    t('Review for sensitive information before sharing or filing. Court rules may require personal information to be removed or limited. Exports should be reviewed by you or your lawyer before use.'),
+  ];
+  const categories = guardrails?.sensitive_info_warnings || guardrails?.warning_categories || guardrails?.categories || [];
+  const documentsWithWarnings = guardrails?.documents_with_warnings ?? guardrails?.sensitive_document_count ?? null;
+  if (Number(documentsWithWarnings) > 0) {
+    lines.push(t('{count} documents in this export may contain sensitive information.', { count: documentsWithWarnings }));
+  }
+  if (Array.isArray(categories) && categories.length) {
+    const labels = categories
+      .map((item) => item?.label || item?.category || item?.value || item)
+      .filter(Boolean)
+      .slice(0, 6)
+      .join(', ');
+    if (labels) {
+      lines.push(`${t('Sensitive categories to review')}: ${labels}`);
+    }
+  }
+  lines.push(t('Select OK only after you have reviewed who should receive this export.'));
+  return lines.join('\n\n');
 }
 
 export default function DocumentsPage() {
@@ -333,7 +423,35 @@ export default function DocumentsPage() {
     setExportState({ busy: true, error: null, fingerprint: null });
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.exportDocuments(caseId, documentQuery, { token });
+      let guardrails = null;
+      try {
+        const guardrailResult = await evidenceApi.getDocumentExportGuardrails(caseId, documentQuery, { token });
+        recordFingerprint(guardrailResult, 'Document export guardrails');
+        guardrails = guardrailResult.data?.export_guardrails || guardrailResult.data || null;
+      } catch (guardrailError) {
+        guardrails = guardrailError?.payload?.detail?.export_guardrails || null;
+      }
+      const confirmed = window.confirm(exportGuardrailMessage(guardrails, t));
+      if (!confirmed) {
+        setExportState({ busy: false, error: null, fingerprint: null });
+        return;
+      }
+      const runExport = () => evidenceApi.exportDocuments(
+        caseId,
+        { ...documentQuery, acknowledge_sensitive_export: true },
+        { token },
+      );
+      let result;
+      try {
+        result = await runExport();
+      } catch (error) {
+        const serverGuardrails = error?.payload?.detail?.export_guardrails || error?.payload?.export_guardrails;
+        if (error?.status === 409 && serverGuardrails && window.confirm(exportGuardrailMessage(serverGuardrails, t))) {
+          result = await runExport();
+        } else {
+          throw error;
+        }
+      }
       recordFingerprint(result, 'Documents export');
       const url = URL.createObjectURL(result.blob);
       const activeFactor = String(filterValues.legal_factor_code || '').toUpperCase() || 'documents';
@@ -355,7 +473,7 @@ export default function DocumentsPage() {
     } catch (error) {
       setExportState({ busy: false, error, fingerprint: null });
     }
-  }, [caseId, documentQuery, filterValues.legal_factor_code, getAccessToken, recordFingerprint]);
+  }, [caseId, documentQuery, filterValues.legal_factor_code, getAccessToken, recordFingerprint, t]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -569,26 +687,26 @@ export default function DocumentsPage() {
       key: 'evidence_type_label',
       header: t('Evidence Type'),
       headerClassName: 'w-[11%]',
-      help: t('What kind of evidence this is. This is separate from where the file came from.'),
+      help: t('What kind of document this is. Labels organize documents and do not decide legal importance.'),
       filterOptions: facetOptions(state.facets, 'evidence_type_label'),
       filterPlaceholder: t('Document or communication'),
-      render: (document) => document.evidence_type_label || 'Document',
+      render: (document) => document.evidence_classification?.label || document.evidence_type_label || t('Uncategorized'),
     },
     {
       key: 'legal_factor_code',
-      header: t('Statute Lens'),
+      header: t('Issue Tags'),
       headerClassName: 'w-[18%]',
       sortable: false,
       filterOptions: facetOptions(state.facets, 'legal_factor_code').length ? facetOptions(state.facets, 'legal_factor_code') : STATUTE_FACTOR_OPTIONS,
-      filterPlaceholder: t('7a, 7b, 3a'),
-      help: t('Filter documents by Florida statutory factor mappings from the graph. Use this to view and export documents supporting a specific factor.'),
+      filterPlaceholder: t('parenting plan, time-sharing, review'),
+      help: t('Filter by organization tags from processing. Tags are review aids and are not legal conclusions.'),
       render: (document) => <FactorTags document={document} t={t} compact />,
     },
     {
       key: 'canonical_storage_label',
-      header: t('Cloud Copy'),
+      header: t('Secure Copy'),
       headerClassName: 'w-[12%]',
-      help: t('Whether Evidence AI has a controlled cloud copy of this raw file.'),
+      help: t('Whether Evidence AI has a secure workspace copy of this source document.'),
       filterOptions: facetOptions(state.facets, 'canonical_storage_label'),
       filterPlaceholder: t('Synced, pending, legacy'),
       render: (document) => <StorageSyncBadge document={document} />,
@@ -603,7 +721,7 @@ export default function DocumentsPage() {
       filterOptions: facetOptions(state.facets, 'pipeline_status'),
       filterLabel: t('Require completed domains'),
       filterHint: t('Selected propagation filters are combined with AND.'),
-      help: t('Processing coverage: blue is Postgres, green is vector, purple is graph. Lit dots mean that domain has processed this document.'),
+      help: t('Processing coverage for document record, search index, and connections. Lit dots mean that step has processed this document.'),
       render: (document) => <PipelineDots document={document} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
@@ -642,12 +760,27 @@ export default function DocumentsPage() {
   const missingS3Files = inventorySummary.extracted_files_missing_s3 || 0;
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
   const s3SyncedRecords = inventorySummary.s3_synced_records || 0;
+  const classificationOptions = facetOptions(state.facets, 'evidence_type_label');
+  const issueTagOptions = facetOptions(state.facets, 'legal_factor_code');
+
+  const applyColumnFilter = (columnId, value) => {
+    setOffset(0);
+    setFilterValues((current) => {
+      const next = { ...current };
+      if (value) {
+        next[columnId] = value;
+      } else {
+        delete next[columnId];
+      }
+      return next;
+    });
+  };
 
   return (
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} ${t('inventory rows')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('extracted files')}; ${s3SyncedFiles} ${t('matched to controlled cloud copies')}; ${missingS3Files} ${t('still need cloud-copy proof')}.`}
+        description={`${state.total} ${t('documents tracked')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('processed documents')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('still need secure-copy review')}.`}
         actions={
           <button
             type="button"
@@ -664,21 +797,30 @@ export default function DocumentsPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
 
+      <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <div className="flex items-start gap-3">
+          <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+          <p>
+            {t('Family-law documents may include private, privileged, child-related, financial, medical, school, or safety-sensitive information. Review sensitive documents before sharing, exporting, or inviting another person to view them.')}
+          </p>
+        </div>
+      </section>
+
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Extracted Files')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processed Documents')}</div>
           <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{extractedFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Unique file hashes in Postgres extraction')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Documents recorded for organization and search')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cloud Copied')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure Copies')}</div>
           <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{s3SyncedFiles}</div>
           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('stored cloud intake records')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs Cloud Copy')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs Secure Copy')}</div>
           <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">{missingS3Files}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Extracted files without cloud-copy proof')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Processed documents missing secure-copy confirmation')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cloud Only')}</div>
@@ -687,16 +829,24 @@ export default function DocumentsPage() {
         </div>
       </div>
 
+      <ClassificationOverview
+        classificationOptions={classificationOptions}
+        issueTagOptions={issueTagOptions}
+        filterValues={filterValues}
+        onFilter={applyColumnFilter}
+        t={t}
+      />
+
       <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
         <div className="flex items-start gap-3">
           <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
           <div className="space-y-1">
-            <h3 className="font-semibold">{t('Statute Lens is a review aid, not a final legal conclusion.')}</h3>
+            <h3 className="font-semibold">{t('Issue tags are organization aids, not legal conclusions.')}</h3>
             <p>
-              {t('The factor filter uses legal-factor mappings extracted during graph processing to help counsel find candidate evidence for Florida Statutes 61.13001 and 61.13. Treat broad matches as leads to review; export only the filtered set you want counsel to inspect.')}
+              {t('Evidence classifications and issue tags help group communications, finances, parenting-plan materials, school records, medical records, court filings, and other case materials. They do not decide whether a document is admissible, complete, or ready to file.')}
             </p>
             <p className="text-xs text-sky-800 dark:text-sky-200">
-              {t('Next tightening step: require stronger support signals before a document appears in a factor view, so weak background references do not crowd out documents that directly support a statutory factor.')}
+              {t('Needs-review or uncategorized items may mean processing is incomplete or a person should confirm the classification.')}
             </p>
           </div>
         </div>

@@ -357,6 +357,9 @@ export default function LoginPage({ darkTheme, setDarkTheme }) {
             </form>
           ) : view === 'sign-up' ? (
             <form className="space-y-4" onSubmit={handleSignUpSubmit}>
+              <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+                {t('Start with your own account. You can organize documents, review source-based answers, and invite a lawyer later.')}
+              </div>
               <label className="block">
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Email')}</span>
                 <input

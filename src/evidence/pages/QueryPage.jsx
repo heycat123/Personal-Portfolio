@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, FileText, History, ListChecks, Loader2, MessageSquare, Plus, RefreshCw, Send, Wrench, X } from 'lucide-react';
+import { AlertTriangle, Bot, ExternalLink, FileText, History, Info, ListChecks, Loader2, MessageSquare, Plus, RefreshCw, Send, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 
 const EXAMPLE_QUESTION = 'Which documents mention the parenting schedule?';
@@ -231,8 +232,8 @@ function AgenticSummary({ result, t }) {
     <div className="mt-4 min-w-0 max-w-full overflow-hidden rounded-md border border-sky-100 bg-sky-50 p-3 text-xs text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
       <div className="flex flex-wrap items-center gap-2">
         <Bot size={15} aria-hidden="true" />
-        <span className="font-semibold">{t('Agentic planner')}</span>
-        <StatusBadge status={verified ? 'succeeded' : 'degraded'} label={verified ? t('Verified') : t('Needs review')} />
+        <span className="font-semibold">{t('Advanced processing')}</span>
+        <StatusBadge status={verified ? 'succeeded' : 'degraded'} label={verified ? t('Source citations available') : t('Needs review')} />
       </div>
       <div className="mt-2 grid gap-2 md:grid-cols-3">
         <div>
@@ -278,7 +279,7 @@ function AgenticSummary({ result, t }) {
   );
 }
 
-function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
+function QueryMessage({ message, onOpenCitation, onOpenCitationList, showDiagnostics, t }) {
   if (message.role === 'user') {
     return (
       <div className="flex min-w-0 max-w-full justify-end">
@@ -292,6 +293,14 @@ function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
   const result = message.result;
   const verifier = result?.verifier_status;
   const verified = Boolean(verifier?.verified || verifier?.sufficient);
+  const citations = result?.citations || [];
+  const sourceReferenceCount = Number(result?.source_reference_count ?? citations.length);
+  const hasSourceReferences = sourceReferenceCount > 0 || citations.length > 0;
+  const insufficientEvidence = Boolean(result?.insufficient_evidence) || result?.answer_status === 'insufficient_evidence';
+  const needsMoreSourceMaterial = insufficientEvidence || !verified || !hasSourceReferences;
+  const displayGuidance = typeof result?.display_guidance === 'string'
+    ? result.display_guidance
+    : result?.display_guidance?.message || result?.display_guidance?.summary || null;
   return (
     <div className="flex min-w-0 max-w-full justify-start">
       <div className="min-w-0 w-full max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820] sm:max-w-[92%] sm:p-4">
@@ -306,8 +315,8 @@ function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
           <>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <StatusBadge
-                status={verified ? 'succeeded' : 'degraded'}
-                label={verified ? t('Verified') : t('Not verified')}
+                status={hasSourceReferences ? 'succeeded' : 'degraded'}
+                label={hasSourceReferences ? t('Source citations available') : t('Needs source review')}
               />
               {message.fingerprint?.id ? (
                 <RequestFingerprint
@@ -317,21 +326,34 @@ function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
                 />
               ) : null}
             </div>
-            <InlineAnswer answer={result?.answer} citations={result?.citations || []} onOpenCitation={onOpenCitation} />
-            <AgenticSummary result={result} t={t} />
-            {result?.citations?.length ? (
+            <InlineAnswer answer={result?.answer} citations={citations} onOpenCitation={onOpenCitation} />
+            {needsMoreSourceMaterial ? (
+              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 shrink-0" size={15} aria-hidden="true" />
+                  <span>{t('Not enough source material to answer confidently. Review source citations or add more source documents.')}</span>
+                </div>
+              </div>
+            ) : null}
+            {displayGuidance ? (
+              <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+                {displayGuidance}
+              </div>
+            ) : null}
+            {showDiagnostics ? <AgenticSummary result={result} t={t} /> : null}
+            {citations.length ? (
               <div className="mt-4">
                 <button
                   type="button"
-                  onClick={() => onOpenCitationList(result.citations)}
+                  onClick={() => onOpenCitationList(citations)}
                   className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30 dark:hover:text-sky-100"
                 >
                   <ListChecks size={14} aria-hidden="true" />
-                  {t('Open citation list')} ({result.citations.length})
+                  {t('Open source references')} ({citations.length})
                 </button>
               </div>
             ) : null}
-            <div className="mt-4 grid gap-3 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3">
+            {showDiagnostics ? <div className="mt-4 grid gap-3 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3">
               <div>
                 <div className="font-semibold uppercase tracking-normal">{t('Verifier')}</div>
                 <div>{verifier?.failure || (verified ? 'verified' : 'not verified')}</div>
@@ -344,7 +366,7 @@ function QueryMessage({ message, onOpenCitation, onOpenCitationList, t }) {
                 <div className="font-semibold uppercase tracking-normal">{t('Cost')}</div>
                 <div>${Number(result?.cost?.actual_usd || 0).toFixed(4)}</div>
               </div>
-            </div>
+            </div> : null}
           </>
         )}
       </div>
@@ -559,6 +581,7 @@ export default function QueryPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [state, setState] = useState({
@@ -591,6 +614,7 @@ export default function QueryPage() {
     conversations: [],
   });
   const scrollRef = useRef(null);
+  const showDiagnostics = canSeeOperations || debugEnabled;
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -699,7 +723,7 @@ export default function QueryPage() {
         {
           question: trimmed,
           mode: 'agentic',
-          include_trace: true,
+          include_trace: showDiagnostics,
           response_language: preferences.language,
           viewer_timezone: preferences.timeZone,
           conversation_id: activeConversationId,
@@ -742,7 +766,7 @@ export default function QueryPage() {
       );
       setState((current) => ({ ...current, running: false, error }));
     }
-  }, [activeConversationId, caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations]);
+  }, [activeConversationId, caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics]);
 
   const openCitation = useCallback(
     async (citation) => {
@@ -783,22 +807,33 @@ export default function QueryPage() {
   }, []);
 
   const latestVerifier = state.result?.verifier_status;
-  const latestVerified = Boolean(latestVerifier?.verified || latestVerifier?.sufficient);
+  const latestSourceReferences = Number(state.result?.source_reference_count ?? state.result?.citations?.length ?? 0);
+  const latestNeedsReview = Boolean(state.result?.insufficient_evidence) || state.result?.answer_status === 'insufficient_evidence';
+  const latestReady = Boolean(latestVerifier?.verified || latestVerifier?.sufficient || latestSourceReferences > 0) && !latestNeedsReview;
   const hasMessages = messages.length > 0;
   const traceRows = useMemo(() => state.result?.retrieval_trace || [], [state.result?.retrieval_trace]);
 
   return (
     <div className="flex w-full min-w-0 max-w-full flex-col overflow-x-hidden">
       <PageHeader
-        title="Agentic Query"
-        description="Ask case-scoped evidence questions through the agentic planner and inspect tools, sufficiency, citations, trace, and cost."
+        title="Ask Documents"
+        description="Ask document-grounded questions and review source references from this case workspace."
         actions={
           <StatusBadge
-            status={latestVerified ? 'succeeded' : state.result ? 'degraded' : 'pending'}
-            label={latestVerified ? t('Verified') : state.result ? t('Not verified') : t('Ready')}
+            status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
+            label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
           />
         }
       />
+
+      <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+        <div className="flex items-start gap-3">
+          <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+          <p>
+            {t('Answers are based only on documents available in this case workspace. They may miss context and are not legal advice. Review source citations and ask a lawyer before relying on an answer for a filing, hearing, or legal decision.')}
+          </p>
+        </div>
+      </section>
 
       {state.error ? (
         <div className="mb-5">
@@ -827,6 +862,7 @@ export default function QueryPage() {
                 message={message}
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
+                showDiagnostics={showDiagnostics}
                 t={t}
               />
             ))
@@ -834,7 +870,7 @@ export default function QueryPage() {
             <div className="rounded-lg border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
               <div className="flex items-center gap-2">
                 <MessageSquare size={18} aria-hidden="true" />
-                {t('Run a question to inspect the agentic planner response.')}
+                {t('Ask a question about documents in this workspace. Answers should include source references when support is available.')}
               </div>
             </div>
           )}
@@ -884,7 +920,7 @@ export default function QueryPage() {
         </section>
       </div>
 
-      {state.result ? (
+      {state.result && showDiagnostics ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
           <Panel title={t('Retrieval Trace')}>
             {traceRows.length ? (

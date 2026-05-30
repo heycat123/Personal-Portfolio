@@ -252,6 +252,8 @@ export const evidenceApi = {
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
+  getDocumentExportGuardrails: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/documents/export-guardrails'), { ...options, query: params }),
   exportDocuments: (caseId, params = {}, options = {}) =>
     requestBlob(casePath(caseId, '/documents/export.zip'), { ...options, query: params }),
   getDocument: (caseId, fileId, options) =>
