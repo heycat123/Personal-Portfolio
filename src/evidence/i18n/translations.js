@@ -8,6 +8,7 @@ export const UI_TRANSLATIONS = {
     'API checked {time}': 'API verificada {time}',
     'API Requests': 'Solicitações da API',
     'Ask how to use Evidence AI': 'Pergunte como usar o Evidence AI',
+    'Which documents mention the parenting schedule?': 'Quais documentos mencionam o cronograma parental?',
     'At least 1 lowercase letter': 'Pelo menos 1 letra minúscula',
     'At least 1 number': 'Pelo menos 1 número',
     'At least 1 special character': 'Pelo menos 1 caractere especial',

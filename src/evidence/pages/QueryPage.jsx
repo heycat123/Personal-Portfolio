@@ -10,7 +10,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 
-const DEFAULT_QUESTION = "what is Tiffany's Brazilian CPF number?";
+const EXAMPLE_QUESTION = 'Which documents mention the parenting schedule?';
 
 function Panel({ title, children }) {
   return (
@@ -559,7 +559,7 @@ export default function QueryPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
-  const [question, setQuestion] = useState(DEFAULT_QUESTION);
+  const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [state, setState] = useState({
     running: false,
@@ -669,7 +669,7 @@ export default function QueryPage() {
   const startNewConversation = useCallback(() => {
     setActiveConversationId(null);
     setMessages([]);
-    setQuestion(DEFAULT_QUESTION);
+    setQuestion('');
     setState({ running: false, error: null, result: null, fingerprint: null });
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(conversationStorageKey(caseId));
@@ -858,7 +858,7 @@ export default function QueryPage() {
                 }
               }}
               className="min-h-[54px] min-w-0 flex-1 resize-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-              placeholder={t('Ask a question about the evidence')}
+              placeholder={t(EXAMPLE_QUESTION)}
             />
             <button
               type="button"
