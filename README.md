@@ -1,16 +1,82 @@
-# React + Vite
+# Personal Portfolio And Evidence Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This repo contains the React/Vite frontend for the public portfolio pages and the Evidence System web app at `/evidence`.
 
-Currently, two official plugins are available:
+## What Is In This Repo
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `src/App.jsx`, `src/Portfolio.jsx`, `src/Projects.jsx` - public site routes.
+- `src/evidence/` - Evidence System application shell, pages, auth, API client, context providers, and customer-facing components.
+- `src/evidence/evidenceRoutes.jsx` - route map for the Evidence app.
+- `src/evidence/services/evidenceApi.js` - browser API client for the Evidence API.
+- `src/evidence/components/AxiomHelpDrawer.jsx` - page-aware product help drawer.
+- `docs/` - frontend deployment, CI/CD, app architecture, and customer-help documentation.
+- `.github/workflows/` - frontend CI and production deployment workflows.
+- `Dockerfile.runtime` and `nginx.conf` - production static-site container and reverse proxy config.
 
-## React Compiler
+## Local Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Install dependencies and start Vite:
 
-## Expanding the ESLint configuration
+```powershell
+npm ci
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Useful checks:
+
+```powershell
+npm run lint
+npm run build
+```
+
+The Evidence app reads Vite variables at build time. Common local values are:
+
+```text
+VITE_EVIDENCE_API_BASE_URL=http://127.0.0.1:8000
+VITE_EVIDENCE_AUTH_MODE=local
+```
+
+Production normally uses:
+
+```text
+VITE_EVIDENCE_API_BASE_URL=/evidence-api
+VITE_EVIDENCE_AUTH_MODE=cognito
+```
+
+Do not put backend secrets, API keys, database passwords, or private tokens in `VITE_` variables. Vite variables are shipped to the browser.
+
+## Evidence App Routes
+
+The Evidence app lives under `/evidence` and currently includes:
+
+- Login and account
+- Case selector, invitations, and onboarding
+- Case dashboard
+- Documents and document detail
+- Add Documents / intake
+- Query and system query
+- Entities and entity detail
+- Jobs and job detail
+- Health
+- Tests
+- Settings
+- Support
+- Admin
+
+See `docs/EVIDENCE_APP_ARCHITECTURE.md` for the route and page map.
+
+## Deployment
+
+Pull requests run frontend CI and do not deploy.
+
+Merges to `master` deploy only when frontend runtime paths change. Docs-only changes should not rebuild or restart the production frontend container.
+
+Start with:
+
+- `docs/DEPLOYMENT_PROTOCOL.md`
+- `docs/DEPLOYMENT.md`
+- `docs/CI_CD_PIPELINE.md`
+
+## Customer Help
+
+Customer-facing help content is tracked in `docs/CUSTOMER_HELP_FUNCTIONALITY_GUIDE.md`. The current app has an Axiom Help drawer wired to the backend help endpoint, and that guide is the seed corpus for expanding page-aware help topics.
