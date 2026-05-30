@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { caseMatchesRouteId, evidenceCasePath, getCaseRouteId } from '../utils/caseRouting';
 
@@ -22,6 +23,7 @@ export default function CaseSelectorPage() {
   const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
   const { registerCases } = useCaseContext();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     saving: false,
@@ -83,7 +85,7 @@ export default function CaseSelectorPage() {
             className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
           >
             <FolderPlus size={16} aria-hidden="true" />
-            Start onboarding
+            Start new workspace
           </Link>
         }
       />
@@ -148,7 +150,7 @@ export default function CaseSelectorPage() {
                     </div>
                     <p className="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{id}</p>
                     <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
-                      {item.environment ? `Environment: ${item.environment}` : 'Case workspace'}
+                      {item.environment && (canSeeOperations || debugEnabled) ? `Environment: ${item.environment}` : 'Case workspace'}
                     </p>
                   </div>
                   <ArrowRight className="mt-1 text-gray-400 group-hover:text-sky-700 dark:group-hover:text-sky-300" size={18} aria-hidden="true" />
@@ -160,14 +162,14 @@ export default function CaseSelectorPage() {
       ) : (
         <EmptyState
           title="No cases yet"
-          description="This account does not currently have access to a case or workspace. Start onboarding, join with an invitation, or request access from a case owner."
+          description="This account does not currently have access to a case or workspace. Start a new workspace, join with an invitation, or request access from a case owner."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <Link
                 to="/evidence/onboarding"
                 className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
-                Start onboarding
+                Start new workspace
                 <ArrowRight size={16} aria-hidden="true" />
               </Link>
               <Link

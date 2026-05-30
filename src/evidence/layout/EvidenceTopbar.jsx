@@ -61,13 +61,13 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
             <button
               type="button"
               onClick={() => setHelpOpen((current) => !current)}
-              title={t('Help')}
-              aria-label={t('Help')}
+              title={t('Help & Support')}
+              aria-label={t('Help & Support')}
               aria-expanded={helpOpen}
               className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white sm:px-3"
             >
               <HelpCircle size={16} aria-hidden="true" />
-              <span className="hidden sm:inline">{t('Help')}</span>
+              <span className="hidden sm:inline">{t('Help & Support')}</span>
             </button>
             {helpOpen ? (
               <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-800 dark:bg-[#101820]">
@@ -79,7 +79,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
                   className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
                 >
                   <LifeBuoy size={16} aria-hidden="true" />
-                  <span>{t('Support Records')}</span>
+                  <span>{t('Support history')}</span>
                 </Link>
               </div>
             ) : null}

@@ -23,7 +23,7 @@ import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceCasePath } from '../utils/caseRouting';
 
 const NAV_ITEMS = [
-  { group: 'Workspace', label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
+  { group: 'Workspace', label: 'Case Home', path: 'dashboard', icon: LayoutDashboard },
   { group: 'Workspace', label: 'Documents', path: 'documents', icon: FileText },
   { group: 'Workspace', label: 'Ask Documents', path: 'query', icon: MessageSquare },
   { group: 'Workspace', label: 'Add Documents', path: 'intake', icon: Upload, requiresContribute: true },
