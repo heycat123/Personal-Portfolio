@@ -12,13 +12,10 @@ import {
   Settings,
   ShieldCheck,
   UserCircle,
-  LifeBuoy,
   Upload,
   X,
 } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
-import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
-import SupportFeedbackDrawer from '../components/SupportFeedbackDrawer';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
@@ -31,7 +28,6 @@ const NAV_ITEMS = [
   { group: 'Workspace', label: 'Query', path: 'query', icon: MessageSquare },
   { group: 'Workspace', label: 'Add Documents', path: 'intake', icon: Upload, requiresContribute: true },
   { group: 'Workspace', label: 'Settings', path: 'settings', icon: Settings },
-  { group: 'Help', label: 'Support Records', path: 'support', icon: LifeBuoy },
   { group: 'Review', label: 'Entities', path: 'entities', icon: Network, requiresOperations: true },
   { group: 'Operations', label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
   { group: 'Operations', label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
@@ -65,7 +61,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
       [group]: [...(groups[group] || []), item],
     };
   }, {});
-  const groupOrder = ['Workspace', 'Review', 'Operations', 'Help'];
+  const groupOrder = ['Workspace', 'Review', 'Operations'];
 
   return (
     <>
@@ -125,12 +121,6 @@ export default function EvidenceSidebar({ open = false, onClose }) {
                 {t(group)}
               </div>
               <div className="space-y-1">
-                {group === 'Help' ? (
-                  <>
-                    <AxiomHelpDrawer trigger="sidebar" onOpen={onClose} />
-                    <SupportFeedbackDrawer trigger="sidebar" onOpen={onClose} />
-                  </>
-                ) : null}
                 {items.map((item) => {
                   const Icon = item.icon;
                   return (

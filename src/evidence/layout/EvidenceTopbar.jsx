@@ -1,15 +1,21 @@
-import { Bug, Languages, Menu, RefreshCw } from 'lucide-react';
+import { Bug, HelpCircle, Languages, LifeBuoy, Menu, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import AxiomHelpDrawer from '../components/AxiomHelpDrawer';
 import CognitoViewDrawer from '../components/CognitoViewDrawer';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import StatusBadge from '../components/StatusBadge';
+import SupportFeedbackDrawer from '../components/SupportFeedbackDrawer';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { EVIDENCE_API_BASE_URL, EVIDENCE_ENVIRONMENT_LABEL } from '../evidenceConfig';
+import { evidenceCasePath } from '../utils/caseRouting';
 import { formatDateTime } from '../utils/formatters';
 
 export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) {
+  const [helpOpen, setHelpOpen] = useState(false);
   const { status, latestFingerprint, checkApiHealth } = useApiStatus();
   const { activeCase } = useCaseContext();
   const { preferences, supportedLanguages, t, updatePreferences, saving: savingLocale } = useLocaleSettings();
@@ -22,6 +28,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
     setDebugEnabled,
   } = useOperatorMode();
   const showOperatorChrome = canSeeOperations || debugEnabled;
+  const supportPath = evidenceCasePath(activeCase, '/support');
 
   async function handleLanguageChange(event) {
     try {
@@ -81,6 +88,33 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
               <span className="hidden sm:inline">{t('Support mode')}</span>
             </button>
           ) : null}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setHelpOpen((current) => !current)}
+              title={t('Help')}
+              aria-label={t('Help')}
+              aria-expanded={helpOpen}
+              className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white sm:px-3"
+            >
+              <HelpCircle size={16} aria-hidden="true" />
+              <span className="hidden sm:inline">{t('Help')}</span>
+            </button>
+            {helpOpen ? (
+              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-800 dark:bg-[#101820]">
+                <AxiomHelpDrawer trigger="menu" onOpen={() => setHelpOpen(false)} />
+                <SupportFeedbackDrawer trigger="menu" onOpen={() => setHelpOpen(false)} />
+                <Link
+                  to={supportPath}
+                  onClick={() => setHelpOpen(false)}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+                >
+                  <LifeBuoy size={16} aria-hidden="true" />
+                  <span>{t('Support Records')}</span>
+                </Link>
+              </div>
+            ) : null}
+          </div>
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
           <label className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5 text-gray-700 dark:border-gray-800 dark:text-gray-300">
             <Languages size={16} aria-hidden="true" />

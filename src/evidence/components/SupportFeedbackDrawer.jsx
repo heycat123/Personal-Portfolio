@@ -119,6 +119,8 @@ export default function SupportFeedbackDrawer({ trigger = 'icon', onOpen }) {
   const drawerTitle = mode === 'idea' ? t('Suggest Idea') : t('Report Issue');
   const activeError = latestApiError || status.error || null;
   const derivedContext = useMemo(() => routeContext(location.pathname), [location.pathname]);
+  const triggerIsSidebar = trigger === 'sidebar';
+  const triggerIsMenu = trigger === 'menu';
 
   const openDrawer = (nextMode) => {
     setMode(nextMode);
@@ -316,24 +318,24 @@ export default function SupportFeedbackDrawer({ trigger = 'icon', onOpen }) {
         onClick={() => openDrawer('idea')}
         title={t('Suggest Idea')}
         aria-label={t('Suggest Idea')}
-        className={trigger === 'sidebar'
+        className={triggerIsSidebar || triggerIsMenu
           ? 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
           : 'rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'}
       >
         <Lightbulb size={16} aria-hidden="true" />
-        {trigger === 'sidebar' ? <span>{t('Suggest Idea')}</span> : null}
+        {triggerIsSidebar || triggerIsMenu ? <span>{t('Suggest Idea')}</span> : null}
       </button>
       <button
         type="button"
         onClick={() => openDrawer('issue')}
         title={t('Report Issue')}
         aria-label={t('Report Issue')}
-        className={trigger === 'sidebar'
+        className={triggerIsSidebar || triggerIsMenu
           ? 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
           : 'rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'}
       >
         <Bug size={16} aria-hidden="true" />
-        {trigger === 'sidebar' ? <span>{t('Report Issue')}</span> : null}
+        {triggerIsSidebar || triggerIsMenu ? <span>{t('Report Issue')}</span> : null}
       </button>
       {drawer && typeof document !== 'undefined' ? createPortal(drawer, document.body) : drawer}
     </>

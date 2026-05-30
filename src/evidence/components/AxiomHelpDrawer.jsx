@@ -71,6 +71,8 @@ export default function AxiomHelpDrawer({ trigger = 'icon', onOpen }) {
     setOpen(true);
     onOpen?.();
   };
+  const triggerIsSidebar = trigger === 'sidebar';
+  const triggerIsMenu = trigger === 'menu';
 
   const drawer = open ? (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">
@@ -187,12 +189,12 @@ export default function AxiomHelpDrawer({ trigger = 'icon', onOpen }) {
         onClick={openDrawer}
         title={t('Ask Axiom for help')}
         aria-label={t('Ask Axiom for help')}
-        className={trigger === 'sidebar'
+        className={triggerIsSidebar || triggerIsMenu
           ? 'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'
           : 'rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white'}
       >
         <HelpCircle size={16} aria-hidden="true" />
-        {trigger === 'sidebar' ? <span>{t('Ask Axiom')}</span> : null}
+        {triggerIsSidebar || triggerIsMenu ? <span>{t('Ask Axiom')}</span> : null}
       </button>
 
       {drawer && typeof document !== 'undefined' ? createPortal(drawer, document.body) : drawer}
