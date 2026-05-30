@@ -160,7 +160,7 @@ Then it copies the archive to EC2 and loads it with Docker.
 Before replacing production, the workflow starts a candidate container on:
 
 ```text
-127.0.0.1:18080
+127.0.0.1:18081
 ```
 
 Candidate smoke checks:
@@ -176,7 +176,8 @@ If those pass, the workflow replaces the live container:
 
 ```text
 container: hom-central-ui
-port: 80:80
+EC2-local smoke port: 127.0.0.1:18080
+published through host/proxy for the live site
 ```
 
 After the swap, it smoke tests the live site.

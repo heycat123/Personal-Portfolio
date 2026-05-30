@@ -92,13 +92,13 @@ The deploy workflow uses a candidate-first process:
 
 1. Build image
 2. Copy image to EC2
-3. Start temporary candidate container on `127.0.0.1:18080`
+3. Start temporary candidate container on `127.0.0.1:18081`
 4. Smoke test candidate:
    - `GET /`
    - `GET /projects`
    - `GET /evidence`
    - `GET /evidence-api/health`
-5. If candidate passes: stop old container, swap in new `hom-central-ui` on `80:80`
+5. If candidate passes: stop old container, swap in new `hom-central-ui` on `127.0.0.1:18080`
 6. Smoke test live URLs:
    - `GET /`
    - `GET /projects`
