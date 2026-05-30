@@ -108,7 +108,7 @@ const ENTITY_COLUMNS = [
   {
     id: 'review_status',
     label: 'Review',
-    help: 'Human attention bucket. Needs review is important or ambiguous; topic-only and suppressed are hidden from normal identity review.',
+    help: 'Human attention bucket. Needs review is important or ambiguous; topic-only and suppressed are hidden from normal people/contact review.',
     filterOptions: REVIEW_STATUS_OPTIONS,
     filterMulti: true,
     headerClassName: 'min-w-[150px]',
@@ -989,7 +989,7 @@ export default function EntitiesPage() {
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getContactEntityLinks(caseId, contactQuery, { token });
-      recordFingerprint(result, 'Contact identity links');
+      recordFingerprint(result, 'Contact links');
       setState((current) => ({
         ...current,
         contactLoading: false,
@@ -1079,7 +1079,7 @@ export default function EntitiesPage() {
         { limit: 25, offset: 0, q: search, sort_by: 'entity', sort_dir: 'asc' },
         { token },
       );
-      recordFingerprint(result, 'Search entity targets');
+      recordFingerprint(result, 'Search person/contact targets');
       setContactTargetOptions((current) => ({
         ...current,
         [contactEntityLinkId]: result.data?.entities || [],
@@ -1332,8 +1332,8 @@ export default function EntitiesPage() {
           normalized_alias: alias.normalized_alias || alias.alias.toLowerCase(),
           decision,
           reviewer_note: decision === 'confirm'
-            ? `Confirmed that alias "${alias.alias}" resolves to ${entity.canonical_name}.`
-            : `Rejected alias "${alias.alias}" for ${entity.canonical_name}.`,
+            ? `Confirmed that name "${alias.alias}" resolves to ${entity.canonical_name}.`
+            : `Rejected name "${alias.alias}" for ${entity.canonical_name}.`,
           confidence: alias.confidence ?? null,
           source_json: {
             source: 'entities_page',
@@ -1343,7 +1343,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Review entity alias');
+      recordFingerprint(result, 'Review person/contact name');
       const refreshedEntity = result.data?.entity || null;
       if (refreshedEntity) {
         setState((current) => ({
@@ -1385,7 +1385,7 @@ export default function EntitiesPage() {
           alias: alias.alias,
           normalized_alias: alias.normalized_alias || alias.alias.toLowerCase(),
           target_person_id: targetPersonId,
-          reviewer_note: `Corrected alias "${alias.alias}" from ${entity.canonical_name} to ${entityLookup.get(targetPersonId)?.canonical_name || targetPersonId}.`,
+          reviewer_note: `Corrected name "${alias.alias}" from ${entity.canonical_name} to ${entityLookup.get(targetPersonId)?.canonical_name || targetPersonId}.`,
           confidence: alias.confidence ?? null,
           source_json: {
             source: 'entities_page_reassign',
@@ -1394,7 +1394,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Reassign entity alias');
+      recordFingerprint(result, 'Reassign person/contact name');
       setState((current) => ({
         ...current,
         actionId: null,
@@ -1440,7 +1440,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Add confirmed entity alias');
+      recordFingerprint(result, 'Add confirmed person/contact name');
       setCustomAlias('');
       setState((current) => ({
         ...current,
@@ -1462,7 +1462,7 @@ export default function EntitiesPage() {
     const relationshipLabel = relationshipForm.relationship_label.trim();
     const targetPersonId = relationshipForm.target_person_id;
     if (!entity || !relationshipLabel || !targetPersonId) {
-      setState((current) => ({ ...current, actionError: new Error('Choose a relationship and target entity first.') }));
+      setState((current) => ({ ...current, actionError: new Error('Choose a relationship and target person/contact first.') }));
       return;
     }
     setState((current) => ({ ...current, actionId: 'relationship', actionError: null }));
@@ -1493,7 +1493,7 @@ export default function EntitiesPage() {
           },
           { token },
         );
-      recordFingerprint(result, editingRelationship?.relationship_id ? 'Edit entity relationship' : 'Add entity relationship');
+      recordFingerprint(result, editingRelationship?.relationship_id ? 'Edit person/contact relationship' : 'Add person/contact relationship');
       const refreshedEntity = result.data?.entity || null;
       setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
       setRelationshipTargetOptions([]);
@@ -1534,7 +1534,7 @@ export default function EntitiesPage() {
     if (relationship.source_person_id !== detailEntity.person_id) {
       setState((current) => ({
         ...current,
-        actionError: new Error('Open the source entity to edit this relationship. You can remove it here if it is wrong.'),
+        actionError: new Error('Open the source person/contact record to edit this relationship. You can remove it here if it is wrong.'),
       }));
       return;
     }
@@ -1561,11 +1561,11 @@ export default function EntitiesPage() {
         relationship.relationship_id,
         {
           status: 'rejected',
-          reviewer_note: `Removed relationship from entity review: ${relationship.relationship_label}.`,
+          reviewer_note: `Removed relationship from people/contact review: ${relationship.relationship_label}.`,
         },
         { token },
       );
-      recordFingerprint(result, 'Remove entity relationship');
+      recordFingerprint(result, 'Remove person/contact relationship');
       setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
       setRelationshipTargetOptions([]);
       setEditingRelationship(null);
@@ -1608,7 +1608,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Add entity contact point');
+      recordFingerprint(result, 'Add person/contact contact point');
       const refreshedEntity = result.data?.entity || null;
       setContactPointForm({ contact_type: 'phone', contact_value: '', label: '' });
       setContactAddOpen(false);
@@ -1657,7 +1657,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Update entity display name');
+      recordFingerprint(result, 'Update person/contact display name');
       setState((current) => ({
         ...current,
         actionId: null,
@@ -1679,11 +1679,11 @@ export default function EntitiesPage() {
       return;
     }
     const reviewNotes = {
-      confirmed: `Confirmed ${detailEntity.canonical_name} as a tracked entity from the entity drawer.`,
+      confirmed: `Confirmed ${detailEntity.canonical_name} as a tracked person/contact record from the drawer.`,
       candidate: `Reviewed ${detailEntity.canonical_name}; no immediate action is needed.`,
-      suppressed: `Suppressed ${detailEntity.canonical_name} from normal entity review.`,
-      topic_only: `Marked ${detailEntity.canonical_name} as a topic/concept rather than an identity review item.`,
-      needs_review: `Kept ${detailEntity.canonical_name} in entity review.`,
+      suppressed: `Suppressed ${detailEntity.canonical_name} from normal people/contact review.`,
+      topic_only: `Marked ${detailEntity.canonical_name} as a topic/concept rather than a people/contact review item.`,
+      needs_review: `Kept ${detailEntity.canonical_name} in people/contact review.`,
     };
     setState((current) => ({ ...current, actionId: `entity_review_${reviewStatus}`, actionError: null }));
     try {
@@ -1697,7 +1697,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Update entity review status');
+      recordFingerprint(result, 'Update person/contact review status');
       const refreshedEntity = result.data?.entity || null;
       setState((current) => ({
         ...current,
@@ -1735,7 +1735,7 @@ export default function EntitiesPage() {
     if (vagueKinshipAliases(aliases).length && !(relationshipLabel && relationshipTargetPersonId)) {
       setState((current) => ({
         ...current,
-        actionError: new Error('Relationship words like mom, dad, or grandma cannot be saved as global aliases. Add a relationship and related entity instead.'),
+        actionError: new Error('Relationship words like mom, dad, or grandma cannot be saved as general names. Add a relationship and related person/contact instead.'),
       }));
       return;
     }
@@ -1752,7 +1752,7 @@ export default function EntitiesPage() {
           relationship_label: relationshipLabel || null,
           relationship_target_person_id: relationshipTargetPersonId || null,
           infer_relationships: false,
-          reviewer_note: `Manual entity created from Entities page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}${relationshipLabel ? ` Relationship: ${canonicalName} is ${relationshipLabel}.` : ''}`,
+          reviewer_note: `Manual person/contact record created from People & Contacts page for ${canonicalName}.${roles.length ? ` User-confirmed role(s): ${roles.join(', ')}.` : ''}${relationshipLabel ? ` Relationship: ${canonicalName} is ${relationshipLabel}.` : ''}`,
         },
         { token },
       );
@@ -1857,12 +1857,12 @@ export default function EntitiesPage() {
     if (vagueKinshipAliases(aliases).length && !(relationshipLabel && relationshipTargetPersonId)) {
       setState((current) => ({
         ...current,
-        actionError: new Error('Names used in documents like mom, dad, grandma, and brother are relationship words. Choose a relationship and related entity so the system knows whose mom, dad, or grandma this person is.'),
+        actionError: new Error('Names used in documents like mom, dad, grandma, and brother are relationship words. Choose a relationship and related person/contact so the system knows whose mom, dad, or grandma this person is.'),
       }));
       return;
     }
     if (Boolean(relationshipLabel) !== Boolean(relationshipTargetPersonId)) {
-      setState((current) => ({ ...current, actionError: new Error('Choose both a relationship and a related entity, or leave both blank.') }));
+      setState((current) => ({ ...current, actionError: new Error('Choose both a relationship and a related person/contact, or leave both blank.') }));
       return;
     }
     if (relationshipLabel && relationshipTargetPersonId && !options.skipRelationshipReview) {
@@ -1916,7 +1916,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Resolve entity roles');
+      recordFingerprint(result, 'Resolve relationship labels');
       const preview = result.data;
       if (roleResolutionNeedsReview(preview)) {
         setRoleResolutionReview({
@@ -1990,7 +1990,7 @@ export default function EntitiesPage() {
       ? people.find((person) => person.person_id !== targetPersonId)
       : people[0];
     if (!sourcePerson?.person_id || !targetPerson?.person_id || sourcePerson.person_id === targetPerson.person_id) {
-      setState((current) => ({ ...current, actionError: new Error('Choose which entity should stay before merging.') }));
+      setState((current) => ({ ...current, actionError: new Error('Choose which person/contact record should stay before merging.') }));
       return;
     }
     const actionId = `${suggestion.suggestion_type}_${suggestion.match_value}_${decision}${targetPersonId ? `_${targetPersonId}` : ''}`;
@@ -2070,7 +2070,7 @@ export default function EntitiesPage() {
     }
     const targetPersonId = contactTargets[link.contact_entity_link_id] || link.person_id || '';
     if (decision === 'confirm' && !targetPersonId) {
-      setState((current) => ({ ...current, actionError: new Error('Choose the entity this contact point belongs to before confirming.') }));
+      setState((current) => ({ ...current, actionError: new Error('Choose the person/contact record this contact point belongs to before confirming.') }));
       return;
     }
     const actionId = `${link.contact_entity_link_id}_${decision}`;
@@ -2117,7 +2117,7 @@ export default function EntitiesPage() {
       ? selectedContactLinks.filter((link) => link.person_id).map((link) => link.contact_entity_link_id)
       : selectedContactIds;
     if (!confirmableIds.length) {
-      setState((current) => ({ ...current, actionError: new Error('Selected rows do not have proposed entities to confirm. Create or choose an entity per row first.') }));
+      setState((current) => ({ ...current, actionError: new Error('Selected rows do not have suggested people/contacts to confirm. Create or choose a person/contact record per row first.') }));
       return;
     }
     const skipped = selectedContactIds.length - confirmableIds.length;
@@ -2135,7 +2135,7 @@ export default function EntitiesPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Bulk contact identity review');
+      recordFingerprint(result, 'Bulk contact link review');
       const failedCount = Number(result.data?.failed_count || 0);
       setContactSelection({});
       setState((current) => ({
@@ -2176,7 +2176,7 @@ export default function EntitiesPage() {
       ...current,
       actionError: name
         ? null
-        : new Error('This contact does not have a usable display name. Enter a person name manually before creating the entity.'),
+        : new Error('This contact does not have a usable display name. Enter a person name manually before creating the person/contact record.'),
     }));
   }, []);
 
@@ -3567,7 +3567,7 @@ export default function EntitiesPage() {
               ))}
             </div>
           </div>
-          {state.contactError ? <div className="mb-3"><ErrorPanel title="Contact identity links failed" error={state.contactError} onRetry={loadContactLinks} /></div> : null}
+          {state.contactError ? <div className="mb-3"><ErrorPanel title="Contact links failed" error={state.contactError} onRetry={loadContactLinks} /></div> : null}
           {state.contactFingerprint?.id ? <div className="mb-3"><RequestFingerprint fingerprintId={state.contactFingerprint.id} correlationId={state.contactFingerprint.correlationId} label="Contact links fingerprint" /></div> : null}
           <DataTable
             rows={state.contactLinks}

@@ -290,7 +290,7 @@ export const UI_TRANSLATIONS = {
     'Add source files, connect Google Drive, and register controlled source-of-truth records.': 'Adicione arquivos fonte, conecte o Google Drive e registre fontes da verdade controladas.',
     'Alignment job failed': 'Tarefa de alinhamento falhou',
     'Names used in documents': 'Names used in documents',
-    'Names used in documents For {name}': 'Names used in documents de {name}',
+    'Names used in documents for {name}': 'Nomes usados nos documentos de {name}',
     'Names currently attached to {name}': 'Names used in documents atualmente vinculados a {name}',
     'Axiom Help': 'Ajuda Axiom',
     'Axiom help failed': 'Ajuda Axiom falhou',
