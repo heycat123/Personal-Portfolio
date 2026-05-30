@@ -3113,8 +3113,8 @@ export default function EntitiesPage() {
   return (
     <div>
       <PageHeader
-        title="Entities"
-        description={t('{count} canonical entity records{filter}. Alias review means deciding which real person an extracted name should resolve to.', {
+        title="People & Contacts"
+        description={t('{count} people and contact records{filter}. Review people and contact links before relying on communications.', {
           count: state.total,
           filter: activeEntityFilter ? ` ${t('matching')} "${activeEntityFilter}"` : '',
         })}
@@ -3126,7 +3126,7 @@ export default function EntitiesPage() {
               className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
             >
               <Plus size={16} aria-hidden="true" />
-              {t('New Entity')}
+              {t('New person or contact')}
             </button>
             <Link
               to={`/evidence/cases/${caseId}/intake#contacts`}
@@ -3143,7 +3143,7 @@ export default function EntitiesPage() {
               title={t('Rebuild review buckets from current aliases, contacts, mentions, roles, and confirmations.')}
             >
               <GitMerge size={16} aria-hidden="true" />
-              {state.actionId === 'audit_entities' ? t('Auditing...') : t('Audit Entities')}
+              {state.actionId === 'audit_entities' ? t('Updating...') : t('Update review buckets')}
             </button>
             <button
               type="button"
@@ -3162,6 +3162,16 @@ export default function EntitiesPage() {
           </div>
         }
       />
+
+      <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
+        <p className="font-semibold">{t('Review people and contact links before relying on communications.')}</p>
+        <p className="mt-1">
+          {t('Phone numbers and emails may be linked from contacts, messages, or manual review. Confirm uncertain matches before using them in summaries or exports.')}
+        </p>
+        <p className="mt-1">
+          {t('Relationship labels help organize the case. They do not decide legal status or prove a claim.')}
+        </p>
+      </section>
 
       {roleResolutionReview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

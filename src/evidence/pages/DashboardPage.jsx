@@ -7,7 +7,9 @@ import {
   LifeBuoy,
   MessageSquare,
   RefreshCw,
+  ShieldAlert,
   UploadCloud,
+  UsersRound,
 } from 'lucide-react';
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -115,12 +117,38 @@ function QuickActionCard({ icon, title, detail, to, tone = 'default' }) {
   );
 }
 
+function ReviewCard({ icon, title, detail, to, count, countLabel }) {
+  return (
+    <Link
+      to={to}
+      className="block rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-sky-300 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-800"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="rounded-md border border-black/10 bg-gray-50 p-2 text-gray-700 dark:border-white/10 dark:bg-white/10 dark:text-gray-100">
+            {createElement(icon, { size: 18, 'aria-hidden': true })}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{title}</h3>
+            <p className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-400">{detail}</p>
+          </div>
+        </div>
+        {Number.isFinite(count) ? (
+          <div className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+            {count} {countLabel}
+          </div>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
 export default function DashboardPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { canSeeOperations } = useOperatorMode();
+  const { canContribute, canSeeAdmin, canSeeOperations } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     error: null,
@@ -184,6 +212,26 @@ export default function DashboardPage() {
   const documentFiles = counts.document_files || counts.document_extractions || 0;
   const indexedRecords = sumCounts(counts, ['communication_messages', 'canonical_people', 'person_aliases', 'entity_mentions']);
   const missingS3Files = counts.extracted_files_missing_s3 || 0;
+  const documentsNeedingReview = sumCounts(counts, [
+    'documents_needing_review',
+    'needs_review_documents',
+    'uncategorized_documents',
+    'missing_source_documents',
+    'missing_date_documents',
+    'missing_text_documents',
+    'sensitive_info_warning_documents',
+  ]) || missingS3Files;
+  const peopleNeedingReview = sumCounts(counts, [
+    'people_contacts_needing_review',
+    'contact_links_needing_review',
+    'unmatched_contact_links',
+    'low_confidence_contact_links',
+    'duplicate_people',
+    'relationship_links_needing_review',
+    'needs_review_entities',
+    'entity_review_items',
+  ]);
+  const pendingInvitations = sumCounts(counts, ['pending_invitations', 'open_invitations', 'invitations_pending']);
   const graph = state.health?.graph || {};
   const vectorCoverage = graph.chunk_embedding_coverage || {};
   const parentGaps = graph.child_parent_link_gaps || {};
@@ -280,6 +328,45 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      <section className="mb-5">
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Review work')}</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {t('Important review items for document organization, contact links, and safe workspace access.')}
+          </p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <ReviewCard
+            icon={FileText}
+            title={t('Documents needing review')}
+            detail={t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.')}
+            to={`/evidence/cases/${caseId}/documents`}
+            count={documentsNeedingReview}
+            countLabel={t('items')}
+          />
+          {canContribute ? (
+            <ReviewCard
+              icon={UsersRound}
+              title={t('People & contacts needing review')}
+              detail={t('Phone numbers and emails may be linked from contacts, messages, or manual review. Confirm uncertain matches before using them in summaries or exports.')}
+              to={`/evidence/cases/${caseId}/entities`}
+              count={peopleNeedingReview}
+              countLabel={t('items')}
+            />
+          ) : null}
+          {canSeeAdmin ? (
+            <ReviewCard
+              icon={ShieldAlert}
+              title={t('Access & sharing')}
+              detail={t('Only authorized people should have workspace access. Review pending invitations and sharing before exports.')}
+              to={`/evidence/cases/${caseId}/admin`}
+              count={pendingInvitations}
+              countLabel={t('pending')}
+            />
+          ) : null}
+        </div>
+      </section>
+
       <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
@@ -298,7 +385,7 @@ export default function DashboardPage() {
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <QuickActionCard
             icon={MessageSquare}
-            title={t('Ask the evidence')}
+            title={t('Ask Documents')}
             detail={t('Ask a question and open cited documents from the answer.')}
             to={`/evidence/cases/${caseId}/query`}
             tone="primary"
