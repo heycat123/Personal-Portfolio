@@ -4,6 +4,20 @@ on:
   push:
     branches:
       - master
+    paths:
+      - ".github/workflows/deploy-frontend.yml"
+      - "Dockerfile"
+      - "Dockerfile.runtime"
+      - "nginx.conf"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+      - "tailwind.config.js"
+      - "postcss.config.js"
+      - "eslint.config.js"
+      - "src/**"
+      - "public/**"
+      - "amplify/**"
   workflow_dispatch:
 
 concurrency:
