@@ -83,7 +83,7 @@ export default function SettingsPage() {
       setState((current) => ({
         ...current,
         saving: false,
-        notice: 'Case name updated.',
+        notice: 'Workspace display name updated.',
         fingerprint: result.requestFingerprintId,
       }));
     } catch (error) {
@@ -94,8 +94,8 @@ export default function SettingsPage() {
   return (
     <div>
       <PageHeader
-        title="Settings"
-        description="Manage case-level settings for the current workspace."
+        title="Case Settings"
+        description="Manage workspace details for the current case."
         actions={
           <button
             type="button"
@@ -121,9 +121,9 @@ export default function SettingsPage() {
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Case Name')}</h2>
+              <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Workspace display name')}</h2>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                {t('Only case owners, case admins, lawyers, and global admins can rename a case.')}
+                {t('This changes the workspace name only. It does not change any court filing, court case number, or legal record.')}
               </p>
             </div>
             <StatusBadge status={canRename ? 'succeeded' : 'blocked'} label={canRename ? t('editable') : t('restricted')} />
@@ -131,7 +131,7 @@ export default function SettingsPage() {
 
           <form className="space-y-4" onSubmit={saveCaseName}>
             <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Case name')}</span>
+              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Workspace display name')}</span>
               <input
                 type="text"
                 value={caseName}
@@ -161,7 +161,7 @@ export default function SettingsPage() {
               className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
             >
               <Save size={16} aria-hidden="true" />
-              {state.saving ? t('Saving') : t('Save case name')}
+              {state.saving ? t('Saving') : t('Save display name')}
             </button>
           </form>
         </section>
@@ -178,10 +178,10 @@ export default function SettingsPage() {
               <dd className="mt-1 text-gray-700 dark:text-gray-300">{RENAME_ROLES.join(', ')}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{t('Case ID')}</dt>
+              <dt className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{t('Support details')}</dt>
               <dd className="mt-1 break-all font-mono text-xs text-gray-700 dark:text-gray-300">{caseId}</dd>
               <dd className="mt-2 text-xs leading-5 text-gray-600 dark:text-gray-400">
-                {t('The URL uses this stable case ID. Renaming the case changes the display name only.')}
+                {t('This technical route ID is for support. Editing the display name does not change court records or filings.')}
               </dd>
             </div>
           </dl>

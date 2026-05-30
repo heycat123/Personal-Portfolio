@@ -2,12 +2,12 @@ import {
   Activity,
   Briefcase,
   ClipboardCheck,
+  ContactRound,
   Database,
   FileText,
   LayoutDashboard,
   LogOut,
   MessageSquare,
-  Network,
   Search,
   Settings,
   ShieldCheck,
@@ -25,10 +25,9 @@ import { evidenceCasePath } from '../utils/caseRouting';
 const NAV_ITEMS = [
   { group: 'Workspace', label: 'Dashboard', path: 'dashboard', icon: LayoutDashboard },
   { group: 'Workspace', label: 'Documents', path: 'documents', icon: FileText },
-  { group: 'Workspace', label: 'Query', path: 'query', icon: MessageSquare },
+  { group: 'Workspace', label: 'Ask Documents', path: 'query', icon: MessageSquare },
   { group: 'Workspace', label: 'Add Documents', path: 'intake', icon: Upload, requiresContribute: true },
-  { group: 'Workspace', label: 'Settings', path: 'settings', icon: Settings },
-  { group: 'Review', label: 'Entities', path: 'entities', icon: Network, requiresOperations: true },
+  { group: 'Review', label: 'People & Contacts', path: 'entities', icon: ContactRound, requiresContribute: true },
   { group: 'Operations', label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
   { group: 'Operations', label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
   { group: 'Operations', label: 'Health', path: 'health', icon: Activity, requiresOperations: true },
@@ -147,6 +146,14 @@ export default function EvidenceSidebar({ open = false, onClose }) {
         })}
       </nav>
       <div className="border-t border-gray-200 p-3 dark:border-gray-800">
+        <Link
+          to={`${basePath}/settings`}
+          onClick={onClose}
+          className="mb-2 flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+        >
+          <Settings size={16} aria-hidden="true" />
+          {t('Case Settings')}
+        </Link>
         <div className="mb-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-800 dark:bg-[#0b1117]">
           <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-gray-950 dark:text-white">
             <UserCircle size={16} aria-hidden="true" />
