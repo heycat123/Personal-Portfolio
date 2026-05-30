@@ -430,7 +430,7 @@ export default function DataTable({
       {renderMobileControls()}
 
       <div className="hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820] lg:block">
-        <div className="max-h-[calc(100vh-260px)] overflow-auto">
+        <div className="overflow-x-auto">
           <table className="w-full table-fixed text-left text-sm">
             <thead className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:border-gray-800 dark:bg-[#0c1218] dark:text-gray-400">
               <tr>

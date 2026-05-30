@@ -78,7 +78,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
         />
       ) : null}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-gray-200 bg-white shadow-2xl transition-transform duration-200 dark:border-gray-800 dark:bg-[#101820] lg:static lg:z-auto lg:min-h-screen lg:w-64 lg:shrink-0 lg:translate-x-0 lg:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-gray-200 bg-white shadow-2xl transition-transform duration-200 dark:border-gray-800 dark:bg-[#101820] lg:static lg:z-auto lg:h-full lg:min-h-0 lg:w-64 lg:shrink-0 lg:translate-x-0 lg:shadow-none ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
