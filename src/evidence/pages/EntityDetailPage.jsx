@@ -92,7 +92,7 @@ function entityReviewActionOptions() {
     {
       status: 'candidate',
       title: 'Looks okay. No action needed.',
-      description: 'Use this when the entity is acceptable but you are not saying it is important. This clears Needs review.',
+      description: 'Use this when the person/contact record looks acceptable but you are not saying it is important. This clears Needs review.',
     },
     {
       status: 'topic_only',
@@ -259,7 +259,7 @@ function EntityTargetTypeahead({
               <button type="button" key={item.person_id} onClick={() => onSelect(item.person_id, item.canonical_name || item.person_id)} className="flex w-full flex-col items-start gap-0.5 border-b border-gray-100 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-sky-50 dark:border-gray-800 dark:hover:bg-sky-950/40">
                 <span className="font-semibold text-gray-950 dark:text-white">{item.canonical_name || item.person_id}</span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {item.alias_count ? t('{count} aliases', { count: item.alias_count }) : t('No aliases listed')}
+                  {item.alias_count ? t('{count} names', { count: item.alias_count }) : t('No alternate names listed')}
                   {item.mention_count ? ` · ${t('{count} mentions', { count: item.mention_count })}` : ''}
                 </span>
               </button>
@@ -313,7 +313,7 @@ export default function EntityDetailPage() {
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getEntity(caseId, personId, { token });
-      recordFingerprint(result, 'Entity detail page');
+      recordFingerprint(result, 'People/contact detail page');
       setState({
         loading: false,
         error: null,
@@ -403,9 +403,9 @@ export default function EntityDetailPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.updateEntity(caseId, entity.person_id, {
         canonical_name: canonicalNameDraft.trim(),
-        reviewer_note: `Corrected canonical entity name from "${entity.canonical_name}" to "${canonicalNameDraft.trim()}".`,
+        reviewer_note: `Corrected person/contact record name from "${entity.canonical_name}" to "${canonicalNameDraft.trim()}".`,
       }, { token });
-      recordFingerprint(result, 'Update entity canonical name');
+      recordFingerprint(result, 'Update entity display name');
       setNameEditOpen(false);
       await refreshAfterAction(result);
     } catch (error) {
@@ -416,11 +416,11 @@ export default function EntityDetailPage() {
   const updateReviewStatus = useCallback(async (reviewStatus) => {
     if (!entity?.person_id) return;
     const reviewNotes = {
-      confirmed: `Confirmed ${entity.canonical_name} as a tracked entity from the entity detail page.`,
+      confirmed: `Confirmed ${entity.canonical_name} as a tracked person/contact record from the detail page.`,
       candidate: `Reviewed ${entity.canonical_name}; no immediate action is needed.`,
-      suppressed: `Suppressed ${entity.canonical_name} from normal entity review.`,
+      suppressed: `Suppressed ${entity.canonical_name} from normal people/contact review.`,
       topic_only: `Marked ${entity.canonical_name} as a topic/concept rather than an identity review item.`,
-      needs_review: `Kept ${entity.canonical_name} in entity review.`,
+      needs_review: `Kept ${entity.canonical_name} in people/contact review.`,
     };
     setState((current) => ({ ...current, actionId: `entity_review_${reviewStatus}`, actionError: null }));
     try {
@@ -429,7 +429,7 @@ export default function EntityDetailPage() {
         review_status: reviewStatus,
         reviewer_note: reviewNotes[reviewStatus] || reviewNotes.needs_review,
       }, { token });
-      recordFingerprint(result, 'Update entity review status');
+      recordFingerprint(result, 'Update people/contact review status');
       await refreshAfterAction(result);
     } catch (error) {
       setState((current) => ({ ...current, actionId: null, actionError: error }));
@@ -479,9 +479,9 @@ export default function EntityDetailPage() {
         decision: 'confirm',
         reviewer_note: `Manually confirmed that "${alias}" resolves to ${entity.canonical_name}.`,
         confidence: 1,
-        source_json: { source: 'entity_detail_page' },
+        source_json: { source: 'people_contact_detail_page' },
       }, { token });
-      recordFingerprint(result, 'Add confirmed entity alias');
+      recordFingerprint(result, 'Add confirmed person/contact name');
       setCustomAlias('');
       setAliasAddOpen(false);
       await refreshAfterAction(result);
@@ -499,16 +499,16 @@ export default function EntityDetailPage() {
         ? await evidenceApi.updateEntityRelationship(caseId, entity.person_id, editingRelationship.relationship_id, {
           relationship_label: relationshipForm.relationship_label.trim(),
           target_person_id: relationshipForm.target_person_id,
-          reviewer_note: `Edited relationship from entity detail page.`,
+          reviewer_note: `Edited relationship from people/contact detail page.`,
           confidence: 0.99,
         }, { token })
         : await evidenceApi.createEntityRelationship(caseId, entity.person_id, {
           relationship_label: relationshipForm.relationship_label.trim(),
           target_person_id: relationshipForm.target_person_id,
-          reviewer_note: `Confirmed relationship from entity detail page.`,
+          reviewer_note: `Confirmed relationship from people/contact detail page.`,
           confidence: 0.99,
         }, { token });
-      recordFingerprint(result, editingRelationship?.relationship_id ? 'Edit entity relationship' : 'Add entity relationship');
+      recordFingerprint(result, editingRelationship?.relationship_id ? 'Edit person/contact relationship' : 'Add person/contact relationship');
       setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
       setEditingRelationship(null);
       setRelationshipAddOpen(false);
@@ -521,7 +521,7 @@ export default function EntityDetailPage() {
   const startEditRelationship = useCallback((relationship) => {
     if (!entity || !relationship) return;
     if (relationship.source_person_id !== entity.person_id) {
-      setState((current) => ({ ...current, actionError: new Error('Open the source entity to edit this relationship. You can remove it here if it is wrong.') }));
+      setState((current) => ({ ...current, actionError: new Error('Open the source person/contact record to edit this relationship. You can remove it here if it is wrong.') }));
       return;
     }
     setEditingRelationship(relationship);
@@ -541,9 +541,9 @@ export default function EntityDetailPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.updateEntityRelationship(caseId, entity.person_id, relationship.relationship_id, {
         status: 'rejected',
-        reviewer_note: `Removed relationship from entity detail page: ${relationship.relationship_label}.`,
+        reviewer_note: `Removed relationship from people/contact detail page: ${relationship.relationship_label}.`,
       }, { token });
-      recordFingerprint(result, 'Remove entity relationship');
+      recordFingerprint(result, 'Remove person/contact relationship');
       setEditingRelationship(null);
       setRelationshipForm({ relationship_label: '', target_person_id: '', target_search: '' });
       setRelationshipAddOpen(false);
@@ -562,10 +562,10 @@ export default function EntityDetailPage() {
         contact_type: contactPointForm.contact_type,
         contact_value: contactPointForm.contact_value.trim(),
         label: contactPointForm.label.trim() || null,
-        reviewer_note: `Manually added contact point from entity detail page.`,
+        reviewer_note: `Manually added contact point from people/contact detail page.`,
         confidence: 0.99,
       }, { token });
-      recordFingerprint(result, 'Add entity contact point');
+      recordFingerprint(result, 'Add people/contact contact point');
       setContactPointForm({ contact_type: 'phone', contact_value: '', label: '' });
       setContactAddOpen(false);
       await refreshAfterAction(result);
@@ -577,7 +577,7 @@ export default function EntityDetailPage() {
   const renderConfirmedAliases = () => {
     const aliases = latestConfirmedAlternateAliases(entity);
     if (!aliases.length) {
-      return <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{t('No confirmed alternate aliases yet.')}</p>;
+      return <p className="rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-400">{t('No confirmed alternate names yet.')}</p>;
     }
     return aliases.map((alias) => (
       <div key={alias.confirmation_id || alias.alias} className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/70 dark:bg-emerald-950/30">
@@ -679,19 +679,19 @@ export default function EntityDetailPage() {
   return (
     <div>
       <PageHeader
-        title={entity?.canonical_name || 'Entity'}
-        description={entity ? t('Entity id: {id}', { id: entity.person_id }) : 'Loading entity detail.'}
+        title={entity?.canonical_name || 'Person/contact record'}
+        description={entity ? t('Person/contact record id: {id}', { id: entity.person_id }) : 'Loading person/contact record.'}
         translateTitle={!entity?.canonical_name}
         actions={
           <Link to={`/evidence/cases/${caseId}/entities`} className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10">
             <ArrowLeft size={16} aria-hidden="true" />
-            {t('Back to entities')}
+            {t('Back to People & Contacts')}
           </Link>
         }
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadEntity} /></div> : null}
-      {state.actionError ? <div className="mb-5"><ErrorPanel title="Entity action failed" error={state.actionError} /></div> : null}
+      {state.actionError ? <div className="mb-5"><ErrorPanel title="People/contact action failed" error={state.actionError} /></div> : null}
       {state.fingerprint?.id ? <div className="mb-4"><RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} /></div> : null}
       {state.actionFingerprint?.id ? <div className="mb-4"><RequestFingerprint fingerprintId={state.actionFingerprint.id} correlationId={state.actionFingerprint.correlationId} label="Action fingerprint" /></div> : null}
 
@@ -703,7 +703,7 @@ export default function EntityDetailPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h3 className="break-words text-lg font-semibold text-gray-950 dark:text-white">{entity.canonical_name}</h3>
-                    <button type="button" onClick={() => setNameEditOpen((current) => !current)} title={t('Edit entity name')} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-700 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-sky-300">
+                    <button type="button" onClick={() => setNameEditOpen((current) => !current)} title={t('Edit display name')} className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-sky-700 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-sky-300">
                       <Pencil size={15} aria-hidden="true" />
                     </button>
                   </div>
@@ -725,7 +725,7 @@ export default function EntityDetailPage() {
                 </div>
               ) : null}
               <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
-                <div className="font-semibold text-gray-950 dark:text-white">{t('What should happen with this entity?')}</div>
+                <div className="font-semibold text-gray-950 dark:text-white">{t('What should happen with this person/contact record?')}</div>
                 <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
                   {t('Choose the plain-language outcome. The system saves the technical status behind the scenes.')}
                 </p>
@@ -735,7 +735,7 @@ export default function EntityDetailPage() {
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Confirmed Aliases')}</h3>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Confirmed names')}</h3>
                 <button type="button" onClick={() => setAliasAddOpen((current) => !current)} className="inline-flex items-center gap-1 rounded-md border border-emerald-700 bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800">
                   <Plus size={14} aria-hidden="true" />
                   {t('Add')}
@@ -771,7 +771,7 @@ export default function EntityDetailPage() {
                   <div className="grid gap-2 lg:grid-cols-2">
                     <input list="entity-detail-relationship-suggestions" value={relationshipForm.relationship_label} onChange={(event) => setRelationshipForm((current) => ({ ...current, relationship_label: event.target.value }))} placeholder={t('Example: maternal grandmother')} className="rounded-md border border-sky-200 bg-white px-3 py-2 text-sm text-gray-950 dark:border-sky-900 dark:bg-[#0b1117] dark:text-gray-100" />
                     <EntityTargetTypeahead
-                      label={t('Related entity')}
+                      label={t('Related person/contact')}
                       placeholder={t('Search target, e.g. Forest Lee')}
                       value={relationshipForm.target_person_id}
                       search={relationshipForm.target_search}
@@ -803,7 +803,7 @@ export default function EntityDetailPage() {
             </section>
 
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents Mentioning This Entity')}</h3>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents mentioning this person/contact')}</h3>
               <div className="mt-3 space-y-2">
                 {(entity.document_mentions || []).map((document) => (
                   <div key={document.file_hash} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
@@ -843,7 +843,7 @@ export default function EntityDetailPage() {
               <dl className="mt-4 space-y-3 text-sm">
                 <div>
                   <dt className="flex items-center gap-1 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
-                    {t('Confidence')} <InfoTip label={t('Average extraction/entity-resolution confidence from ingestion. This is not legal certainty.')} />
+                    {t('Confidence')} <InfoTip label={t('Average name/contact matching confidence from document processing. This is not legal certainty.')} />
                   </dt>
                   <dd className="mt-1 text-gray-950 dark:text-white">{confidenceLabel(entity.confidence)}</dd>
                 </div>
@@ -875,9 +875,9 @@ export default function EntityDetailPage() {
                 </div>
               ) : null}
               <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
-                <div className="font-semibold text-gray-950 dark:text-white">{t('What should happen with this entity?')}</div>
+                <div className="font-semibold text-gray-950 dark:text-white">{t('What should happen with this person/contact record?')}</div>
                 <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                  {t('Use this when no alias, phone, email, or relationship change is needed.')}
+                  {t('Use this when no name, phone, email, or relationship change is needed.')}
                 </p>
                 <div className="mt-3">{renderReviewActionButtons()}</div>
               </div>
@@ -927,7 +927,7 @@ export default function EntityDetailPage() {
         </div>
       ) : !state.loading ? (
         <div className="rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-          {t('Entity not found.')}
+          {t('Person/contact record not found.')}
         </div>
       ) : null}
     </div>
