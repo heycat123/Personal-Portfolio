@@ -7,6 +7,7 @@ import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { evidenceCasePath } from '../utils/caseRouting';
 
 const PASSWORD_REQUIREMENTS = [
   {
@@ -69,7 +70,7 @@ export default function LoginPage({ darkTheme, setDarkTheme }) {
   const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const fallbackPath = `/evidence/cases/${defaultCaseId}/dashboard`;
+  const fallbackPath = evidenceCasePath(defaultCaseId, '/dashboard');
   const fromLocation = location.state?.from;
   const destination = fromLocation
     ? `${fromLocation.pathname || ''}${fromLocation.search || ''}${fromLocation.hash || ''}`

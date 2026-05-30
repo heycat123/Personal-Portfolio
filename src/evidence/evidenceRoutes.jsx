@@ -29,6 +29,7 @@ import SupportPage from './pages/SupportPage';
 import SystemQueryPage from './pages/SystemQueryPage';
 import TestsPage from './pages/TestsPage';
 import { evidenceApi } from './services/evidenceApi';
+import { caseMatchesRouteId, evidenceCasePath, evidenceCaseRelativePath, getCaseRouteId } from './utils/caseRouting';
 
 function EvidenceIndex() {
   const { getAccessToken } = useEvidenceAuth();
@@ -77,8 +78,7 @@ function EvidenceIndex() {
   }
 
   if (state.cases.length === 1) {
-    const caseId = state.cases[0].case_id || state.cases[0].caseId;
-    return <Navigate to={`cases/${encodeURIComponent(caseId)}/dashboard`} replace />;
+    return <Navigate to={evidenceCaseRelativePath(state.cases[0], '/dashboard')} replace />;
   }
 
   if (state.cases.length > 1) {
@@ -200,9 +200,12 @@ function AdminRoute({ children }) {
 
 function CaseScope() {
   const { caseId } = useParams();
+  const location = useLocation();
   const { getAccessToken } = useEvidenceAuth();
-  const { isKnownCase, registerCases, setActiveCaseId } = useCaseContext();
+  const { cases: knownCases, isKnownCase, registerCases, setActiveCaseId } = useCaseContext();
   const [remoteCheck, setRemoteCheck] = useState({ caseId: null, loading: false, checked: false, found: false });
+  const knownCase = knownCases.find((item) => caseMatchesRouteId(item, caseId));
+  const canonicalCaseRouteId = getCaseRouteId(knownCase);
 
   useEffect(() => {
     if (caseId && isKnownCase(caseId)) {
@@ -227,7 +230,7 @@ function CaseScope() {
           caseId,
           loading: false,
           checked: true,
-          found: cases.some((item) => (item.case_id || item.caseId) === caseId),
+          found: cases.some((item) => caseMatchesRouteId(item, caseId)),
         });
       })
       .catch(() => {
@@ -242,6 +245,11 @@ function CaseScope() {
 
   if (!caseId) {
     return <UnknownCasePage />;
+  }
+
+  if (canonicalCaseRouteId && canonicalCaseRouteId !== caseId) {
+    const suffix = location.pathname.replace(/^\/evidence\/cases\/[^/]+/, '');
+    return <Navigate to={`${evidenceCasePath(knownCase, suffix)}${location.search}${location.hash}`} replace />;
   }
 
   const currentRemoteCheck = remoteCheck.caseId === caseId

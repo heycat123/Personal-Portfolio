@@ -10,6 +10,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { caseMatchesRouteId } from '../utils/caseRouting';
 
 const RENAME_ROLES = ['owner', 'admin', 'lawyer'];
 
@@ -29,7 +30,7 @@ export default function SettingsPage() {
   const [caseName, setCaseName] = useState(activeCase.caseName || '');
 
   const currentCase = useMemo(
-    () => cases.find((item) => item.caseId === caseId) || activeCase,
+    () => cases.find((item) => caseMatchesRouteId(item, caseId)) || activeCase,
     [activeCase, caseId, cases],
   );
   const canRename = Boolean(currentCase.canRename);
@@ -43,7 +44,7 @@ export default function SettingsPage() {
       recordFingerprint(result, 'Case settings access');
       const nextCases = result.data?.cases || [];
       registerCases(nextCases);
-      const nextCase = nextCases.find((item) => (item.case_id || item.caseId) === caseId);
+      const nextCase = nextCases.find((item) => caseMatchesRouteId(item, caseId));
       if (nextCase) {
         setCaseName(nextCase.case_name || nextCase.caseName || caseId);
       }

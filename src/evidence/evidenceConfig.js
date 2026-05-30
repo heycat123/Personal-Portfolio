@@ -15,6 +15,7 @@ export const DEFAULT_EVIDENCE_CASE = {
   tenantId: 'forest-personal',
   organizationId: 'forest-lee-personal',
   caseId: 'relocation-hague-family-law',
+  caseUrlId: 'case_e5f3b7b645821788',
   tenantName: 'Forest Personal',
   organizationName: 'Forest Lee Personal',
   caseName: 'Relocation / Hague / Family Law',
