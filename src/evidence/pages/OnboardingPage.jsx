@@ -11,22 +11,22 @@ import { caseMatchesRouteId, evidenceCasePath } from '../utils/caseRouting';
 const OPTIONS = [
   {
     id: 'active-case',
-    title: 'Create a new active case',
+    title: 'Create personal case workspace',
     description: 'Use this when a formal court case, agency matter, appeal, or filed legal matter already exists.',
     icon: Briefcase,
-    cta: 'Start active case setup',
+    cta: 'Start workspace setup',
   },
   {
     id: 'precase',
-    title: 'Prepare for a possible future case',
+    title: 'Prepare before a case is filed',
     description: 'Organize documents, define parties, build a timeline, and preserve evidence before anything is filed.',
     icon: FolderPlus,
-    cta: 'Start pre-case workspace',
+    cta: 'Create personal case workspace',
     emphasized: true,
   },
   {
     id: 'join',
-    title: 'Join an existing case',
+    title: 'Join an existing workspace',
     description: 'Use an invitation link, invite code, or access request when someone else already created the case.',
     icon: UserPlus,
     cta: 'Enter invite details',
@@ -251,8 +251,8 @@ export default function OnboardingPage() {
   return (
     <div>
       <PageHeader
-        title="Evidence Onboarding"
-        description="Choose how this account should start. A user can exist without a case, with a pre-case workspace, with an active case, or as an invited participant."
+        title="Start New Workspace"
+        description="Choose how this account should start. You can create a personal case workspace, prepare before a case is filed, or join an existing workspace."
         actions={
           <Link
             to="/evidence/cases"
@@ -303,7 +303,7 @@ export default function OnboardingPage() {
         <section className="mt-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">7.13 setup path</p>
+              <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">Set up your workspace</p>
               <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{selectedOption.title}</h2>
             </div>
             <button
@@ -324,12 +324,12 @@ export default function OnboardingPage() {
                 <Field label="Workspace name">
                   <input className={inputClass()} value={form.workspace_name} onChange={(event) => update('workspace_name', event.target.value)} required minLength={3} />
                 </Field>
-                <Field label="Matter type">
+                <Field label="Family-law topic">
                   <select className={inputClass()} value={form.matter_type} onChange={(event) => update('matter_type', event.target.value)}>
                     {MATTER_TYPES.map((item) => <option key={item}>{item}</option>)}
                   </select>
                 </Field>
-                <Field label="Subtype">
+                <Field label="Topic details">
                   <input className={inputClass()} value={form.case_subtype} onChange={(event) => update('case_subtype', event.target.value)} placeholder="Relocation, parenting plan, time-sharing, debt collection, employment termination" />
                 </Field>
                 <Field label={selected === 'precase' ? 'Preparation status' : 'Case stage'}>
@@ -339,10 +339,10 @@ export default function OnboardingPage() {
                 </Field>
                 {selected === 'active-case' ? (
                   <>
-                    <Field label="Case number, if known">
+                    <Field label="Court case number, if known">
                       <input className={inputClass()} value={form.case_number} onChange={(event) => update('case_number', event.target.value)} />
                     </Field>
-                    <Field label="Court or agency">
+                    <Field label="Court/county, if known">
                       <input className={inputClass()} value={form.court_or_agency} onChange={(event) => update('court_or_agency', event.target.value)} />
                     </Field>
                   </>
@@ -383,9 +383,9 @@ export default function OnboardingPage() {
                   <ChipGroup title="Expected document sources" values={DOCUMENT_SOURCES} selectedValues={form.document_sources} onToggle={(item) => toggle('document_sources', item)} tone="emerald" />
                   <ChipGroup title="Evidence categories" values={EVIDENCE_CATEGORIES} selectedValues={form.evidence_categories} onToggle={(item) => toggle('evidence_categories', item)} tone="emerald" />
                   <ChipGroup title="Sensitive or privileged material" values={SENSITIVE_MATERIALS} selectedValues={form.sensitive_materials} onToggle={(item) => toggle('sensitive_materials', item)} />
-                  <ChipGroup title="Entity types to track" values={ENTITY_TYPES} selectedValues={form.entity_types} onToggle={(item) => toggle('entity_types', item)} />
+                  <ChipGroup title="People/contact details to review" values={ENTITY_TYPES} selectedValues={form.entity_types} onToggle={(item) => toggle('entity_types', item)} />
                   <ChipGroup title="Relationship types to track" values={RELATIONSHIP_TYPES} selectedValues={form.relationship_types} onToggle={(item) => toggle('relationship_types', item)} />
-                  <ChipGroup title="Fact extraction priorities" values={FACT_PRIORITIES} selectedValues={form.fact_extraction_priorities} onToggle={(item) => toggle('fact_extraction_priorities', item)} />
+                  <ChipGroup title="Information to look for" values={FACT_PRIORITIES} selectedValues={form.fact_extraction_priorities} onToggle={(item) => toggle('fact_extraction_priorities', item)} />
                   <ChipGroup title="Expected access roles" values={ACCESS_ROLES} selectedValues={form.access_roles} onToggle={(item) => toggle('access_roles', item)} />
                 </div>
                 <div className="mt-5 grid gap-4 lg:grid-cols-3">

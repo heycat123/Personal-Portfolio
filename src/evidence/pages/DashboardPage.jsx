@@ -272,7 +272,7 @@ export default function DashboardPage() {
       to: `/evidence/cases/${caseId}/intake`,
     },
     {
-      title: t('Evidence Propagation'),
+      title: t('Search & Q&A readiness'),
       status: state.loading ? 'working' : systemReady ? 'ready' : systemWorking ? 'working' : 'attention',
       label: state.loading ? t('Checking') : systemReady ? t('Ready') : systemWorking ? t('Processing') : t('Waiting'),
       detail: state.loading
@@ -280,7 +280,7 @@ export default function DashboardPage() {
         : systemReady
           ? t('Files are ready to search and review.')
           : systemWorking
-            ? t('Evidence is still catching up across storage, graph, or search.')
+            ? t('Documents are still being prepared for search and Q&A.')
             : t('Add or connect source files to start propagation.'),
       actionLabel: canSeeOperations ? t('Open operations metrics') : t('Open documents'),
       to: canSeeOperations ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/documents`,
@@ -290,8 +290,8 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Case Dashboard"
-        description="Case readiness and the next useful steps."
+        title="Case Home"
+        description="Review document readiness, source sync, people/contact review, and pending invitations."
         actions={
           <button
             type="button"
@@ -399,7 +399,7 @@ export default function DashboardPage() {
           <QuickActionCard
             icon={UploadCloud}
             title={t('Add documents')}
-            detail={t('Connect a source or upload files into controlled storage.')}
+            detail={t('Upload files or connect sources such as Google Drive.')}
             to={`/evidence/cases/${caseId}/intake`}
             tone="good"
           />
