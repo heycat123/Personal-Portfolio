@@ -43,14 +43,14 @@ const OPTIONS = [
 const MATTER_TYPES = ['Family law', 'Civil lawsuit', 'Employment', 'Landlord/tenant', 'Contract dispute', 'Debt collection', 'Immigration', 'Probate', 'Other'];
 const ACTIVE_STAGES = ['Filed', 'Waiting for service', 'Service completed', 'Discovery', 'Mediation', 'Trial preparation', 'Final judgment', 'Enforcement', 'Modification', 'Appeal', 'Unknown'];
 const PRECASE_STAGES = ['No case filed', 'Considering filing', 'Gathering documents', 'Waiting for attorney review', 'Demand letter stage', 'Settlement discussion', 'Agency complaint pending', 'Unsure'];
-const EVIDENCE_GOALS = ['Build a timeline', 'Prove communication attempts', 'Identify contradictions', 'Prepare for attorney review', 'Organize documents', 'Find missing evidence'];
+const EVIDENCE_GOALS = ['Build a timeline', 'Track communication attempts', 'Organize communication history', 'Prepare for attorney review', 'Organize documents', 'Find evidence gaps'];
 const DOCUMENT_SOURCES = ['Manual uploads', 'Google Drive', 'Gmail', 'Text messages', 'Photos and videos', 'Financial records', 'School records', 'Medical records'];
-const LEGAL_ISSUES = ['Custody', 'Timesharing', 'Relocation', 'Child support', 'Contempt', 'Enforcement', 'Modification', 'Damages', 'Debt collection', 'Employment termination', 'Contract breach', 'Immigration status'];
+const LEGAL_ISSUES = ['Parenting plan / time-sharing', 'Parental responsibility', 'Relocation', 'Child support', 'Mandatory disclosure', 'Financial affidavit', 'Order-related issue', 'Modification', 'Debt collection', 'Employment termination', 'Contract breach', 'Immigration status'];
 const EVIDENCE_CATEGORIES = ['Court filings', 'Court orders', 'Emails', 'Text messages', 'Chat messages', 'Photos', 'Videos', 'Financial records', 'School records', 'Medical records', 'Police reports', 'Travel records', 'Contracts', 'Personal notes'];
 const SENSITIVE_MATERIALS = ['Attorney-client communications', 'Settlement negotiations', 'Minor child information', 'Medical information', 'School records', 'Financial disclosures', 'Sealed records', 'Confidential addresses', 'Domestic violence or safety-sensitive information', 'Immigration records'];
 const ENTITY_TYPES = ['People', 'Children', 'Parents', 'Attorneys', 'Courts', 'Agencies', 'Schools', 'Employers', 'Doctors', 'Addresses', 'Phone numbers', 'Email accounts', 'Case numbers', 'Orders', 'Documents', 'Events', 'Payments', 'Locations'];
-const RELATIONSHIP_TYPES = ['Parent of', 'Represented by', 'Employed by', 'Enrolled at', 'Lives at', 'Sent message to', 'Failed to respond', 'Filed document', 'Served document', 'Ordered by court', 'Violated order', 'Paid', 'Owed', 'Moved from', 'Moved to'];
-const FACT_PRIORITIES = ['Timeline of events', 'Missed communication', 'Denied contact', 'Payments', 'Contradictions', 'Location history', 'School history', 'Medical events', 'Threats', 'Deadlines', 'Court order violations', 'Damages', 'Witnesses', 'Evidence gaps'];
+const RELATIONSHIP_TYPES = ['Parent of', 'Represented by', 'Employed by', 'Enrolled at', 'Lives at', 'Sent message to', 'Possible missed response', 'Filed document', 'Served document', 'Related to order', 'Order-related event', 'Payment history', 'Amount owed', 'Moved from', 'Moved to'];
+const FACT_PRIORITIES = ['Timeline of events', 'Possible missed communication', 'Parenting time notes', 'Payment history', 'Differences between records', 'Location history', 'School history', 'Medical events', 'Safety-related events', 'Deadlines', 'Order-related events', 'Damages', 'Witnesses', 'Evidence gaps'];
 const ACCESS_ROLES = ['Owner', 'Attorney', 'Paralegal', 'Co-party', 'Expert', 'Witness', 'Viewer', 'Document uploader'];
 
 function splitList(value) {
@@ -330,7 +330,7 @@ export default function OnboardingPage() {
                   </select>
                 </Field>
                 <Field label="Subtype">
-                  <input className={inputClass()} value={form.case_subtype} onChange={(event) => update('case_subtype', event.target.value)} placeholder="Relocation, custody, debt collection, employment termination" />
+                  <input className={inputClass()} value={form.case_subtype} onChange={(event) => update('case_subtype', event.target.value)} placeholder="Relocation, parenting plan, time-sharing, debt collection, employment termination" />
                 </Field>
                 <Field label={selected === 'precase' ? 'Preparation status' : 'Case stage'}>
                   <select className={inputClass()} value={form.procedural_stage} onChange={(event) => update('procedural_stage', event.target.value)}>
@@ -371,14 +371,14 @@ export default function OnboardingPage() {
 
               <section className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-[#0b1117]">
                 <div className="mb-4">
-                  <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">Case intelligence setup</p>
-                  <h3 className="mt-1 text-base font-semibold text-gray-950 dark:text-white">Guide extraction before documents are processed</h3>
+                  <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">Workspace setup</p>
+                  <h3 className="mt-1 text-base font-semibold text-gray-950 dark:text-white">Guide document organization before processing</h3>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    These choices become workspace metadata that later ingestion, graphing, timeline, entity resolution, and quality checks can use.
+                    These choices help organize documents and search. They do not decide what applies to your case or whether any material is legally important.
                   </p>
                 </div>
                 <div className="grid gap-5 lg:grid-cols-2">
-                  <ChipGroup title="Legal issues" values={LEGAL_ISSUES} selectedValues={form.legal_issues} onToggle={(item) => toggle('legal_issues', item)} />
+                  <ChipGroup title="Issue tags" values={LEGAL_ISSUES} selectedValues={form.legal_issues} onToggle={(item) => toggle('legal_issues', item)} />
                   <ChipGroup title="Evidence goals" values={EVIDENCE_GOALS} selectedValues={form.evidence_goals} onToggle={(item) => toggle('evidence_goals', item)} />
                   <ChipGroup title="Expected document sources" values={DOCUMENT_SOURCES} selectedValues={form.document_sources} onToggle={(item) => toggle('document_sources', item)} tone="emerald" />
                   <ChipGroup title="Evidence categories" values={EVIDENCE_CATEGORIES} selectedValues={form.evidence_categories} onToggle={(item) => toggle('evidence_categories', item)} tone="emerald" />
@@ -389,7 +389,7 @@ export default function OnboardingPage() {
                   <ChipGroup title="Expected access roles" values={ACCESS_ROLES} selectedValues={form.access_roles} onToggle={(item) => toggle('access_roles', item)} />
                 </div>
                 <div className="mt-5 grid gap-4 lg:grid-cols-3">
-                  <Field label="Known laws, rules, orders, or standards">
+                  <Field label="Known laws, rules, orders, or standards (optional)">
                     <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.known_laws_rules_orders} onChange={(event) => update('known_laws_rules_orders', event.target.value)} placeholder="Optional. The user can say they do not know." />
                   </Field>
                   <Field label="Existing orders or agreements">
@@ -411,7 +411,7 @@ export default function OnboardingPage() {
                   <CheckCircle2 size={16} aria-hidden="true" />
                 </button>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  This creates the workspace and owner membership. Document source setup comes next.
+                  This creates a personal case workspace. Case owner means the person who controls access to this workspace. Document source setup comes next.
                 </p>
               </div>
             </form>

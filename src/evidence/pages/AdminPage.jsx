@@ -1,4 +1,4 @@
-import { KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
+import { Info, KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -498,6 +498,9 @@ export default function AdminPage() {
                   placeholder={t('Leave blank to generate one')}
                   className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
                 />
+                <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                  {t('Use admin-created credentials only as a fallback when self-registration or email delivery is unavailable. Share temporary passwords through a secure channel and require the user to set their own password.')}
+                </span>
               </label>
             ) : null}
             <button
@@ -521,8 +524,23 @@ export default function AdminPage() {
           <div className="mb-4">
             <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Invite to Case')}</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {t('Create an invitation code. Email delivery will be handled by a later SES integration.')}
+              {t('Create a workspace access invitation for a lawyer or authorized user. If email delivery is unavailable, use the invite link as the approved manual fallback.')}
             </p>
+          </div>
+
+          <div className="mb-4 space-y-3">
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+                <p>{t('Only invite people who are authorized to see this case information. Family-law records may include private, privileged, child-related, financial, medical, school, or safety-sensitive information. You can limit and revoke access.')}</p>
+              </div>
+            </div>
+            <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+                <p>{t('Inviting a lawyer gives account access to this workspace. It does not by itself create an attorney-client relationship unless you and the lawyer separately agree.')}</p>
+              </div>
+            </div>
           </div>
 
           <form className="space-y-4" onSubmit={handleCreateInvitation}>
