@@ -21,6 +21,8 @@ The Evidence app is the customer and operator web interface for the Evidence Sys
 
 ## Route Map
 
+Case route params use the API-provided `case_url_id` for public URLs. Keep backend/internal `case_id` values out of visible route construction unless an API explicitly requires them in a request payload.
+
 | Route | Page | Audience | Purpose |
 | --- | --- | --- | --- |
 | `/evidence/login` | Login | All users | Sign in or reach auth-dependent flows. |

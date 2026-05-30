@@ -18,6 +18,7 @@ import { NavLink } from 'react-router-dom';
 import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
+import { evidenceCasePath } from '../utils/caseRouting';
 
 const NAV_ITEMS = [
   { group: 'Workspace', label: 'My Cases', to: '/evidence/cases', icon: Briefcase },
@@ -39,7 +40,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
   const { activeCase } = useCaseContext();
   const { t } = useLocaleSettings();
   const { canContribute, canSeeAdmin, canSeeOperations, isPreviewing, effectiveCaseRole } = useOperatorMode();
-  const basePath = `/evidence/cases/${activeCase.caseId}`;
+  const basePath = evidenceCasePath(activeCase);
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.requiresAdmin) {
       return canSeeAdmin;

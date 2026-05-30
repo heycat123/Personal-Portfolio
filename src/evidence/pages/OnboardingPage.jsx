@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { caseMatchesRouteId, evidenceCasePath } from '../utils/caseRouting';
 
 const OPTIONS = [
   {
@@ -190,8 +191,7 @@ export default function OnboardingPage() {
         ...form,
         parties: splitList(form.parties),
       }, { token });
-      const caseId = result.data?.case_id || result.data?.workspace?.case_id;
-      navigate(`/evidence/cases/${encodeURIComponent(caseId)}/dashboard`, { replace: true });
+      navigate(evidenceCasePath(result.data?.workspace || result.data, '/dashboard'), { replace: true });
     } catch (requestError) {
       setError(requestError);
     } finally {
@@ -220,8 +220,10 @@ export default function OnboardingPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.acceptInvitation({ invite_code: inviteCode }, { token });
       const casesResult = await evidenceApi.getCases({ token });
-      registerCases(casesResult.data?.cases || []);
-      navigate(`/evidence/cases/${encodeURIComponent(result.data.case_id)}/dashboard`, { replace: true });
+      const cases = casesResult.data?.cases || [];
+      registerCases(cases);
+      const acceptedCase = cases.find((item) => caseMatchesRouteId(item, result.data?.case_url_id || result.data?.case_id)) || result.data;
+      navigate(evidenceCasePath(acceptedCase, '/dashboard'), { replace: true });
     } catch (requestError) {
       setError(requestError);
     } finally {

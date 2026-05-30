@@ -8,6 +8,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { caseMatchesRouteId, evidenceCasePath } from '../utils/caseRouting';
 
 export default function InvitationsPage() {
   const navigate = useNavigate();
@@ -50,8 +51,10 @@ export default function InvitationsPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.acceptInvitation({ invite_code: code }, { token });
       const casesResult = await evidenceApi.getCases({ token });
-      registerCases(casesResult.data?.cases || []);
-      navigate(`/evidence/cases/${encodeURIComponent(result.data.case_id)}/dashboard`, { replace: true });
+      const cases = casesResult.data?.cases || [];
+      registerCases(cases);
+      const acceptedCase = cases.find((item) => caseMatchesRouteId(item, result.data?.case_url_id || result.data?.case_id)) || result.data;
+      navigate(evidenceCasePath(acceptedCase, '/dashboard'), { replace: true });
     } catch (error) {
       setState((current) => ({ ...current, saving: false, error }));
     }

@@ -8,13 +8,14 @@ import StatusBadge from '../components/StatusBadge';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { caseMatchesRouteId, evidenceCasePath, getCaseRouteId } from '../utils/caseRouting';
 
 function caseName(item) {
-  return item.caseName || item.case_name || item.caseId || item.case_id;
+  return item.caseName || item.case_name || getCaseRouteId(item);
 }
 
-function caseId(item) {
-  return item.caseId || item.case_id;
+function caseRouteId(item) {
+  return getCaseRouteId(item);
 }
 
 export default function CaseSelectorPage() {
@@ -64,7 +65,8 @@ export default function CaseSelectorPage() {
       const casesResult = await evidenceApi.getCases({ token });
       const cases = casesResult.data?.cases || [];
       registerCases(cases);
-      navigate(`/evidence/cases/${encodeURIComponent(result.data.case_id)}/dashboard`, { replace: true });
+      const acceptedCase = cases.find((item) => caseMatchesRouteId(item, result.data?.case_url_id || result.data?.case_id)) || result.data;
+      navigate(evidenceCasePath(acceptedCase, '/dashboard'), { replace: true });
     } catch (error) {
       setState((current) => ({ ...current, saving: false, error }));
     }
@@ -126,11 +128,11 @@ export default function CaseSelectorPage() {
       ) : state.cases.length ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {state.cases.map((item) => {
-            const id = caseId(item);
+            const id = caseRouteId(item);
             return (
               <Link
                 key={id}
-                to={`/evidence/cases/${encodeURIComponent(id)}/dashboard`}
+                to={evidenceCasePath(item, '/dashboard')}
                 className="group rounded-lg border border-gray-200 bg-white p-5 shadow-sm hover:border-sky-300 hover:bg-sky-50/40 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-800 dark:hover:bg-sky-950/20"
               >
                 <div className="flex items-start gap-4">

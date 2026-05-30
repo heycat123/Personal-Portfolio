@@ -1,11 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { DEFAULT_EVIDENCE_CASE, EVIDENCE_CASES } from '../evidenceConfig';
+import { caseMatchesRouteId, getCaseRouteId } from '../utils/caseRouting';
 
 const CaseContext = createContext(null);
 
 function normalizeCase(item) {
   const caseId = item?.caseId || item?.case_id;
+  const caseUrlId = item?.caseUrlId || item?.case_url_id || item?.routeCaseId || item?.route_case_id || caseId;
   if (!caseId) {
     return null;
   }
@@ -13,6 +15,7 @@ function normalizeCase(item) {
     tenantId: item.tenantId || item.tenant_id || DEFAULT_EVIDENCE_CASE.tenantId,
     organizationId: item.organizationId || item.organization_id || DEFAULT_EVIDENCE_CASE.organizationId,
     caseId,
+    caseUrlId,
     tenantName: item.tenantName || item.tenant_name || DEFAULT_EVIDENCE_CASE.tenantName,
     organizationName: item.organizationName || item.organization_name || DEFAULT_EVIDENCE_CASE.organizationName,
     caseName: item.caseName || item.case_name || caseId,
@@ -29,21 +32,21 @@ function normalizeCase(item) {
 }
 
 function mergeCases(currentCases, nextCases) {
-  const merged = new Map(currentCases.map((item) => [item.caseId, item]));
+  const merged = new Map(currentCases.map((item) => [getCaseRouteId(item), item]));
   nextCases.map(normalizeCase).filter(Boolean).forEach((item) => {
-    merged.set(item.caseId, { ...(merged.get(item.caseId) || {}), ...item });
+    merged.set(item.caseUrlId, { ...(merged.get(item.caseUrlId) || {}), ...item });
   });
   return Array.from(merged.values());
 }
 
 export function CaseProvider({ children }) {
-  const [activeCaseId, setActiveCaseIdState] = useState(DEFAULT_EVIDENCE_CASE.caseId);
+  const [activeCaseId, setActiveCaseIdState] = useState(getCaseRouteId(DEFAULT_EVIDENCE_CASE));
   const [knownCases, setKnownCases] = useState(EVIDENCE_CASES);
 
   const setActiveCaseId = useCallback((caseId) => {
-    const nextCase = knownCases.find((item) => item.caseId === caseId);
+    const nextCase = knownCases.find((item) => caseMatchesRouteId(item, caseId));
     if (nextCase) {
-      setActiveCaseIdState(nextCase.caseId);
+      setActiveCaseIdState(getCaseRouteId(nextCase));
     }
   }, [knownCases]);
 
@@ -53,14 +56,16 @@ export function CaseProvider({ children }) {
 
   const value = useMemo(() => {
     const activeCase =
-      knownCases.find((item) => item.caseId === activeCaseId) || knownCases[0] || DEFAULT_EVIDENCE_CASE;
+      knownCases.find((item) => caseMatchesRouteId(item, activeCaseId)) || knownCases[0] || DEFAULT_EVIDENCE_CASE;
+    const activeCaseRouteId = getCaseRouteId(activeCase);
 
     return {
       activeCase,
-      activeCaseId: activeCase.caseId,
+      activeCaseId: activeCaseRouteId,
       cases: knownCases,
-      defaultCaseId: DEFAULT_EVIDENCE_CASE.caseId,
-      isKnownCase: (caseId) => knownCases.some((item) => item.caseId === caseId),
+      defaultCaseId: getCaseRouteId(DEFAULT_EVIDENCE_CASE),
+      getCaseRouteId,
+      isKnownCase: (caseId) => knownCases.some((item) => caseMatchesRouteId(item, caseId)),
       registerCases,
       setActiveCaseId,
     };
