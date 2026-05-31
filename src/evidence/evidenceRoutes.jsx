@@ -110,10 +110,11 @@ function ProtectedEvidenceRoute({ darkTheme, setDarkTheme }) {
     );
   }
 
+  if (isInviteOnboardingLink) {
+    return <InvitationSplashPage darkTheme={darkTheme} setDarkTheme={setDarkTheme} />;
+  }
+
   if (!isAuthenticated) {
-    if (isInviteOnboardingLink) {
-      return <InvitationSplashPage darkTheme={darkTheme} setDarkTheme={setDarkTheme} />;
-    }
     return <Navigate to="/evidence/login" replace state={{ from: location }} />;
   }
 

@@ -1,17 +1,23 @@
 import { ArrowLeft, LogIn, Mail, Scale, ShieldCheck, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 import ErrorPanel from '../components/ErrorPanel';
 import EvidenceThemeToggle from '../components/EvidenceThemeToggle';
 import PageHeader from '../components/PageHeader';
+import { useEvidenceAuth } from '../context/AuthContext';
+import { useCaseContext } from '../context/CaseContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { caseMatchesRouteId, evidenceCasePath } from '../utils/caseRouting';
 import { formatDateTime } from '../utils/formatters';
 
 export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { getAccessToken, isAuthenticated, signOut, user } = useEvidenceAuth();
+  const { registerCases } = useCaseContext();
   const { t } = useLocaleSettings();
   const inviteCode = searchParams.get('invite_code') || '';
   const [reloadKey, setReloadKey] = useState(0);
@@ -19,6 +25,8 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
     loading: Boolean(inviteCode),
     error: inviteCode ? null : new Error('Invite code is missing from this link.'),
     invitation: null,
+    accepting: false,
+    acceptError: null,
   });
 
   useEffect(() => {
@@ -29,12 +37,17 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
     evidenceApi.previewInvitation(inviteCode)
       .then((result) => {
         if (!cancelled) {
-          setState({ loading: false, error: null, invitation: result.data?.invitation || null });
+          setState((current) => ({
+            ...current,
+            loading: false,
+            error: null,
+            invitation: result.data?.invitation || null,
+          }));
         }
       })
       .catch((error) => {
         if (!cancelled) {
-          setState({ loading: false, error, invitation: null });
+          setState((current) => ({ ...current, loading: false, error, invitation: null }));
         }
       });
     return () => {
@@ -43,7 +56,7 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
   }, [inviteCode, reloadKey]);
 
   const retry = () => {
-    setState((current) => ({ ...current, loading: Boolean(inviteCode), error: null }));
+    setState((current) => ({ ...current, loading: Boolean(inviteCode), error: null, acceptError: null }));
     setReloadKey((current) => current + 1);
   };
 
@@ -53,6 +66,32 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
     state.invitation?.invited_by_display_name ||
     state.invitation?.invited_by_email_masked ||
     t('A case administrator');
+  const signedInEmail = user?.email || user?.displayName || t('this account');
+
+  async function acceptInvitation() {
+    if (!inviteCode) {
+      return;
+    }
+    setState((current) => ({ ...current, accepting: true, acceptError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.acceptInvitation({ invite_code: inviteCode }, { token });
+      const casesResult = await evidenceApi.getCases({ token });
+      const cases = casesResult.data?.cases || [];
+      registerCases(cases);
+      const acceptedCase =
+        cases.find((item) => caseMatchesRouteId(item, result.data?.case_url_id || result.data?.case_id)) ||
+        result.data;
+      navigate(evidenceCasePath(acceptedCase, '/dashboard'), { replace: true });
+    } catch (error) {
+      setState((current) => ({ ...current, accepting: false, acceptError: error }));
+    }
+  }
+
+  async function switchAccount() {
+    setState((current) => ({ ...current, acceptError: null }));
+    await signOut();
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-950 dark:bg-[#0b1117] dark:text-gray-100">
@@ -150,29 +189,60 @@ export default function InvitationSplashPage({ darkTheme, setDarkTheme }) {
                   <div className="flex items-start gap-2">
                     <ShieldCheck className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
                     <p>
-                      {t('After sign in, this invitation link continues forward and the system will add the case to your account.')}
+                      {isAuthenticated
+                        ? t('You are signed in as {email}. Accept only if this is the invited account.', { email: signedInEmail })
+                        : t('After sign in, this invitation link continues forward and the system will add the case to your account.')}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <Link
-                    to="/evidence/login"
-                    state={loginState}
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
-                  >
-                    <LogIn size={16} aria-hidden="true" />
-                    {t('Sign in to accept')}
-                  </Link>
-                  <Link
-                    to="/evidence/login"
-                    state={signupState}
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:hover:bg-white/10"
-                  >
-                    <UserPlus size={16} aria-hidden="true" />
-                    {t('Create account')}
-                  </Link>
-                </div>
+                {state.acceptError ? (
+                  <div className="mt-5">
+                    <ErrorPanel title="Invitation acceptance failed" error={state.acceptError} />
+                  </div>
+                ) : null}
+
+                {isAuthenticated ? (
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={acceptInvitation}
+                      disabled={state.accepting}
+                      className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+                    >
+                      <LogIn size={16} aria-hidden="true" />
+                      {state.accepting ? t('Accepting invitation') : t('Accept invitation')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={switchAccount}
+                      disabled={state.accepting}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:hover:bg-white/10"
+                    >
+                      <UserPlus size={16} aria-hidden="true" />
+                      {t('Use a different account')}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <Link
+                      to="/evidence/login"
+                      state={loginState}
+                      className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
+                    >
+                      <LogIn size={16} aria-hidden="true" />
+                      {t('Sign in to accept')}
+                    </Link>
+                    <Link
+                      to="/evidence/login"
+                      state={signupState}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:hover:bg-white/10"
+                    >
+                      <UserPlus size={16} aria-hidden="true" />
+                      {t('Create account')}
+                    </Link>
+                  </div>
+                )}
               </div>
             </div>
           </section>
