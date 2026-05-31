@@ -24,7 +24,7 @@ function formatJobCost(costSummary) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return null;
   }
-  if (!costSummary?.paidModelRequested && Number(value) === 0) {
+  if (!costSummary?.hasPaidCost) {
     return null;
   }
   try {
@@ -218,17 +218,20 @@ export default function JobsPage() {
       render: (job) => {
         const progress = jobProgressModel(job);
         const costText = formatJobCost(progress.costSummary);
+        const costDetail = progress.costSummary?.hasPaidCost
+          ? progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
+            ? t('Actual cost')
+            : progress.costSummary?.estimatedUsd !== null && progress.costSummary?.estimatedUsd !== undefined
+              ? t('Estimated cost')
+              : t(progress.costSummary?.message || 'Cost recorded for this job.')
+          : t(progress.costSummary?.message || 'No paid cost recorded for this job.');
         return (
           <div className="text-sm text-gray-700 dark:text-gray-300">
             <div className="font-semibold text-gray-950 dark:text-white">
               {costText || t('No paid cost recorded')}
             </div>
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              {progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
-                ? t('Actual cost')
-                : progress.costSummary?.estimatedUsd !== null && progress.costSummary?.estimatedUsd !== undefined
-                  ? t('Estimated cost')
-                  : t(progress.costSummary?.message || 'No paid cost recorded for this job.')}
+              {costDetail}
             </div>
           </div>
         );

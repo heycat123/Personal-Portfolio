@@ -124,19 +124,22 @@ export function jobCostSummary(job) {
   );
   const hasRecordedCost = Boolean(source.has_recorded_cost) || actualUsd !== null || estimatedUsd !== null;
   const paidModelRequested = Boolean(source.paid_model_requested || source.paid || source.uses_paid_model);
+  const positiveCost = [actualUsd, estimatedUsd].some((value) => value !== null && Number(value) > 0);
+  const hasPaidCost = paidModelRequested || positiveCost;
   const currency = firstString(source.currency, source.currency_code) || 'USD';
+  const sourceMessage = userFacingProcessingText(firstString(source.message, source.display_message));
 
   return {
     actualUsd,
     estimatedUsd,
     currency,
     paidModelRequested,
+    hasPaidCost,
     hasRecordedCost,
     rootAdminOnly: source.root_admin_only !== false,
-    message: userFacingProcessingText(firstString(source.message, source.display_message))
-      || (hasRecordedCost
-        ? 'Cost recorded for this job.'
-        : 'No paid cost recorded for this job.'),
+    message: hasPaidCost
+      ? (sourceMessage || 'Cost recorded for this job.')
+      : 'No paid cost recorded for this job.',
   };
 }
 
