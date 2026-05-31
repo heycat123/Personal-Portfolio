@@ -321,6 +321,12 @@ export default function DashboardPage() {
                 <p className="mt-1">
                   {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing })}
                 </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  {t('Why this happened: the files are saved in the workspace, but the extraction and search-indexing run has not processed them yet.')}
+                </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  {t('Solution: open Documents and use Request processing so an operator can finish text extraction, search indexing, and the final alignment check.')}
+                </p>
               </div>
             </div>
             <Link
