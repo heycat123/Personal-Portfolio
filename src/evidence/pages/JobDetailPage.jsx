@@ -62,7 +62,7 @@ function formatJobCost(costSummary) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return null;
   }
-  if (!costSummary?.paidModelRequested && Number(value) === 0) {
+  if (!costSummary?.hasPaidCost) {
     return null;
   }
   try {
@@ -154,6 +154,13 @@ export default function JobDetailPage() {
   const canRetry = job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
   const isProcessingRequest = isDocumentProcessingRequest(job);
   const costText = progress ? formatJobCost(progress.costSummary) : null;
+  const costDetail = progress?.costSummary?.hasPaidCost
+    ? progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
+      ? t('Actual cost')
+      : progress.costSummary?.estimatedUsd !== null && progress.costSummary?.estimatedUsd !== undefined
+        ? t('Estimated cost')
+        : t(progress.costSummary?.message || 'Cost recorded for this job.')
+    : t(progress?.costSummary?.message || 'No paid cost recorded for this job.');
 
   return (
     <div>
@@ -172,11 +179,11 @@ export default function JobDetailPage() {
               <RefreshCw size={16} aria-hidden="true" />
               {t('Refresh')}
             </button>
-            {!isProcessingRequest ? (
+            {canCancel ? (
               <button
                 type="button"
                 onClick={cancelJob}
-                disabled={!canCancel || Boolean(state.actionLoading)}
+                disabled={Boolean(state.actionLoading)}
                 title={progress?.cancelMessage ? t(progress.cancelMessage) : t('Cancel job')}
                 className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
               >
@@ -184,15 +191,17 @@ export default function JobDetailPage() {
                 {state.actionLoading === 'cancel' ? t('Cancelling') : t(progress?.cancelActionLabel || 'Cancel job')}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={retryJob}
-              disabled={!canRetry || Boolean(state.actionLoading)}
-              className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <RotateCcw size={16} aria-hidden="true" />
-              {state.actionLoading === 'retry' ? t('Retrying') : t('Retry')}
-            </button>
+            {canRetry ? (
+              <button
+                type="button"
+                onClick={retryJob}
+                disabled={Boolean(state.actionLoading)}
+                className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RotateCcw size={16} aria-hidden="true" />
+                {state.actionLoading === 'retry' ? t('Retrying') : t('Retry')}
+              </button>
+            ) : null}
             <Link
               to={`/evidence/cases/${caseId}/jobs`}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
@@ -280,11 +289,7 @@ export default function JobDetailPage() {
               <MetricTile
                 label={t('Cost')}
                 value={costText || t('No paid cost recorded')}
-                detail={progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
-                  ? t('Actual cost')
-                  : progress.costSummary?.estimatedUsd !== null && progress.costSummary?.estimatedUsd !== undefined
-                    ? t('Estimated cost')
-                    : t(progress.costSummary?.message || 'No paid cost recorded for this job.')}
+                detail={costDetail}
               />
             ) : null}
           </div>
