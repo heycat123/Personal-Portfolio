@@ -859,10 +859,10 @@ export default function DocumentsPage() {
   const processingRequestJobId = processingRequestData.job?.job_id || processingRequestData.existing_job?.job_id || processingRequestData.job_id || null;
   const processingRequestCount = processingRequestData.requested_document_count || s3OnlyFiles;
   const processingStartFinished = Boolean(processingRequest.result && processingRequestData.can_start_processing === false);
-  const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
+  const processingStartTitle = processingRequestData.already_started ? 'Request already received' : 'Request received';
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
-    ? 'Processing already started. Check Jobs for the latest status.'
-    : 'Processing started. Check Jobs for the latest status.');
+    ? 'Request already received. Text extraction and search indexing have not started from this request.'
+    : 'Request received. Check Jobs for the latest status.');
 
   const applyColumnFilter = (columnId, value) => {
     setOffset(0);
@@ -916,7 +916,7 @@ export default function DocumentsPage() {
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {showDiagnostics
-                    ? t('Use Start processing here. Text extraction, search indexing, relationship-map indexing, and a final alignment check may still take time after it starts.')
+                    ? t('Use Request text/search processing here. This records the batch that still needs extraction, search indexing, and a final alignment check.')
                     : t('If this stays here, ask a workspace admin or support to start document processing.')}
                 </p>
               </div>
@@ -929,7 +929,7 @@ export default function DocumentsPage() {
                   disabled={processingRequest.busy || processingStartFinished}
                   className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                 >
-                  {processingStartFinished ? t(processingStartTitle) : processingRequest.busy ? t('Starting processing') : t('Start processing')}
+                  {processingStartFinished ? t(processingStartTitle) : processingRequest.busy ? t('Sending request') : t('Request text/search processing')}
                 </button>
               ) : (
                 <Link

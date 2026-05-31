@@ -14,7 +14,15 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
-import { isDocumentProcessingRequest, jobDisplayTitle, jobProgressModel } from '../utils/jobProgress';
+import {
+  isDocumentProcessingRequest,
+  jobDisplayTitle,
+  jobProcessingDocumentName,
+  jobProcessingDocuments,
+  jobProcessingRequestedCount,
+  jobProcessingUniqueHashCount,
+  jobProgressModel,
+} from '../utils/jobProgress';
 
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit', 'agentic_quality_test'];
 
@@ -153,6 +161,9 @@ export default function JobDetailPage() {
   const canCancel = Boolean(progress?.canCancel);
   const canRetry = job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
   const isProcessingRequest = isDocumentProcessingRequest(job);
+  const processingDocuments = isProcessingRequest ? jobProcessingDocuments(job) : [];
+  const processingDocumentCount = isProcessingRequest ? jobProcessingRequestedCount(job) : 0;
+  const processingUniqueHashes = isProcessingRequest ? jobProcessingUniqueHashCount(job) : 0;
   const costText = progress ? formatJobCost(progress.costSummary) : null;
   const costDetail = progress?.costSummary?.hasPaidCost
     ? progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
@@ -233,6 +244,11 @@ export default function JobDetailPage() {
                   </div>
                   <h2 className="text-base font-semibold">{t(progress.title)}</h2>
                   <p className="mt-1">{t(progress.message)}</p>
+                  {isProcessingRequest ? (
+                    <p className="mt-2 font-semibold">
+                      {t('No extraction or search-indexing worker is active from this request yet. These files remain waiting for the processing pipeline.')}
+                    </p>
+                  ) : null}
                   <ProgressMeter
                     value={progress.progressPercent}
                     label={t(progress.progressLabel)}
@@ -273,6 +289,68 @@ export default function JobDetailPage() {
               <div className="mt-4">
                 <Stepper steps={progress.steps.map((step) => ({ ...step, label: t(step.label) }))} />
               </div>
+            </section>
+          ) : null}
+
+          {isProcessingRequest ? (
+            <section className="mb-5 rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+              <div className="flex flex-col gap-2 border-b border-gray-200 p-4 dark:border-gray-800 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents in this processing batch')}</h2>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {t('{count} copied file(s) were included in this request.', { count: processingDocumentCount || processingDocuments.length })}
+                    {processingUniqueHashes ? ` ${t('{count} unique file hash(es).', { count: processingUniqueHashes })}` : ''}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {t('Each listed file is still waiting for text extraction and search indexing. Finished files will move out of this pending list after the processing pipeline actually runs.')}
+                  </p>
+                </div>
+                <Link
+                  to={`/evidence/cases/${caseId}/documents`}
+                  className="inline-flex shrink-0 items-center justify-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+                >
+                  {t('Open Documents')}
+                </Link>
+              </div>
+              {processingDocuments.length ? (
+                <div className="max-h-[28rem] overflow-auto">
+                  <table className="w-full table-auto text-left text-sm">
+                    <thead className="sticky top-0 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:bg-[#0c1218] dark:text-gray-400">
+                      <tr>
+                        <th className="px-3 py-2">{t('Document')}</th>
+                        <th className="px-3 py-2">{t('Status')}</th>
+                        <th className="px-3 py-2">{t('Progress')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                      {processingDocuments.map((document, index) => (
+                        <tr key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}>
+                          <td className="min-w-[18rem] px-3 py-2 align-top">
+                            <div className="font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {document?.origin_label || document?.source_provider || t('Source file')}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <StatusBadge status="pending" label={t('Waiting for text/search processing')} />
+                          </td>
+                          <td className="min-w-[12rem] px-3 py-2 align-top">
+                            <ProgressMeter
+                              value={0}
+                              label={t('Waiting')}
+                              detail={t('0% processed. Text extraction has not started for this file.')}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-4 text-sm text-gray-600 dark:text-gray-400">
+                  {t('This job did not store a document list. Open Documents for the current pending processing list.')}
+                </div>
+              )}
             </section>
           ) : null}
 

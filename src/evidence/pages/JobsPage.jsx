@@ -14,7 +14,15 @@ import { useOperatorMode } from '../context/OperatorModeContext';
 import useJobStatusPolling, { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
-import { isDocumentProcessingRequest, jobDisplayTitle, jobProgressModel } from '../utils/jobProgress';
+import {
+  isDocumentProcessingRequest,
+  jobDisplayTitle,
+  jobProcessingDocumentName,
+  jobProcessingDocuments,
+  jobProcessingRequestedCount,
+  jobProcessingUniqueHashCount,
+  jobProgressModel,
+} from '../utils/jobProgress';
 
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
@@ -170,6 +178,7 @@ export default function JobsPage() {
 
   const activeJobCount = state.jobs.filter(isActiveJob).length;
   const processingRequestJobs = state.jobs.filter(isDocumentProcessingRequest);
+  const generalJobs = state.jobs.filter((job) => !isDocumentProcessingRequest(job));
   const columns = [
     {
       key: 'job_type',
@@ -354,30 +363,145 @@ export default function JobsPage() {
       </div>
 
       {processingRequestJobs.length ? (
-        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="font-semibold">{t('Document processing requests')}</h2>
-              <p className="mt-1">
-                {t('A completed request means the request was recorded. It does not mean text extraction, search indexing, or source citations are ready yet.')}
-              </p>
-              <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">{t('You can keep working in other parts of the workspace.')}</p>
+        <section className="mb-5 space-y-3">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="font-semibold">{t('Document processing batches')}</h2>
+                <p className="mt-1">
+                  {t('These cards show copied files waiting for text extraction, search indexing, and source citation preparation. A received request is not an active processing run.')}
+                </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">{t('You can keep working in other parts of the workspace.')}</p>
+              </div>
+              <Link
+                to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
+                className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                {t('View processing status')}
+              </Link>
             </div>
-            <Link
-              to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
-              className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
-            >
-              {t('View processing status')}
-            </Link>
+          </div>
+
+          <div className="grid gap-4">
+            {processingRequestJobs.map((job) => {
+              const progress = jobProgressModel(job);
+              const documents = jobProcessingDocuments(job);
+              const requestedCount = jobProcessingRequestedCount(job);
+              const uniqueHashes = jobProcessingUniqueHashCount(job);
+              return (
+                <article key={job.job_id} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />
+                        <span className="rounded-full border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:border-gray-800 dark:text-gray-300">
+                          {t('{count} copied file(s)', { count: requestedCount || documents.length })}
+                        </span>
+                        {uniqueHashes ? (
+                          <span className="rounded-full border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:border-gray-800 dark:text-gray-300">
+                            {t('{count} unique file hash(es)', { count: uniqueHashes })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Text and search processing')}</h3>
+                      <p className="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300">
+                        {t('Request received. No extraction or search-indexing worker is active from this request yet. These documents remain waiting for the processing pipeline.')}
+                      </p>
+                      <ProgressMeter
+                        value={progress.progressPercent}
+                        label={t(progress.progressLabel)}
+                        detail={t('{percent}% processed. {meaning}', { percent: progress.progressPercent, meaning: progress.progressText })}
+                        className="mt-3 max-w-xl"
+                      />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
+                          className="inline-flex items-center justify-center rounded-md border border-sky-300 px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+                        >
+                          {t('Open details')}
+                        </Link>
+                        <Link
+                          to={`/evidence/cases/${caseId}/documents`}
+                          className="inline-flex items-center justify-center rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+                        >
+                          {t('Review documents')}
+                        </Link>
+                      </div>
+                    </div>
+                    {isRootAdmin ? (
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Cost')}</div>
+                        <div className="mt-1 font-semibold text-gray-950 dark:text-white">
+                          {formatJobCost(progress.costSummary) || t('No paid cost recorded')}
+                        </div>
+                        <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {t(progress.costSummary?.message || 'No paid cost recorded for this job.')}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-800">
+                    <div className="flex flex-col gap-1 border-b border-gray-200 px-3 py-2 text-sm dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-semibold text-gray-950 dark:text-white">{t('Documents in this batch')}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {documents.length
+                          ? t('Each file is waiting for text/search processing.')
+                          : t('No document list was stored with this request. Open Documents for the current pending list.')}
+                      </span>
+                    </div>
+                    {documents.length ? (
+                      <div className="max-h-96 overflow-auto">
+                        <table className="w-full table-auto text-left text-sm">
+                          <thead className="sticky top-0 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:bg-[#0c1218] dark:text-gray-400">
+                            <tr>
+                              <th className="px-3 py-2">{t('Document')}</th>
+                              <th className="px-3 py-2">{t('Status')}</th>
+                              <th className="px-3 py-2">{t('Progress')}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                            {documents.map((document, index) => (
+                              <tr key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}>
+                                <td className="min-w-[18rem] px-3 py-2 align-top">
+                                  <div className="font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    {document?.origin_label || document?.source_provider || t('Source file')}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 align-top">
+                                  <StatusBadge status="pending" label={t('Waiting for text/search processing')} />
+                                </td>
+                                <td className="min-w-[12rem] px-3 py-2 align-top">
+                                  <ProgressMeter
+                                    value={0}
+                                    label={t('Waiting')}
+                                    detail={t('0% processed. Text extraction has not started for this file.')}
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="px-3 py-4 text-sm text-gray-600 dark:text-gray-400">
+                        {t('Open Documents to review the current files waiting for processing.')}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       ) : null}
 
       <DataTable
-        rows={state.jobs}
+        rows={generalJobs}
         rowKey={(job) => job.job_id}
         loading={state.loading}
-        emptyTitle={state.loading ? t('Loading jobs') : t('No jobs returned')}
+        emptyTitle={state.loading ? t('Loading jobs') : t(processingRequestJobs.length ? 'No other jobs returned' : 'No jobs returned')}
         mobileTitle={(job) => (
           <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
             {t(jobDisplayTitle(job))}

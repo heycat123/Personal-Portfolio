@@ -95,6 +95,51 @@ export function jobDisplayTitle(job) {
   return humanizeKey(job?.job_type || 'Job');
 }
 
+export function jobProcessingDocuments(job) {
+  const input = inputPayload(job);
+  const result = resultPayload(job);
+  const nestedInput = result?.input_json || {};
+  const sources = [
+    input.sampled_documents,
+    result.sampled_documents,
+    nestedInput.sampled_documents,
+    job?.documents,
+  ];
+  return sources.find((value) => Array.isArray(value) && value.length) || [];
+}
+
+export function jobProcessingRequestedCount(job) {
+  const input = inputPayload(job);
+  const result = resultPayload(job);
+  const nestedInput = result?.input_json || {};
+  const value = Number(
+    result.requested_document_count
+    || input.requested_document_count
+    || nestedInput.requested_document_count
+    || jobProcessingDocuments(job).length
+    || 0,
+  );
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function jobProcessingUniqueHashCount(job) {
+  const hashes = new Set(
+    jobProcessingDocuments(job)
+      .map((document) => document?.content_hash || document?.file_hash || document?.hash)
+      .filter(Boolean),
+  );
+  return hashes.size;
+}
+
+export function jobProcessingDocumentName(document) {
+  return document?.original_filename
+    || document?.filename
+    || document?.file_name
+    || document?.name
+    || document?.file_id
+    || 'Source file';
+}
+
 export function jobCostSummary(job) {
   const result = resultPayload(job);
   const display = displayWrapper(job);
