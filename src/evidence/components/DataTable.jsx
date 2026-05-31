@@ -534,7 +534,7 @@ export default function DataTable({
             <section
               key={key}
               onClick={(event) => handleRowClick(event, row)}
-              className={`min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] ${onRowSelect ? 'cursor-pointer' : ''} ${selectedRowKey === key ? 'ring-1 ring-sky-500' : ''}`}
+              className={`min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] ${onRowSelect ? 'cursor-pointer' : ''} ${selectedRowKey === key ? 'ring-1 ring-sky-500' : ''}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -546,11 +546,11 @@ export default function DataTable({
                 {mobileActions ? <div className="shrink-0">{mobileActions(row)}</div> : null}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
+              <div className="mt-3 grid grid-cols-1 gap-2 text-sm min-[420px]:grid-cols-2 sm:grid-cols-3">
                 {metrics.map((column) => (
-                  <div key={columnId(column)} className="rounded-md bg-gray-50 p-2 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(columnHeader(column))}</div>
-                    <div className="break-words text-gray-950 dark:text-white">{renderCell(column, row)}</div>
+                  <div key={columnId(column)} className="min-w-0 rounded-lg bg-gray-50 p-2 dark:bg-black/20">
+                    <div className="text-[11px] font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(columnHeader(column))}</div>
+                    <div className="mt-0.5 min-w-0 break-words text-gray-950 dark:text-white">{renderCell(column, row)}</div>
                   </div>
                 ))}
               </div>

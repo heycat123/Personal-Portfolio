@@ -1,6 +1,6 @@
-import { AlertTriangle, Bot, ExternalLink, FileText, History, Info, ListChecks, Loader2, MessageSquare, Plus, RefreshCw, Send, Wrench, X } from 'lucide-react';
+import { AlertTriangle, Bot, Check, Clipboard, ExternalLink, FileText, History, Info, ListChecks, Loader2, Menu, MessageSquare, Plus, RefreshCw, Send, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useOutletContext, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
@@ -279,7 +279,7 @@ function AgenticSummary({ result, t }) {
   );
 }
 
-function QueryMessage({ message, onOpenCitation, onOpenCitationList, showDiagnostics, t }) {
+function QueryMessage({ message, onCopyAnswer, copied, onOpenCitation, onOpenCitationList, showDiagnostics, t }) {
   if (message.role === 'user') {
     return (
       <div className="flex min-w-0 max-w-full justify-end">
@@ -318,6 +318,17 @@ function QueryMessage({ message, onOpenCitation, onOpenCitationList, showDiagnos
                 status={hasSourceReferences ? 'succeeded' : 'degraded'}
                 label={hasSourceReferences ? t('Source citations available') : t('Needs source review')}
               />
+              {result?.answer ? (
+                <button
+                  type="button"
+                  onClick={() => onCopyAnswer(result.answer)}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-semibold text-gray-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30 dark:hover:text-sky-100"
+                  title={t('Copy answer')}
+                >
+                  {copied ? <Check size={13} aria-hidden="true" /> : <Clipboard size={13} aria-hidden="true" />}
+                  {copied ? t('Copied') : t('Copy')}
+                </button>
+              ) : null}
               {message.fingerprint?.id ? (
                 <RequestFingerprint
                   fingerprintId={message.fingerprint.id}
@@ -513,9 +524,11 @@ function ConversationList({
   onSelectConversation,
   onRefresh,
   t,
+  className = '',
+  onClose,
 }) {
   return (
-    <aside className="min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:h-full">
+    <aside className={`min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:h-full ${className}`}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <History size={17} className="shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
@@ -538,6 +551,16 @@ function ConversationList({
           >
             <Plus size={16} aria-hidden="true" />
           </button>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+              aria-label={t('Close conversations')}
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </div>
       {error ? <ErrorPanel title="Conversation history failed" error={error} /> : null}
@@ -578,6 +601,7 @@ function ConversationList({
 
 export default function QueryPage() {
   const { caseId } = useParams();
+  const { openMobileMenu } = useOutletContext() || {};
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
@@ -613,6 +637,8 @@ export default function QueryPage() {
     error: null,
     conversations: [],
   });
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [copiedAnswer, setCopiedAnswer] = useState(false);
   const scrollRef = useRef(null);
   const showDiagnostics = canSeeOperations || debugEnabled;
 
@@ -700,6 +726,15 @@ export default function QueryPage() {
     }
   }, [caseId]);
 
+  const copyAnswer = useCallback(async (answer) => {
+    if (!answer || !navigator.clipboard) {
+      return;
+    }
+    await navigator.clipboard.writeText(String(answer));
+    setCopiedAnswer(true);
+    window.setTimeout(() => setCopiedAnswer(false), 1400);
+  }, []);
+
   const runQuery = useCallback(async () => {
     const trimmed = question.trim();
     if (!trimmed) {
@@ -747,6 +782,7 @@ export default function QueryPage() {
             : message,
         ),
       );
+      setConversationMenuOpen(false);
       setState({
         running: false,
         error: null,
@@ -814,19 +850,45 @@ export default function QueryPage() {
   const traceRows = useMemo(() => state.result?.retrieval_trace || [], [state.result?.retrieval_trace]);
 
   return (
-    <div className="flex w-full min-w-0 max-w-full flex-col overflow-x-hidden">
-      <PageHeader
-        title="Ask Documents"
-        description="Ask document-grounded questions and review source references from this case workspace."
-        actions={
-          <StatusBadge
-            status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
-            label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
-          />
-        }
-      />
+    <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden lg:h-auto lg:overflow-x-hidden">
+      <div className="fixed left-3 right-3 top-3 z-30 flex items-center justify-between gap-2 lg:hidden">
+        <button
+          type="button"
+          onClick={openMobileMenu}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
+          aria-label={t('Open navigation')}
+          title={t('Open navigation')}
+        >
+          <Menu size={18} aria-hidden="true" />
+        </button>
+        <div className="min-w-0 flex-1 rounded-full border border-gray-200 bg-white/95 px-3 py-2 text-center text-sm font-semibold text-gray-950 shadow-lg backdrop-blur dark:border-gray-800 dark:bg-[#101820]/95 dark:text-white">
+          {t('Ask Documents')}
+        </div>
+        <button
+          type="button"
+          onClick={() => setConversationMenuOpen(true)}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
+          aria-label={t('Open conversations')}
+          title={t('Open conversations')}
+        >
+          <History size={18} aria-hidden="true" />
+        </button>
+      </div>
 
-      <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Ask Documents"
+          description="Ask document-grounded questions and review source references from this case workspace."
+          actions={
+            <StatusBadge
+              status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
+              label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
+            />
+          }
+        />
+      </div>
+
+      <section className="mb-5 hidden rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100 lg:block">
         <div className="flex items-start gap-3">
           <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
           <p>
@@ -841,25 +903,29 @@ export default function QueryPage() {
         </div>
       ) : null}
 
-      <div className="grid h-[calc(100dvh_-_290px)] min-h-[360px] w-full min-w-0 max-w-full gap-4 overflow-hidden sm:h-[calc(100dvh_-_260px)] sm:min-h-[420px] lg:h-[calc(100dvh_-_240px)] xl:grid-cols-[300px_minmax(0,1fr)]">
-        <ConversationList
-          conversations={conversationState.conversations}
-          activeConversationId={activeConversationId}
-          loading={conversationState.loading}
-          error={conversationState.error}
-          onNewConversation={startNewConversation}
-          onSelectConversation={loadConversation}
-          onRefresh={refreshConversations}
-          t={t}
-        />
+      <div className="grid h-full min-h-0 w-full min-w-0 max-w-full gap-4 overflow-hidden lg:h-[calc(100dvh_-_240px)] lg:min-h-[420px] xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="hidden min-h-0 xl:block">
+          <ConversationList
+            conversations={conversationState.conversations}
+            activeConversationId={activeConversationId}
+            loading={conversationState.loading}
+            error={conversationState.error}
+            onNewConversation={startNewConversation}
+            onSelectConversation={loadConversation}
+            onRefresh={refreshConversations}
+            t={t}
+          />
+        </div>
 
-        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10]">
-        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain p-3 sm:p-4">
+        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10] lg:rounded-lg lg:border">
+        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-3 pt-16 sm:p-4 lg:pt-4">
           {hasMessages ? (
             messages.map((message) => (
               <QueryMessage
                 key={message.id}
                 message={message}
+                onCopyAnswer={copyAnswer}
+                copied={copiedAnswer}
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
                 showDiagnostics={showDiagnostics}
@@ -877,11 +943,11 @@ export default function QueryPage() {
           <div ref={scrollRef} />
         </div>
 
-        <div className="border-t border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#101820]">
+        <div className="border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-[#101820] sm:p-4">
           <label className="sr-only" htmlFor="case-query-input">
             {t('Question')}
           </label>
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row">
+          <div className="flex min-w-0 items-end gap-2 sm:gap-3">
             <textarea
               id="case-query-input"
               value={question}
@@ -893,20 +959,20 @@ export default function QueryPage() {
                   runQuery();
                 }
               }}
-              className="min-h-[54px] min-w-0 flex-1 resize-none rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+              className="min-h-[58px] min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 sm:min-h-[54px] sm:rounded-md"
               placeholder={t(EXAMPLE_QUESTION)}
             />
             <button
               type="button"
               onClick={runQuery}
               disabled={state.running}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 lg:w-36"
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-700 px-3 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 lg:w-36 lg:rounded-md"
             >
               <Send size={16} aria-hidden="true" />
-              {state.running ? t('Running') : t('Send')}
+              <span className="hidden sm:inline">{state.running ? t('Running') : t('Send')}</span>
             </button>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-medium text-gray-500 dark:text-gray-400">
+          <div className="mt-2 hidden flex-wrap items-center gap-3 text-xs font-medium text-gray-500 dark:text-gray-400 sm:flex">
             <span>{t('Answer language: {language} | Timezone: {timeZone}', { language: preferences.language, timeZone: preferences.timeZone })}</span>
             {state.fingerprint?.id ? (
               <RequestFingerprint
@@ -941,6 +1007,37 @@ export default function QueryPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400">{t('No evidence packet returned.')}</p>
             )}
           </Panel>
+        </div>
+      ) : null}
+
+      {conversationMenuOpen ? (
+        <div className="fixed inset-0 z-40 flex justify-end bg-black/40 xl:hidden">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label={t('Close conversations')}
+            onClick={() => setConversationMenuOpen(false)}
+          />
+          <div className="relative h-full w-[min(24rem,calc(100vw-2rem))] p-3">
+            <ConversationList
+              conversations={conversationState.conversations}
+              activeConversationId={activeConversationId}
+              loading={conversationState.loading}
+              error={conversationState.error}
+              onNewConversation={() => {
+                startNewConversation();
+                setConversationMenuOpen(false);
+              }}
+              onSelectConversation={(conversationId) => {
+                void loadConversation(conversationId);
+                setConversationMenuOpen(false);
+              }}
+              onRefresh={refreshConversations}
+              t={t}
+              className="h-full"
+              onClose={() => setConversationMenuOpen(false)}
+            />
+          </div>
         </div>
       ) : null}
 
