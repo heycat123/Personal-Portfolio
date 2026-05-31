@@ -39,8 +39,11 @@ The Evidence app is a legal evidence workbench. It should feel calm, trustworthy
 
 ### Feedback And Responsiveness
 
+- Feedback is mandatory, not optional. When a user clicks a command, the UI must visibly answer: what happened, whether it is still happening, and what the user can do next.
 - Every API-triggered button needs an obvious loading, disabled, success, or failure state.
+- Idempotent actions still need feedback. If the work already started, say so directly instead of silently doing nothing or creating duplicate-looking rows.
 - Long-running work should point to a job, request fingerprint, or next diagnostic action when available.
+- Do not ask users to infer outcomes from raw job statuses, fingerprints, or operator terms. Translate the result into the user's workflow language first.
 - Tables and drawers should show loading and empty states without layout jumps.
 - Never leave a user on a bare `Failed to fetch` style message without recovery actions.
 
@@ -160,14 +163,14 @@ Rules:
 
 - Prefer calm labels such as `Processing documents`, `Search still catching up`, `Connection needs attention`, or `Source check needs review`.
 - Avoid issue labels that imply legal conclusions or panic, such as `evidence failed`, `not court-ready`, `disclosure incomplete`, or `legally insufficient`.
-- A status action can be self-service, such as `Reconnect`, `Request processing`, `Review documents`, `Resend invite`, or `Refresh status`.
+- A status action can be self-service, such as `Reconnect`, `Start processing`, `Review documents`, `Resend invite`, or `Refresh status`.
 - A status action can be operator/support routed, such as `Queue alignment check`, `Open Jobs`, or `Help & Support`, but the destination must explain what the operator/support action resolves.
 - If the user can safely continue elsewhere, say so.
 - For operations-only details, translate raw infrastructure symptoms into workflow effects before showing them in normal workspace paths.
 
 Examples:
 
-- Pending copied documents: explain that files are saved but still need text extraction and search indexing; link to Documents or Health resolution with `Request processing`.
+- Pending copied documents: explain that files are saved but still need text extraction and search indexing; link to Documents or Health resolution with `Start processing`. If processing already started, say so directly and point to the current status.
 - Source alignment gaps: explain that connected files and processed records do not fully match yet; provide `Queue alignment check` and `Open Documents`.
 - Connector offline: explain that new sync may pause while existing workspace documents remain available; provide `Reconnect` or `Try sync again`.
 - Invite/email uncertainty: explain that the invite is still pending or delivery could not be confirmed; provide `Resend invite` and `Copy invite link`.
