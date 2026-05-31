@@ -243,6 +243,18 @@ export default function DashboardPage() {
     && copiedFilesPendingProcessing === 0
     && (!canSeeOperations || (missingS3Files === 0 && (!graph.configured || (graph.ok && missingChildEmbeddings === 0 && missingParentEdges === 0))));
   const systemWorking = documentFiles > 0 || indexedRecords > 0 || copiedFilesPendingProcessing > 0;
+  const searchReadinessActionLabel = copiedFilesPendingProcessing > 0
+    ? t('See processing steps')
+    : canSeeOperations
+      ? t('Open operations metrics')
+      : t('Open documents');
+  const searchReadinessActionTo = copiedFilesPendingProcessing > 0 && canSeeOperations
+    ? `/evidence/cases/${caseId}/health#search-readiness-resolution`
+    : copiedFilesPendingProcessing > 0
+      ? `/evidence/cases/${caseId}/documents`
+      : canSeeOperations
+        ? `/evidence/cases/${caseId}/health`
+        : `/evidence/cases/${caseId}/documents`;
 
   const readiness = [
     {
@@ -287,8 +299,8 @@ export default function DashboardPage() {
           : systemWorking
             ? t('Documents are still being prepared for search and Q&A.')
             : t('Add or connect source files to prepare them for search.'),
-      actionLabel: canSeeOperations ? t('Open operations metrics') : t('Open documents'),
-      to: canSeeOperations ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/documents`,
+      actionLabel: searchReadinessActionLabel,
+      to: searchReadinessActionTo,
     },
   ];
 
