@@ -254,6 +254,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/documents'), { ...options, query: params }),
   getDocumentExportGuardrails: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents/export-guardrails'), { ...options, query: params }),
+  requestDocumentProcessing: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/documents/processing-request'), { ...options, method: 'POST', body: payload }),
   exportDocuments: (caseId, params = {}, options = {}) =>
     requestBlob(casePath(caseId, '/documents/export.zip'), { ...options, query: params }),
   getDocument: (caseId, fileId, options) =>

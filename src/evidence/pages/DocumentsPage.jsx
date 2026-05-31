@@ -371,7 +371,7 @@ export default function DocumentsPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const { canSeeAdmin, canSeeOperations, debugEnabled } = useOperatorMode();
   const showDiagnostics = canSeeOperations || debugEnabled;
   const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
   const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
@@ -407,6 +407,11 @@ export default function DocumentsPage() {
     busy: false,
     error: null,
     fingerprint: null,
+  });
+  const [processingRequest, setProcessingRequest] = useState({
+    busy: false,
+    error: null,
+    result: null,
   });
 
   const documentQuery = useMemo(() => ({
@@ -540,6 +545,28 @@ export default function DocumentsPage() {
       setExportState({ busy: false, error, fingerprint: null });
     }
   }, [caseId, documentQuery, filterValues.legal_factor_code, getAccessToken, recordFingerprint, t]);
+
+  const requestPendingDocumentProcessing = useCallback(async () => {
+    setProcessingRequest({ busy: true, error: null, result: null });
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.requestDocumentProcessing(
+        caseId,
+        {
+          scope: 'copied_not_extracted',
+          requested_action: 'text_extraction_and_search_indexing',
+          reason: 'Need Ask Documents search readiness for copied files',
+          max_documents: 250,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Document processing request');
+      setProcessingRequest({ busy: false, error: null, result: result.data || {} });
+      await loadDocuments();
+    } catch (error) {
+      setProcessingRequest({ busy: false, error, result: null });
+    }
+  }, [caseId, getAccessToken, loadDocuments, recordFingerprint]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -828,6 +855,8 @@ export default function DocumentsPage() {
   const s3SyncedRecords = inventorySummary.s3_synced_records || 0;
   const classificationOptions = facetOptions(state.facets, 'evidence_type_label');
   const issueTagOptions = facetOptions(state.facets, 'legal_factor_code');
+  const processingRequestJobId = processingRequest.result?.job?.job_id || processingRequest.result?.job_id || null;
+  const processingRequestCount = processingRequest.result?.requested_document_count || s3OnlyFiles;
 
   const applyColumnFilter = (columnId, value) => {
     setOffset(0);
@@ -883,13 +912,56 @@ export default function DocumentsPage() {
                 </p>
               </div>
             </div>
-            <Link
-              to={showDiagnostics ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/intake`}
-              className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
-            >
-              {showDiagnostics ? t('Open operations metrics') : t('Review Add Documents')}
-            </Link>
+            <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+              {canSeeAdmin ? (
+                <button
+                  type="button"
+                  onClick={requestPendingDocumentProcessing}
+                  disabled={processingRequest.busy}
+                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {processingRequest.busy ? t('Requesting processing') : t('Request processing')}
+                </button>
+              ) : (
+                <Link
+                  to={showDiagnostics ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/intake`}
+                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {showDiagnostics ? t('Open operations metrics') : t('Review Add Documents')}
+                </Link>
+              )}
+              {showDiagnostics ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/health`}
+                  className="text-xs font-semibold text-amber-900 hover:text-amber-950 dark:text-amber-100 dark:hover:text-white"
+                >
+                  {t('Open operations metrics')}
+                </Link>
+              ) : null}
+            </div>
           </div>
+          {processingRequest.error ? (
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100">
+              <p className="font-semibold">{t('Processing request failed')}</p>
+              <p className="mt-1 text-xs">{processingRequest.error.message || t('Evidence API returned an error.')}</p>
+            </div>
+          ) : null}
+          {processingRequest.result ? (
+            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
+              <p className="font-semibold">{t('Processing request queued')}</p>
+              <p className="mt-1 text-xs">
+                {t('Operator processing is now queued for {count} copied file(s). This records the request; extraction and indexing still require the operator processing run.', { count: processingRequestCount })}
+              </p>
+              {processingRequestJobId ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/jobs/${processingRequestJobId}`}
+                  className="mt-2 inline-flex text-xs font-semibold text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white"
+                >
+                  {t('Open request job')}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
