@@ -158,6 +158,26 @@ export default function AdminPage() {
     }
   }
 
+  async function resendInvitation(invitation) {
+    setState((current) => ({ ...current, saving: true, error: null, invitationResult: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.resendCaseInvitationEmail(caseId, invitation.invitation_id, { token });
+      recordFingerprint(result, 'Resend invitation email');
+      setState((current) => ({
+        ...current,
+        saving: false,
+        invitationResult: result.data,
+        fingerprint: result.requestFingerprintId,
+      }));
+      await loadAdmin();
+    } catch (error) {
+      setState((current) => ({ ...current, saving: false, error }));
+    } finally {
+      setState((current) => ({ ...current, saving: false }));
+    }
+  }
+
   async function updateRole(userId, role, targetCaseId = caseId) {
     setState((current) => ({ ...current, saving: true, error: null }));
     try {
@@ -596,6 +616,11 @@ export default function AdminPage() {
               <div className="font-semibold">{t('Invite code')}</div>
               <div className="mt-1 break-all font-mono">{state.invitationResult.invitation.invite_code}</div>
               <div className="mt-2 text-xs">{state.invitationResult.invite_url}</div>
+              {state.invitationResult.delivery?.email_delivery_status ? (
+                <div className="mt-2 text-xs font-semibold">
+                  {t('Email status')}: {state.invitationResult.delivery.email_delivery_status}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
@@ -670,15 +695,27 @@ export default function AdminPage() {
                         </div>
                         <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{invitation.invite_code}</div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => cancelInvitation(invitation.invitation_id)}
-                        disabled={state.saving || invitation.status !== 'pending'}
-                        className="inline-flex items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-                      >
-                        <UserX size={13} aria-hidden="true" />
-                        {t('Cancel')}
-                      </button>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => resendInvitation(invitation)}
+                          disabled={state.saving || invitation.status !== 'pending' || invitation.can_resend_email === false}
+                          title={invitation.resend_email_disabled_reason || invitation.access_management?.resend_email_disabled_reason || ''}
+                          className="inline-flex items-center justify-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-900/70 dark:text-sky-100 dark:hover:bg-sky-950/30"
+                        >
+                          <Mail size={13} aria-hidden="true" />
+                          {t('Resend email')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => cancelInvitation(invitation.invitation_id)}
+                          disabled={state.saving || invitation.status !== 'pending'}
+                          className="inline-flex items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                        >
+                          <UserX size={13} aria-hidden="true" />
+                          {t('Cancel')}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
