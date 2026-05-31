@@ -5,8 +5,16 @@ const TERMINAL_SUCCESS = new Set(['succeeded', 'success', 'completed']);
 const TERMINAL_ATTENTION = new Set(['failed', 'cancelled', 'canceled']);
 const DOCUMENT_PROCESSING_TOTAL_STEPS = 5;
 
-export function isDocumentProcessingRequest(job) {
+function isLegacyDocumentProcessingRequest(job) {
   return job?.job_type === 'document_processing_request';
+}
+
+export function isDocumentTextSearchProcessing(job) {
+  return job?.job_type === 'document_text_search_processing';
+}
+
+export function isDocumentProcessingRequest(job) {
+  return isLegacyDocumentProcessingRequest(job) || isDocumentTextSearchProcessing(job);
 }
 
 function resultPayload(job) {
@@ -65,8 +73,8 @@ function userFacingProcessingText(value) {
     .replace(/operator\s+processing\s+run/gi, 'text and search processing')
     .replace(/operator\s+processing\s+required/gi, 'text and search processing still needed')
     .replace(/operator\s+required/gi, 'support processing needed')
-    .replace(/processing\s+request\s+recorded/gi, 'Request received')
-    .replace(/request\s+recorded/gi, 'Request received');
+    .replace(/processing\s+request\s+recorded/gi, 'Processing started')
+    .replace(/request\s+recorded/gi, 'Processing started');
 }
 
 function actionText(value) {
@@ -80,7 +88,7 @@ function actionText(value) {
 }
 
 function requestRecorded(job, status, result) {
-  return isDocumentProcessingRequest(job) && (
+  return isLegacyDocumentProcessingRequest(job) && (
     TERMINAL_SUCCESS.has(status)
     || Boolean(result?.ok)
     || result?.workflow_status === 'request_recorded_operator_required'
@@ -100,10 +108,11 @@ export function jobProcessingDocuments(job) {
   const result = resultPayload(job);
   const nestedInput = result?.input_json || {};
   const sources = [
-    input.sampled_documents,
-    result.sampled_documents,
-    nestedInput.sampled_documents,
+    result.documents,
     job?.documents,
+    nestedInput.sampled_documents,
+    result.sampled_documents,
+    input.sampled_documents,
   ];
   return sources.find((value) => Array.isArray(value) && value.length) || [];
 }
@@ -138,6 +147,116 @@ export function jobProcessingDocumentName(document) {
     || document?.name
     || document?.file_id
     || 'Source file';
+}
+
+export function jobProcessingDocumentStatus(document) {
+  const rawStatus = String(document?.status || 'waiting').toLowerCase();
+  const labels = {
+    waiting: 'Waiting',
+    queued: 'Waiting',
+    reading_text: 'Reading text',
+    writing_search_records: 'Indexing for search',
+    processed: 'Ready for search',
+    needs_ocr: 'Needs OCR/review',
+    unsupported_type: 'Needs review',
+    empty_text: 'Needs review',
+    dependency_missing: 'Needs setup',
+    missing_hash: 'Needs review',
+    failed: 'Needs attention',
+    cancelled: 'Cancelled',
+  };
+  const badgeStatuses = {
+    waiting: 'pending',
+    queued: 'pending',
+    reading_text: 'running',
+    writing_search_records: 'running',
+    processed: 'succeeded',
+    needs_ocr: 'pending',
+    unsupported_type: 'pending',
+    empty_text: 'pending',
+    dependency_missing: 'pending',
+    missing_hash: 'pending',
+    failed: 'failed',
+    cancelled: 'degraded',
+  };
+  return {
+    rawStatus,
+    label: labels[rawStatus] || humanizeKey(rawStatus),
+    badgeStatus: badgeStatuses[rawStatus] || 'unknown',
+    message: userFacingProcessingText(document?.message || 'Waiting for text/search processing.'),
+    progressPercent: clampPercent(document?.progress_percent) ?? documentProgressFallback(rawStatus),
+  };
+}
+
+function documentProgressFallback(rawStatus) {
+  if (rawStatus === 'reading_text') {
+    return 35;
+  }
+  if (rawStatus === 'writing_search_records') {
+    return 75;
+  }
+  if ([
+    'processed',
+    'needs_ocr',
+    'unsupported_type',
+    'empty_text',
+    'dependency_missing',
+    'missing_hash',
+    'failed',
+    'cancelled',
+    'canceled',
+  ].includes(rawStatus)) {
+    return 100;
+  }
+  return 0;
+}
+
+function documentProgressSummary(job) {
+  if (!isDocumentProcessingRequest(job)) {
+    return null;
+  }
+  const documents = jobProcessingDocuments(job);
+  if (!documents.length) {
+    return null;
+  }
+  const statuses = documents.map(jobProcessingDocumentStatus);
+  const progressPercent = clampPercent(statuses.reduce((sum, status) => sum + status.progressPercent, 0) / statuses.length);
+  const needsAttention = statuses.filter((status) => ['failed', 'degraded'].includes(status.badgeStatus)).length;
+  const needsReview = statuses.filter((status) => status.badgeStatus === 'pending' && status.progressPercent === 100).length;
+  const running = statuses.filter((status) => status.badgeStatus === 'running').length;
+  const ready = statuses.filter((status) => status.rawStatus === 'processed').length;
+  const waiting = statuses.filter((status) => ['waiting', 'queued'].includes(status.rawStatus)).length;
+
+  let label = 'Processing documents';
+  let badgeStatus = running ? 'running' : 'pending';
+  let currentStep = 'Preparing documents';
+
+  if (needsAttention) {
+    label = 'Needs review';
+    badgeStatus = 'failed';
+    currentStep = 'Review processing details';
+  } else if (needsReview) {
+    label = 'Needs review';
+    badgeStatus = 'pending';
+    currentStep = 'Review files that need another extractor';
+  } else if (ready === statuses.length) {
+    label = 'Ready for search';
+    badgeStatus = 'succeeded';
+    currentStep = 'Ready for search and Q&A';
+  } else if (running) {
+    currentStep = statuses.find((status) => status.badgeStatus === 'running')?.label || 'Processing documents';
+  } else if (waiting) {
+    label = 'Waiting to start';
+    currentStep = 'Waiting to start processing';
+  }
+
+  return {
+    progressPercent: progressPercent ?? 0,
+    statusLabel: label,
+    badgeStatus,
+    currentStep,
+    progressText: currentStep,
+  };
 }
 
 export function jobCostSummary(job) {
@@ -304,8 +423,8 @@ function fallbackSteps(status) {
 function documentProcessingFallbackSteps(recorded, failed) {
   return [
     {
-      key: 'request',
-      label: 'Request received',
+      key: 'started',
+      label: 'Processing started',
       state: failed ? 'blocked' : recorded ? 'complete' : 'current',
     },
     {
@@ -338,6 +457,7 @@ export function jobProgressModel(job) {
   const display = displayWrapper(job);
   const resolution = resolutionPayload(job, result, display);
   const recorded = requestRecorded(job, status, result);
+  const documentSummary = documentProgressSummary(job);
   const failed = TERMINAL_ATTENTION.has(status);
   const cancelRequested = Boolean(job?.cancel_requested || result.cancel_requested || display.cancel_requested);
 
@@ -347,7 +467,9 @@ export function jobProgressModel(job) {
     display.progress_percent,
     resolution.progress_percent,
   ));
-  const progressPercent = backendPercent ?? (isDocumentProcessingRequest(job) && recorded ? 0 : fallbackPercent(status));
+  const progressPercent = backendPercent
+    ?? documentSummary?.progressPercent
+    ?? (isDocumentProcessingRequest(job) && recorded ? 0 : fallbackPercent(status));
   const statusLabel = userFacingProcessingText(firstString(
     job?.display_status,
     display.display_status,
@@ -355,7 +477,8 @@ export function jobProgressModel(job) {
     result.display_status,
     result.status_label,
     cancelRequested ? 'Cancel requested' : null,
-    isDocumentProcessingRequest(job) && recorded ? 'Request received' : null,
+    documentSummary?.statusLabel,
+    isDocumentProcessingRequest(job) && recorded ? 'Processing started' : null,
     fallbackStatusLabel(status),
   ));
   const currentStep = userFacingProcessingText(firstString(
@@ -363,6 +486,7 @@ export function jobProgressModel(job) {
     result.current_step,
     display.current_step,
     resolution.current_step,
+    documentSummary?.currentStep,
     isDocumentProcessingRequest(job) && recorded ? 'Text and search processing still needed' : null,
     fallbackCurrentStep(cancelRequested ? 'cancelling' : status),
   ));
@@ -370,6 +494,7 @@ export function jobProgressModel(job) {
     job?.progress_text,
     result.progress_text,
     display.progress_text,
+    documentSummary?.progressText,
     currentStep,
   ));
   const backendSteps = normalizeBackendSteps(firstArray(
@@ -401,7 +526,7 @@ export function jobProgressModel(job) {
     result.message,
   ));
   const fallbackMessage = isDocumentProcessingRequest(job) && recorded
-    ? `Request received for ${count || 'the selected'} copied file(s). Check Jobs for the latest status.`
+    ? `Processing started for ${count || 'the selected'} copied file(s). Check Jobs for the latest status.`
     : isDocumentProcessingRequest(job)
       ? 'Your documents were added for processing. They may appear before search and Q&A are fully ready.'
       : firstString(job?.display_message, result.display_message, display.display_message)
@@ -438,7 +563,7 @@ export function jobProgressModel(job) {
     status === 'running' ? 'Request cancel' : 'Cancel job',
   ));
   const fallbackCancelMessage = isDocumentProcessingRequest(job) && recorded
-    ? 'No running extraction or search-indexing job is active from this request yet.'
+    ? 'This older start record is not a running processing batch. Start text/search processing from Documents to create one.'
     : TERMINAL_SUCCESS.has(status)
       ? 'This job is finished, so there is nothing to cancel.'
       : TERMINAL_ATTENTION.has(status)
@@ -450,7 +575,7 @@ export function jobProgressModel(job) {
   return {
     title: jobDisplayTitle(job),
     statusLabel,
-    badgeStatus: fallbackBadgeStatus(cancelRequested ? 'cancelling' : status),
+    badgeStatus: documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status),
     progressPercent,
     progressText,
     message: userMessage || userFacingProcessingText(fallbackMessage),
@@ -463,7 +588,7 @@ export function jobProgressModel(job) {
     progressLabel: currentStep,
     rawStatusLabel: humanizeKey(status),
     workflowStatus: firstString(job?.workflow_status, result.workflow_status, display.workflow_status),
-    operatorRequired: Boolean(job?.operator_required || result.operator_required || display.operator_required || (isDocumentProcessingRequest(job) && recorded)),
+    operatorRequired: Boolean(job?.operator_required || result.operator_required || display.operator_required || (isLegacyDocumentProcessingRequest(job) && recorded)),
     canCancel,
     cancelActionLabel,
     cancelMessage: userFacingProcessingText(firstString(
