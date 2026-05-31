@@ -451,7 +451,7 @@ export default function DashboardPage() {
               <div>
                 <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Operations metrics')}</h3>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  {t('Detailed jobs, database, storage, graph, vector, and source proof checks live in Health.')}
+                  {t('Detailed jobs, database, storage, graph, vector, and source alignment checks live in Health.')}
                 </p>
               </div>
             </div>

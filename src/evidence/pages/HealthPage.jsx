@@ -219,7 +219,12 @@ export default function HealthPage() {
         <MetricTile
           icon={Server}
           label="S3"
-          value={storage?.ok ? t('Configured') : state.loading ? t('Checking') : t('Unknown')}
+          value={
+            <StatusBadge
+              status={storage?.ok ? 'online' : state.loading ? 'checking' : 'unknown'}
+              label={storage?.ok ? t('Online') : state.loading ? t('Checking') : t('Unknown')}
+            />
+          }
           detail={storage?.bucket || storage?.reason || t('No bucket returned')}
           tone={storage?.ok ? 'good' : 'warn'}
         />
@@ -273,7 +278,7 @@ export default function HealthPage() {
         />
         <MetricTile
           icon={GitCompare}
-          label="Source Proof"
+          label="Source Alignment"
           value={
             <StatusBadge
               status={alignmentOk ? 'online' : alignmentAvailable ? 'degraded' : 'unknown'}
@@ -283,7 +288,7 @@ export default function HealthPage() {
           detail={
             alignmentAvailable
               ? t('{count} strict gap(s); finished {time}', { count: alignmentGapCount, time: formatDateTime(sourceAlignment.audit_finished_at) })
-              : sourceAlignment?.reason || t('Run source_alignment_audit.py to generate a proof manifest.')
+              : sourceAlignment?.reason || t('Queue an alignment check to compare source files with processed records.')
           }
           tone={alignmentOk ? 'good' : alignmentAvailable ? 'warn' : 'default'}
         />
@@ -303,7 +308,7 @@ export default function HealthPage() {
           />
 
           <div className="mt-6">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Source Alignment Proof')}</h3>
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Source Alignment')}</h3>
             {alignmentAvailable ? (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="flex flex-wrap items-center gap-3">
@@ -328,7 +333,7 @@ export default function HealthPage() {
               </div>
             ) : (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-                {sourceAlignment?.reason || t('No source alignment manifest has been published by the API runtime.')}
+                {sourceAlignment?.reason || t('No source alignment check has been published by the API runtime.')}
               </div>
             )}
             <DataTable
