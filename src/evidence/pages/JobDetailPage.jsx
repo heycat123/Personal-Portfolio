@@ -19,6 +19,7 @@ import {
   jobDisplayTitle,
   jobProcessingDocumentName,
   jobProcessingDocuments,
+  jobProcessingDocumentStatus,
   jobProcessingRequestedCount,
   jobProcessingUniqueHashCount,
   jobProgressModel,
@@ -244,9 +245,9 @@ export default function JobDetailPage() {
                   </div>
                   <h2 className="text-base font-semibold">{t(progress.title)}</h2>
                   <p className="mt-1">{t(progress.message)}</p>
-                  {isProcessingRequest ? (
+                  {isProcessingRequest && !progress.canCancel && progress.progressPercent === 0 ? (
                     <p className="mt-2 font-semibold">
-                      {t('No extraction or search-indexing worker is active from this request yet. These files remain waiting for the processing pipeline.')}
+                      {t('This older start record did not create a running processing batch. Start text/search processing from Documents to create a cancellable batch with per-file progress.')}
                     </p>
                   ) : null}
                   <ProgressMeter
@@ -298,11 +299,11 @@ export default function JobDetailPage() {
                 <div>
                   <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents in this processing batch')}</h2>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('{count} copied file(s) were included in this request.', { count: processingDocumentCount || processingDocuments.length })}
+                    {t('{count} copied file(s) are included in this processing batch.', { count: processingDocumentCount || processingDocuments.length })}
                     {processingUniqueHashes ? ` ${t('{count} unique file hash(es).', { count: processingUniqueHashes })}` : ''}
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('Each listed file is still waiting for text extraction and search indexing. Finished files will move out of this pending list after the processing pipeline actually runs.')}
+                    {t('Each listed file shows its current text/search processing state. Files that need OCR or another extractor will stay marked for review.')}
                   </p>
                 </div>
                 <Link
@@ -313,38 +314,35 @@ export default function JobDetailPage() {
                 </Link>
               </div>
               {processingDocuments.length ? (
-                <div className="max-h-[28rem] overflow-auto">
-                  <table className="w-full table-auto text-left text-sm">
-                    <thead className="sticky top-0 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:bg-[#0c1218] dark:text-gray-400">
-                      <tr>
-                        <th className="px-3 py-2">{t('Document')}</th>
-                        <th className="px-3 py-2">{t('Status')}</th>
-                        <th className="px-3 py-2">{t('Progress')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {processingDocuments.map((document, index) => (
-                        <tr key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}>
-                          <td className="min-w-[18rem] px-3 py-2 align-top">
-                            <div className="font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">
-                              {document?.origin_label || document?.source_provider || t('Source file')}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 align-top">
-                            <StatusBadge status="pending" label={t('Waiting for text/search processing')} />
-                          </td>
-                          <td className="min-w-[12rem] px-3 py-2 align-top">
-                            <ProgressMeter
-                              value={0}
-                              label={t('Waiting')}
-                              detail={t('0% processed. Text extraction has not started for this file.')}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="max-h-[28rem] space-y-2 overflow-auto p-3">
+                  {processingDocuments.map((document, index) => {
+                    const documentStatus = jobProcessingDocumentStatus(document);
+                    return (
+                      <div
+                        key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}
+                        className="grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.5fr)_minmax(11rem,0.8fr)_minmax(13rem,1fr)]"
+                      >
+                        <div className="min-w-0">
+                          <div className="break-words font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
+                          <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {document?.origin_label || document?.source_provider || t('Source file')}
+                          </div>
+                        </div>
+                        <div>
+                          <StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(documentStatus.message)}</p>
+                        </div>
+                        <ProgressMeter
+                          value={documentStatus.progressPercent}
+                          label={t(documentStatus.label)}
+                          detail={t('{percent}% processed. {meaning}', {
+                            percent: documentStatus.progressPercent,
+                            meaning: documentStatus.message,
+                          })}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="p-4 text-sm text-gray-600 dark:text-gray-400">
@@ -358,7 +356,7 @@ export default function JobDetailPage() {
             <MetricTile
               label={t('Status')}
               value={<StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />}
-              detail={t('Request workflow status')}
+              detail={t('Processing workflow status')}
             />
             <MetricTile label={t('Priority')} value={job.priority ?? 0} detail={t('Higher priority runs first')} />
             <MetricTile label={t('Created')} value={formatDateTime(job.created_at)} detail={job.created_by_user_id || t('No user recorded')} />

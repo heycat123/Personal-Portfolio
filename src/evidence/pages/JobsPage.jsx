@@ -19,6 +19,7 @@ import {
   jobDisplayTitle,
   jobProcessingDocumentName,
   jobProcessingDocuments,
+  jobProcessingDocumentStatus,
   jobProcessingRequestedCount,
   jobProcessingUniqueHashCount,
   jobProgressModel,
@@ -177,7 +178,9 @@ export default function JobsPage() {
   }, [loadJobs]);
 
   const activeJobCount = state.jobs.filter(isActiveJob).length;
-  const processingRequestJobs = state.jobs.filter(isDocumentProcessingRequest);
+  const processingRequestJobs = [...state.jobs]
+    .filter(isDocumentProcessingRequest)
+    .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
   const generalJobs = state.jobs.filter((job) => !isDocumentProcessingRequest(job));
   const columns = [
     {
@@ -369,7 +372,7 @@ export default function JobsPage() {
               <div>
                 <h2 className="font-semibold">{t('Document processing batches')}</h2>
                 <p className="mt-1">
-                  {t('These cards show copied files waiting for text extraction, search indexing, and source citation preparation. A received request is not an active processing run.')}
+                  {t('These cards show copied files moving through text extraction, search indexing, and source citation preparation.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">{t('You can keep working in other parts of the workspace.')}</p>
               </div>
@@ -405,7 +408,7 @@ export default function JobsPage() {
                       </div>
                       <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Text and search processing')}</h3>
                       <p className="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300">
-                        {t('Request received. No extraction or search-indexing worker is active from this request yet. These documents remain waiting for the processing pipeline.')}
+                        {t(progress.message)}
                       </p>
                       <ProgressMeter
                         value={progress.progressPercent}
@@ -446,43 +449,40 @@ export default function JobsPage() {
                       <span className="font-semibold text-gray-950 dark:text-white">{t('Documents in this batch')}</span>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         {documents.length
-                          ? t('Each file is waiting for text/search processing.')
-                          : t('No document list was stored with this request. Open Documents for the current pending list.')}
+                          ? t('Each file shows its current text/search processing state.')
+                          : t('No document list was stored with this batch. Open Documents for the current pending list.')}
                       </span>
                     </div>
                     {documents.length ? (
-                      <div className="max-h-96 overflow-auto">
-                        <table className="w-full table-auto text-left text-sm">
-                          <thead className="sticky top-0 bg-gray-50 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:bg-[#0c1218] dark:text-gray-400">
-                            <tr>
-                              <th className="px-3 py-2">{t('Document')}</th>
-                              <th className="px-3 py-2">{t('Status')}</th>
-                              <th className="px-3 py-2">{t('Progress')}</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {documents.map((document, index) => (
-                              <tr key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}>
-                                <td className="min-w-[18rem] px-3 py-2 align-top">
-                                  <div className="font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                                    {document?.origin_label || document?.source_provider || t('Source file')}
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 align-top">
-                                  <StatusBadge status="pending" label={t('Waiting for text/search processing')} />
-                                </td>
-                                <td className="min-w-[12rem] px-3 py-2 align-top">
-                                  <ProgressMeter
-                                    value={0}
-                                    label={t('Waiting')}
-                                    detail={t('0% processed. Text extraction has not started for this file.')}
-                                  />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="max-h-96 space-y-2 overflow-auto p-3">
+                        {documents.map((document, index) => {
+                          const documentStatus = jobProcessingDocumentStatus(document);
+                          return (
+                            <div
+                              key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}
+                              className="grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.5fr)_minmax(11rem,0.8fr)_minmax(13rem,1fr)]"
+                            >
+                              <div className="min-w-0">
+                                <div className="break-words font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
+                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                  {document?.origin_label || document?.source_provider || t('Source file')}
+                                </div>
+                              </div>
+                              <div>
+                                <StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(documentStatus.message)}</p>
+                              </div>
+                              <ProgressMeter
+                                value={documentStatus.progressPercent}
+                                label={t(documentStatus.label)}
+                                detail={t('{percent}% processed. {meaning}', {
+                                  percent: documentStatus.progressPercent,
+                                  meaning: documentStatus.message,
+                                })}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="px-3 py-4 text-sm text-gray-600 dark:text-gray-400">
