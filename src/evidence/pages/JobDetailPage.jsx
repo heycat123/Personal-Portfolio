@@ -11,6 +11,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 import { isDocumentProcessingRequest, jobDisplayTitle, jobProgressModel } from '../utils/jobProgress';
@@ -55,11 +56,30 @@ function Stepper({ steps }) {
   );
 }
 
+function formatJobCost(costSummary) {
+  const currency = costSummary?.currency || 'USD';
+  const value = costSummary?.actualUsd ?? costSummary?.estimatedUsd;
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return null;
+  }
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 6,
+    }).format(Number(value));
+  } catch {
+    return `${currency} ${Number(value).toFixed(4)}`;
+  }
+}
+
 export default function JobDetailPage() {
   const { caseId, jobId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { isRootAdmin } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     actionLoading: null,
@@ -126,10 +146,11 @@ export default function JobDetailPage() {
   }, [loadJob]);
 
   const job = state.job;
-  const canCancel = job?.status === 'queued';
+  const progress = job ? jobProgressModel(job) : null;
+  const canCancel = Boolean(progress?.canCancel);
   const canRetry = job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
   const isProcessingRequest = isDocumentProcessingRequest(job);
-  const progress = isProcessingRequest ? jobProgressModel(job) : null;
+  const costText = progress ? formatJobCost(progress.costSummary) : null;
 
   return (
     <div>
@@ -152,10 +173,11 @@ export default function JobDetailPage() {
               type="button"
               onClick={cancelJob}
               disabled={!canCancel || Boolean(state.actionLoading)}
+              title={progress?.cancelMessage ? t(progress.cancelMessage) : t('Cancel job')}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <Ban size={16} aria-hidden="true" />
-              {state.actionLoading === 'cancel' ? t('Cancelling') : t('Cancel')}
+              {state.actionLoading === 'cancel' ? t('Cancelling') : t(progress?.cancelActionLabel || 'Cancel job')}
             </button>
             <button
               type="button"
@@ -188,7 +210,7 @@ export default function JobDetailPage() {
 
       {job ? (
         <>
-          {isProcessingRequest ? (
+          {progress ? (
             <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-4xl">
@@ -203,25 +225,29 @@ export default function JobDetailPage() {
                     detail={t('{percent}% processed. {meaning}', { percent: progress.progressPercent, meaning: progress.progressText })}
                     className="mt-3 max-w-lg"
                   />
-                  <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                    {t('Processing readiness means the app can search and cite the document. It does not mean the document is legally complete, admissible, sufficient, or ready for court.')}
-                  </p>
+                  {isProcessingRequest ? (
+                    <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                      {t('Processing readiness means the app can search and cite the document. It does not mean the document is legally complete, admissible, sufficient, or ready for court.')}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                     {t('You can keep working in other parts of the workspace.')}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+                  {isProcessingRequest ? (
+                    <Link
+                      to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
+                      className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                    >
+                      {t('View processing status')}
+                    </Link>
+                  ) : null}
                   <Link
-                    to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
+                    to={isProcessingRequest ? `/evidence/cases/${caseId}/documents` : `/evidence/cases/${caseId}/jobs`}
                     className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                   >
-                    {t('View processing status')}
-                  </Link>
-                  <Link
-                    to={`/evidence/cases/${caseId}/documents`}
-                    className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
-                  >
-                    {t('Review documents')}
+                    {t(isProcessingRequest ? 'Review documents' : 'Open jobs')}
                   </Link>
                 </div>
               </div>
@@ -234,12 +260,23 @@ export default function JobDetailPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricTile
               label={t('Status')}
-              value={isProcessingRequest ? <StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} /> : <StatusBadge status={job.status} />}
-              detail={isProcessingRequest ? t('Request workflow status') : t('Current worker state')}
+              value={<StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />}
+              detail={t('Request workflow status')}
             />
             <MetricTile label={t('Priority')} value={job.priority ?? 0} detail={t('Higher priority runs first')} />
             <MetricTile label={t('Created')} value={formatDateTime(job.created_at)} detail={job.created_by_user_id || t('No user recorded')} />
             <MetricTile label={t('Worker')} value={job.claimed_by_worker_id || t('Not claimed')} detail={job.error_class || t('No error class')} />
+            {isRootAdmin ? (
+              <MetricTile
+                label={t('Cost')}
+                value={costText || t('No paid cost recorded')}
+                detail={progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
+                  ? t('Actual cost')
+                  : progress.costSummary?.estimatedUsd !== null && progress.costSummary?.estimatedUsd !== undefined
+                    ? t('Estimated cost')
+                    : t(progress.costSummary?.message || 'No paid cost recorded for this job.')}
+              />
+            ) : null}
           </div>
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
