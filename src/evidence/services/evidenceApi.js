@@ -432,6 +432,11 @@ export const evidenceApi = {
       ...options,
       method: 'POST',
     }),
+  resendCaseInvitationEmail: (caseId, invitationId, options) =>
+    request(casePath(caseId, `/invitations/${encodeURIComponent(invitationId)}/resend-email`), {
+      ...options,
+      method: 'POST',
+    }),
   revokeCaseMember: (caseId, userId, options) =>
     request(casePath(caseId, `/memberships/${encodeURIComponent(userId)}/revoke`), {
       ...options,

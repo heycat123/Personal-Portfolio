@@ -149,6 +149,28 @@ export default function AccessSharingPage() {
     }
   }
 
+  async function resendInvitation(invitation) {
+    setState((current) => ({ ...current, saving: true, error: null, notice: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.resendCaseInvitationEmail(caseId, invitation.invitation_id, { token });
+      recordFingerprint(result, 'Resend access invitation email');
+      const delivery = result.data?.delivery?.email_delivery_status || result.data?.email_message?.status || 'unknown';
+      const fallback = result.data?.invite_url ? ` Manual invite link: ${result.data.invite_url}` : '';
+      setState((current) => ({
+        ...current,
+        saving: false,
+        notice: delivery === 'manual_fallback'
+          ? `Email delivery is not configured yet.${fallback}`
+          : `Invitation email delivery status: ${delivery}.`,
+        fingerprint: result.requestFingerprintId,
+      }));
+      await loadAccess();
+    } catch (error) {
+      setState((current) => ({ ...current, saving: false, error }));
+    }
+  }
+
   async function revokeMembership(membership) {
     const confirmed = window.confirm('Revoke this workspace access? Past activity, uploaded documents, and audit history will be preserved.');
     if (!confirmed) {
@@ -329,16 +351,28 @@ export default function AccessSharingPage() {
                       </p>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{invitation.access_management?.label}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => cancelInvitation(invitation)}
-                      disabled={state.saving || !invitation.can_cancel}
-                      title={invitation.cancel_disabled_reason || invitation.access_management?.cancel_disabled_reason || ''}
-                      className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-                    >
-                      <XCircle size={15} aria-hidden="true" />
-                      {t('Cancel')}
-                    </button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => resendInvitation(invitation)}
+                        disabled={state.saving || invitation.can_resend_email === false}
+                        title={invitation.resend_email_disabled_reason || invitation.access_management?.resend_email_disabled_reason || ''}
+                        className="inline-flex items-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-900/70 dark:text-sky-100 dark:hover:bg-sky-950/30"
+                      >
+                        <Send size={15} aria-hidden="true" />
+                        {t('Resend email')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelInvitation(invitation)}
+                        disabled={state.saving || !invitation.can_cancel}
+                        title={invitation.cancel_disabled_reason || invitation.access_management?.cancel_disabled_reason || ''}
+                        className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                      >
+                        <XCircle size={15} aria-hidden="true" />
+                        {t('Cancel')}
+                      </button>
+                    </div>
                   </div>
                   {!invitation.can_cancel ? (
                     <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{invitation.cancel_disabled_reason || invitation.access_management?.cancel_disabled_reason}</p>
