@@ -264,7 +264,7 @@ export default function HealthPage() {
   const alignmentRecommendations = sourceAlignmentRecommendations.slice(0, 4).map((item) => {
     const text = String(item || '');
     if (text.includes('mirrored to intake') && text.includes('not extracted')) {
-      return t('Google Drive has {hashCount} unique copied file content item(s) that still need processing. Documents may show {documentCount} document row(s) because duplicate records can share one file hash. Solution: request processing, then queue a new source alignment check after text and search are ready.', {
+      return t('Google Drive has {hashCount} unique copied file content item(s) that still need processing. Documents may show {documentCount} document row(s) because duplicate records can share one file hash. Solution: request text/search processing, then queue a new source alignment check after text and search are ready.', {
         hashCount: driveExtraHashCount || '?',
         documentCount: copiedFilesPendingProcessing || '?',
       });
@@ -279,10 +279,10 @@ export default function HealthPage() {
   const statusActions = [];
   const processingRequestData = state.processingRequest?.data || {};
   const processingRequestStarted = Boolean(state.processingRequest && processingRequestData.can_start_processing === false);
-  const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
+  const processingStartTitle = processingRequestData.already_started ? 'Request already received' : 'Request received';
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
-    ? 'Processing already started. Check Jobs for the latest status.'
-    : 'Processing started. Check Jobs for the latest status.');
+    ? 'Request already received. Text extraction and search indexing have not started from this request.'
+    : 'Request received. Check Jobs for the latest status.');
 
   if (!state.loading && database && !database.ok) {
     statusActions.push({
@@ -332,7 +332,7 @@ export default function HealthPage() {
         ? t('Some copied files still need text extraction and search indexing before Ask Documents can cover them.')
         : t('Some relationship-map records are missing search coverage. Queue a fresh alignment check or ask support to review processing.'),
       action: copiedFilesPendingProcessing > 0
-        ? { label: processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
+        ? { label: processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Sending request') : t('Request text/search processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
         : { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
@@ -542,7 +542,7 @@ export default function HealthPage() {
                 {t('What it affects: Ask Documents may not include these files yet, and source alignment will keep showing a gap until processing finishes.')}
               </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
-                {t('Solution: request processing, then queue a new source alignment check after text and search are ready.')}
+                {t('Solution: request text/search processing, then queue a new source alignment check after text and search are ready.')}
               </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
                 {t('You can keep working in other parts of the workspace.')}
@@ -555,7 +555,7 @@ export default function HealthPage() {
                 disabled={state.processingRequestRunning || processingRequestStarted}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
-                {processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing')}
+                {processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Sending request') : t('Request text/search processing')}
               </button>
               <button
                 type="button"

@@ -337,7 +337,7 @@ export default function DashboardPage() {
                   {t('Why this happened: the files are saved in the workspace, but the extraction and search-indexing run has not processed them yet.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('Solution: open Documents and use Start processing so text extraction, search indexing, and the final alignment check can finish.')}
+                  {t('Solution: open Documents and use Request text/search processing so the pending batch is tracked for extraction, search indexing, and the final alignment check.')}
                 </p>
               </div>
             </div>
