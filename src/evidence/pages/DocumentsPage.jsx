@@ -906,8 +906,11 @@ export default function DocumentsPage() {
                   {t('This is not a legal review task. It means the source file is saved, but text extraction and search preparation have not finished yet.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  {t('Why this happened: these files were copied from Google Drive after the last full processing run, so the secure source copy exists but search indexing has not caught up yet.')}
+                </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {showDiagnostics
-                    ? t('Resolution currently requires an operator processing run for the pending copied files.')
+                    ? t('Solution: request processing here, then an operator runs text extraction, search indexing, relationship-map indexing, and a final alignment check.')
                     : t('If this stays here, ask a workspace admin or support to run document processing.')}
                 </p>
               </div>

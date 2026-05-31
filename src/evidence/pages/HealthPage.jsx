@@ -37,6 +37,9 @@ export default function HealthPage() {
     alignmentJob: null,
     alignmentJobError: null,
     alignmentJobRunning: false,
+    processingRequest: null,
+    processingRequestError: null,
+    processingRequestRunning: false,
     fingerprints: [],
   });
 
@@ -136,6 +139,37 @@ export default function HealthPage() {
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
+  const requestPendingDocumentProcessing = useCallback(async () => {
+    setState((current) => ({ ...current, processingRequestRunning: true, processingRequestError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.requestDocumentProcessing(
+        caseId,
+        {
+          scope: 'copied_not_extracted',
+          requested_action: 'text_extraction_and_search_indexing',
+          reason: 'Need full propagation for copied Google Drive files',
+          max_documents: 250,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Document processing request');
+      setState((current) => ({
+        ...current,
+        processingRequestRunning: false,
+        processingRequest: {
+          data: result.data,
+          fingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, processingRequestRunning: false, processingRequestError: error }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadHealth();
@@ -159,11 +193,30 @@ export default function HealthPage() {
   const missingParentEdges = parentGaps.missing_parent_edges || 0;
   const vectorOk = Boolean(graph?.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
   const rawTables = state.rawParity?.tables || [];
+  const counts = state.caseHealth?.summary?.counts || {};
+  const copiedFilesPendingProcessing = counts.s3_files_not_extracted || 0;
   const sourceAlignment = state.sourceAlignment;
   const alignmentRows = Object.entries(sourceAlignment?.comparisons || {}).map(([name, comparison]) => ({
     name,
     ...comparison,
   }));
+  const driveExtraHashRow = alignmentRows.find((row) => (
+    Number(row.extra_count || 0) > 0 &&
+    String(row.label || row.name || '').toLowerCase().includes('google drive') &&
+    String(row.label || row.name || '').toLowerCase().includes('extracted')
+  ));
+  const driveExtraHashCount = Number(driveExtraHashRow?.extra_count || 0);
+  const showPropagationResolution = copiedFilesPendingProcessing > 0 || driveExtraHashCount > 0;
+  const alignmentRecommendations = (sourceAlignment?.recommendations || []).slice(0, 4).map((item) => {
+    const text = String(item || '');
+    if (text.includes('mirrored to intake') && text.includes('not extracted')) {
+      return t('Google Drive has {hashCount} unique copied file content item(s) that still need processing. Documents may show {documentCount} document row(s) because duplicate records can share one file hash. Solution: request processing, run the operator processing pipeline, then queue a new source alignment check.', {
+        hashCount: driveExtraHashCount || '?',
+        documentCount: copiedFilesPendingProcessing || '?',
+      });
+    }
+    return text;
+  });
   const alignmentGapCount = alignmentRows.filter((row) => !row.skipped && row.ok === false).length;
   const alignmentAvailable = Boolean(sourceAlignment?.available);
   const alignmentOk = Boolean(alignmentAvailable && sourceAlignment?.strict_alignment_ok);
@@ -294,6 +347,78 @@ export default function HealthPage() {
         />
       </div>
 
+      {showPropagationResolution ? (
+        <section className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold">{t('Full search coverage is not complete')}</h3>
+              <p>
+                {copiedFilesPendingProcessing > 0
+                  ? t('{count} document row(s) are copied into the workspace but still need text extraction and search indexing.', { count: copiedFilesPendingProcessing })
+                  : t('Source alignment found copied Google Drive files that still need text extraction and search indexing.')}
+              </p>
+              {driveExtraHashCount > 0 ? (
+                <p className="text-xs text-amber-900 dark:text-amber-100">
+                  {t('Health counts {count} unique file hash(es). Documents may show a larger number because multiple document rows can share the same underlying file content.', { count: driveExtraHashCount })}
+                </p>
+              ) : null}
+              <p className="text-xs text-amber-900 dark:text-amber-100">
+                {t('Why this happened: Google Drive sync copied the files, but the older processing pipeline has not run extraction, search indexing, and relationship-map indexing for those copied files yet.')}
+              </p>
+              <p className="text-xs text-amber-900 dark:text-amber-100">
+                {t('Solution: request document processing, run the operator processing pipeline, then queue a new source alignment check to confirm coverage.')}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+              <button
+                type="button"
+                onClick={requestPendingDocumentProcessing}
+                disabled={state.processingRequestRunning}
+                className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                {state.processingRequestRunning ? t('Requesting processing') : t('Request processing')}
+              </button>
+              <button
+                type="button"
+                onClick={queueSourceAlignmentAudit}
+                disabled={state.alignmentJobRunning}
+                className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                {state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check')}
+              </button>
+              <Link
+                to={`/evidence/cases/${caseId}/documents`}
+                className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                {t('Open Documents')}
+              </Link>
+            </div>
+          </div>
+          {state.processingRequestError ? (
+            <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100">
+              <p className="font-semibold">{t('Processing request failed')}</p>
+              <p className="mt-1 text-xs">{state.processingRequestError.message || t('Evidence API returned an error.')}</p>
+            </div>
+          ) : null}
+          {state.processingRequest ? (
+            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
+              <p className="font-semibold">{t('Processing request queued')}</p>
+              <p className="mt-1 text-xs">
+                {t('Operator processing is now queued for {count} copied file(s). This records the request; extraction and indexing still require the operator processing run.', { count: state.processingRequest.data?.requested_document_count || copiedFilesPendingProcessing || driveExtraHashCount })}
+              </p>
+              {state.processingRequest.data?.job?.job_id ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/jobs/${state.processingRequest.data.job.job_id}`}
+                  className="mt-2 inline-flex text-xs font-semibold text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white"
+                >
+                  {t('Open request job')}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div>
           <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Raw Table Coverage')}</h3>
@@ -323,10 +448,10 @@ export default function HealthPage() {
                     {sourceAlignment.stores?.neo4j?.chunk_hashes || 0} graph chunk hashes
                   </span>
                 </div>
-                {sourceAlignment.recommendations?.length ? (
+                {alignmentRecommendations.length ? (
                   <ul className="mt-3 list-disc space-y-1 pl-5 text-gray-700 dark:text-gray-300">
-                    {sourceAlignment.recommendations.slice(0, 4).map((item) => (
-                      <li key={item}>{item}</li>
+                    {alignmentRecommendations.map((item, index) => (
+                      <li key={`${index}-${item}`}>{item}</li>
                     ))}
                   </ul>
                 ) : null}
