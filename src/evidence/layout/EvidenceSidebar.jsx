@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { group: 'Workspace', label: 'Ask Documents', path: 'query', icon: MessageSquare },
   { group: 'Workspace', label: 'Add Documents', path: 'intake', icon: Upload, requiresContribute: true },
   { group: 'Review', label: 'People & Contacts', path: 'entities', icon: ContactRound, requiresContribute: true },
+  { group: 'Sharing', label: 'Access & Sharing', path: 'access', icon: ShieldCheck, requiresAccessManagement: true },
   { group: 'Operations', label: 'Jobs', path: 'jobs', icon: Briefcase, requiresOperations: true },
   { group: 'Operations', label: 'System Query', path: 'system-query', icon: Search, requiresOperations: true },
   { group: 'Operations', label: 'Health', path: 'health', icon: Activity, requiresOperations: true },
@@ -39,7 +40,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
   const { activeCase } = useCaseContext();
   const { signOut, user } = useEvidenceAuth();
   const { t } = useLocaleSettings();
-  const { canContribute, canSeeAdmin, canSeeOperations, isPreviewing, effectiveCaseRole } = useOperatorMode();
+  const { canContribute, canManageAccess, canSeeAdmin, canSeeOperations, isPreviewing, effectiveCaseRole } = useOperatorMode();
   const basePath = evidenceCasePath(activeCase);
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.requiresAdmin) {
@@ -47,6 +48,9 @@ export default function EvidenceSidebar({ open = false, onClose }) {
     }
     if (item.requiresOperations) {
       return canSeeOperations;
+    }
+    if (item.requiresAccessManagement) {
+      return canManageAccess;
     }
     if (item.requiresContribute) {
       return canContribute;
@@ -60,7 +64,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
       [group]: [...(groups[group] || []), item],
     };
   }, {});
-  const groupOrder = ['Workspace', 'Review', 'Operations'];
+  const groupOrder = ['Workspace', 'Review', 'Sharing', 'Operations'];
 
   return (
     <>

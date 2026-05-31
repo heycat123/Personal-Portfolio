@@ -432,6 +432,11 @@ export const evidenceApi = {
       ...options,
       method: 'POST',
     }),
+  revokeCaseMember: (caseId, userId, options) =>
+    request(casePath(caseId, `/memberships/${encodeURIComponent(userId)}/revoke`), {
+      ...options,
+      method: 'POST',
+    }),
   getRawParity: (caseId, options) => request(casePath(caseId, '/raw-parity'), options),
   getCaseHealth: (caseId, options) => request(casePath(caseId, '/health'), options),
   getStorageHealth: (caseId, options) =>

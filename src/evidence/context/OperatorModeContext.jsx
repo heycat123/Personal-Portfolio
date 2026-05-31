@@ -52,6 +52,7 @@ export function OperatorModeProvider({ children }) {
   const isPreviewing = Boolean(isRootAdmin && previewRole);
   const effectiveRank = rankForRole(effectiveCaseRole);
   const canContribute = effectiveRank >= CASE_ROLE_RANK.contributor || isGlobalAdmin;
+  const canManageAccess = !isPreviewing && (isGlobalAdmin || rankForRole(actualCaseRole) >= CASE_ROLE_RANK.lawyer);
   const canManageCase = !isPreviewing && (isGlobalAdmin || rankForRole(actualCaseRole) >= CASE_ROLE_RANK.admin);
   const canSeeOperations = !isPreviewing && (isGlobalAdmin || rankForRole(actualCaseRole) >= CASE_ROLE_RANK.admin);
   const canSeeAdmin = !isPreviewing && isGlobalAdmin;
@@ -118,6 +119,7 @@ export function OperatorModeProvider({ children }) {
   const value = useMemo(() => ({
     actualCaseRole,
     canContribute,
+    canManageAccess,
     canManageCase,
     canSeeAdmin,
     canSeeOperations,
@@ -136,6 +138,7 @@ export function OperatorModeProvider({ children }) {
   }), [
     actualCaseRole,
     canContribute,
+    canManageAccess,
     canManageCase,
     canSeeAdmin,
     canSeeOperations,
