@@ -9,6 +9,7 @@ import { useOperatorMode } from './context/OperatorModeContext';
 import EvidenceLayout from './layout/EvidenceLayout';
 import DashboardPage from './pages/DashboardPage';
 import AccountPage from './pages/AccountPage';
+import AccessSharingPage from './pages/AccessSharingPage';
 import AdminPage from './pages/AdminPage';
 import CaseSelectorPage from './pages/CaseSelectorPage';
 import DocumentDetailPage from './pages/DocumentDetailPage';
@@ -198,6 +199,11 @@ function AdminRoute({ children }) {
   return canSeeAdmin ? children : <RestrictedFeaturePage />;
 }
 
+function AccessManagementRoute({ children }) {
+  const { canManageAccess } = useOperatorMode();
+  return canManageAccess ? children : <RestrictedFeaturePage />;
+}
+
 function CaseScope() {
   const { caseId } = useParams();
   const location = useLocation();
@@ -305,6 +311,7 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="health" element={<OperationsRoute><HealthPage /></OperationsRoute>} />
             <Route path="entities" element={<EntitiesPage />} />
             <Route path="entities/:personId" element={<EntityDetailPage />} />
+            <Route path="access" element={<AccessManagementRoute><AccessSharingPage /></AccessManagementRoute>} />
             <Route path="tests" element={<OperationsRoute><TestsPage /></OperationsRoute>} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="support" element={<SupportPage />} />

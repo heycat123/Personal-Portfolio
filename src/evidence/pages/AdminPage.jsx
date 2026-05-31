@@ -261,7 +261,7 @@ export default function AdminPage() {
     setState((current) => ({ ...current, saving: true, error: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.revokeCaseMembership(userId, targetCaseId, { token });
+      const result = await evidenceApi.revokeCaseMember(targetCaseId, userId, { token });
       recordFingerprint(result, 'Revoke case access');
       await loadAdmin();
       if (state.selectedUser?.user_id === userId) {
@@ -411,7 +411,8 @@ export default function AdminPage() {
             event.stopPropagation();
             revokeAccess(user.user_id);
           }}
-          disabled={state.saving || !user.membership || user.membership.status === 'revoked'}
+          disabled={state.saving || !user.membership || user.membership.status === 'revoked' || user.membership.can_revoke === false}
+          title={user.membership?.revoke_disabled_reason || ''}
           className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
         >
           <UserX size={13} aria-hidden="true" />
@@ -858,7 +859,8 @@ export default function AdminPage() {
                             <button
                               type="button"
                               onClick={() => revokeAccess(state.selectedUser.user_id, membership.case_id)}
-                              disabled={state.saving || membership.status === 'revoked'}
+                              disabled={state.saving || membership.status === 'revoked' || membership.can_revoke === false}
+                              title={membership.revoke_disabled_reason || ''}
                               className="inline-flex items-center justify-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
                             >
                               <UserX size={13} aria-hidden="true" />
