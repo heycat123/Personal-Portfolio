@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
+import ProgressMeter from '../components/ProgressMeter';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
@@ -12,6 +13,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import useJobStatusPolling, { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime, truncateMiddle } from '../utils/formatters';
+import { isDocumentProcessingRequest, jobDisplayTitle, jobProgressModel } from '../utils/jobProgress';
 
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
@@ -144,6 +146,7 @@ export default function JobsPage() {
   }, [loadJobs]);
 
   const activeJobCount = state.jobs.filter(isActiveJob).length;
+  const processingRequestJobs = state.jobs.filter(isDocumentProcessingRequest);
 
   return (
     <div>
@@ -201,6 +204,28 @@ export default function JobsPage() {
         ) : null}
       </div>
 
+      {processingRequestJobs.length ? (
+        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="font-semibold">{t('Document processing requests')}</h2>
+              <p className="mt-1">
+                {t('A completed request means the request was recorded. It does not mean text extraction, search indexing, or source citations are ready yet.')}
+              </p>
+              <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                {t('You can keep working in other parts of the workspace.')}
+              </p>
+            </div>
+            <Link
+              to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
+              className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+            >
+              {t('View processing status')}
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <DataTable
         rows={state.jobs}
         rowKey={(job) => job.job_id}
@@ -208,21 +233,63 @@ export default function JobsPage() {
         emptyTitle={state.loading ? t('Loading jobs') : t('No jobs returned')}
         mobileTitle={(job) => (
           <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
-            {job.job_type}
+            {t(jobDisplayTitle(job))}
           </Link>
         )}
-        mobileSubtitle={(job) => `${job.status} · ${formatDateTime(job.created_at)}`}
+        mobileSubtitle={(job) => {
+          const statusLabel = isDocumentProcessingRequest(job)
+            ? jobProgressModel(job).statusLabel
+            : job.status;
+          return `${t(statusLabel)} | ${formatDateTime(job.created_at)}`;
+        }}
         columns={[
           {
             key: 'job_type',
             header: t('Type'),
             render: (job) => (
               <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
-                {job.job_type}
+                {t(jobDisplayTitle(job))}
               </Link>
             ),
           },
-          { key: 'status', header: t('Status'), render: (job) => <StatusBadge status={job.status} /> },
+          {
+            key: 'status',
+            header: t('Status'),
+            render: (job) => {
+              if (!isDocumentProcessingRequest(job)) {
+                return <StatusBadge status={job.status} />;
+              }
+              const progress = jobProgressModel(job);
+              return <StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />;
+            },
+          },
+          {
+            key: 'workflow',
+            header: t('Workflow progress'),
+            render: (job) => {
+              if (!isDocumentProcessingRequest(job)) {
+                return <span className="text-sm text-gray-500 dark:text-gray-400">{t('Job status only')}</span>;
+              }
+              const progress = jobProgressModel(job);
+              return (
+                <div className="max-w-md text-sm text-gray-700 dark:text-gray-300">
+                  <ProgressMeter
+                    value={progress.progressPercent}
+                    label={t(progress.progressLabel)}
+                    detail={t('{percent}% processed. {meaning}', { percent: progress.progressPercent, meaning: progress.progressText })}
+                    className="mb-2"
+                  />
+                  <p>{t(progress.message)}</p>
+                  <Link
+                    to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
+                    className="mt-1 inline-flex text-xs font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+                  >
+                    {t(progress.nextActionLabel)}
+                  </Link>
+                </div>
+              );
+            },
+          },
           { key: 'priority', header: t('Priority'), render: (job) => job.priority ?? 0 },
           { key: 'created_at', header: t('Created'), render: (job) => formatDateTime(job.created_at) },
           { key: 'started_at', header: t('Started'), render: (job) => formatDateTime(job.started_at) },
