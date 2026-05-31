@@ -64,7 +64,9 @@ function userFacingProcessingText(value) {
     .replace(/run\s+the\s+operator\s+processing\s+pipeline/gi, 'complete text and search processing')
     .replace(/operator\s+processing\s+run/gi, 'text and search processing')
     .replace(/operator\s+processing\s+required/gi, 'text and search processing still needed')
-    .replace(/operator\s+required/gi, 'support processing needed');
+    .replace(/operator\s+required/gi, 'support processing needed')
+    .replace(/processing\s+request\s+recorded/gi, 'Processing started')
+    .replace(/request\s+recorded/gi, 'Processing started');
 }
 
 function actionText(value) {
@@ -255,7 +257,7 @@ function documentProcessingFallbackSteps(recorded, failed) {
   return [
     {
       key: 'request',
-      label: 'Request recorded',
+      label: 'Processing started',
       state: failed ? 'blocked' : recorded ? 'complete' : 'current',
     },
     {
@@ -305,7 +307,7 @@ export function jobProgressModel(job) {
     result.display_status,
     result.status_label,
     cancelRequested ? 'Cancel requested' : null,
-    isDocumentProcessingRequest(job) && recorded ? 'Request recorded' : null,
+    isDocumentProcessingRequest(job) && recorded ? 'Processing started' : null,
     fallbackStatusLabel(status),
   ));
   const currentStep = userFacingProcessingText(firstString(
@@ -351,7 +353,7 @@ export function jobProgressModel(job) {
     result.message,
   ));
   const fallbackMessage = isDocumentProcessingRequest(job) && recorded
-    ? `Your processing request was recorded for ${count || 'the selected'} copied file(s). Text extraction, search indexing, and source citations have not started in the app yet.`
+    ? `Processing started for ${count || 'the selected'} copied file(s). Check Jobs for the latest status.`
     : isDocumentProcessingRequest(job)
       ? 'Your documents were added for processing. They may appear before search and Q&A are fully ready.'
       : firstString(job?.display_message, result.display_message, display.display_message)

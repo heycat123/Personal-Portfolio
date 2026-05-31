@@ -172,16 +172,18 @@ export default function JobDetailPage() {
               <RefreshCw size={16} aria-hidden="true" />
               {t('Refresh')}
             </button>
-            <button
-              type="button"
-              onClick={cancelJob}
-              disabled={!canCancel || Boolean(state.actionLoading)}
-              title={progress?.cancelMessage ? t(progress.cancelMessage) : t('Cancel job')}
-              className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
-            >
-              <Ban size={16} aria-hidden="true" />
-              {state.actionLoading === 'cancel' ? t('Cancelling') : t(progress?.cancelActionLabel || 'Cancel job')}
-            </button>
+            {!isProcessingRequest ? (
+              <button
+                type="button"
+                onClick={cancelJob}
+                disabled={!canCancel || Boolean(state.actionLoading)}
+                title={progress?.cancelMessage ? t(progress.cancelMessage) : t('Cancel job')}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                <Ban size={16} aria-hidden="true" />
+                {state.actionLoading === 'cancel' ? t('Cancelling') : t(progress?.cancelActionLabel || 'Cancel job')}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={retryJob}

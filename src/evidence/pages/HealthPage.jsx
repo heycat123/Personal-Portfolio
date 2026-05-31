@@ -277,6 +277,12 @@ export default function HealthPage() {
   const queueConfigured = Boolean(queue.rabbitmq?.configured || queue.redis?.configured);
   const queueReady = Boolean(queue.rabbitmq?.ok && queue.redis?.ok);
   const statusActions = [];
+  const processingRequestData = state.processingRequest?.data || {};
+  const processingRequestStarted = Boolean(state.processingRequest && processingRequestData.can_start_processing === false);
+  const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
+  const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
+    ? 'Processing already started. Check Jobs for the latest status.'
+    : 'Processing started. Check Jobs for the latest status.');
 
   if (!state.loading && database && !database.ok) {
     statusActions.push({
@@ -326,7 +332,7 @@ export default function HealthPage() {
         ? t('Some copied files still need text extraction and search indexing before Ask Documents can cover them.')
         : t('Some relationship-map records are missing search coverage. Queue a fresh alignment check or ask support to review processing.'),
       action: copiedFilesPendingProcessing > 0
-        ? { label: state.processingRequest ? t('Request recorded') : state.processingRequestRunning ? t('Requesting processing') : t('Request processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || Boolean(state.processingRequest) }
+        ? { label: processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
         : { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
@@ -546,10 +552,10 @@ export default function HealthPage() {
               <button
                 type="button"
                 onClick={requestPendingDocumentProcessing}
-                disabled={state.processingRequestRunning || Boolean(state.processingRequest)}
+                disabled={state.processingRequestRunning || processingRequestStarted}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
-                {state.processingRequest ? t('Request recorded') : state.processingRequestRunning ? t('Requesting processing') : t('Request processing')}
+                {processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing')}
               </button>
               <button
                 type="button"
@@ -575,9 +581,12 @@ export default function HealthPage() {
           ) : null}
           {state.processingRequest ? (
             <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
-              <p className="font-semibold">{t('Processing request recorded')}</p>
+              <p className="font-semibold">{t(processingStartTitle)}</p>
               <p className="mt-1 text-xs">
-                {t('Your processing request was recorded for {count} copied file(s). Text extraction, search indexing, and source citations have not started in the app yet.', { count: state.processingRequest.data?.requested_document_count || copiedFilesPendingProcessing || driveExtraHashCount })}
+                {t(processingStartMessage)}
+              </p>
+              <p className="mt-1 text-xs">
+                {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: state.processingRequest.data?.requested_document_count || copiedFilesPendingProcessing || driveExtraHashCount })}
               </p>
               {(state.processingRequest.data?.job?.job_id || state.processingRequest.data?.existing_job?.job_id) ? (
                 <Link
