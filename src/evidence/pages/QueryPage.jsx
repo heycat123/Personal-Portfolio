@@ -36,6 +36,45 @@ function citationOpenId(citation) {
   return citation.file_id || citation.file_hash || citation.content_hash || null;
 }
 
+function communicationCitationDetails(citation) {
+  const rawCitation = typeof citation === 'string' ? citation : citation?.citation || '';
+  const sourceType = typeof citation === 'string' ? '' : String(citation?.source_type || '');
+  const conversationMatch = rawCitation.match(/\b([A-Za-z0-9_-]+)\s+conversation\s+([^,\]]+)/i);
+  const messageMatch = rawCitation.match(/\bmessage_id\s+([A-Za-z0-9_-]+)/i);
+  const timestampMatch = rawCitation.match(/\bconversation\s+[^,]+,\s*([^,]+),\s*from\s+/i);
+  const senderRecipientMatch = rawCitation.match(/,\s*from\s+(.+?)\s+to\s+(.+?),\s*message_id\s+/i);
+  const details = {
+    source_type: sourceType || (conversationMatch || messageMatch ? 'communication_message' : ''),
+    platform: typeof citation === 'string' ? conversationMatch?.[1] : citation?.platform || conversationMatch?.[1],
+    conversation_id: typeof citation === 'string' ? conversationMatch?.[2] : citation?.conversation_id || conversationMatch?.[2],
+    message_id: typeof citation === 'string' ? messageMatch?.[1] : citation?.message_id || messageMatch?.[1],
+    timestamp_iso: typeof citation === 'string' ? timestampMatch?.[1] : citation?.timestamp_iso || timestampMatch?.[1],
+    sender_display_name: typeof citation === 'string' ? senderRecipientMatch?.[1] : citation?.sender_display_name || senderRecipientMatch?.[1],
+    sender_address: typeof citation === 'string' ? null : citation?.sender_address,
+    recipient_display_name: typeof citation === 'string' ? senderRecipientMatch?.[2] : citation?.recipient_display_name || senderRecipientMatch?.[2],
+    recipient_address: typeof citation === 'string' ? null : citation?.recipient_address,
+    chat_name: typeof citation === 'string' ? null : citation?.chat_name,
+    message_text_preview: typeof citation === 'string' ? null : citation?.message_text_preview,
+    citation: rawCitation,
+  };
+  const isCommunication = details.source_type === 'communication_message'
+    || Boolean(details.message_id)
+    || Boolean(details.conversation_id && /conversation/i.test(rawCitation));
+  return isCommunication ? details : null;
+}
+
+function citationOpenTarget(citation) {
+  const documentId = citationOpenId(citation);
+  if (documentId) {
+    return { type: 'document', documentId };
+  }
+  const communication = communicationCitationDetails(citation);
+  if (communication) {
+    return { type: 'communication', communication };
+  }
+  return null;
+}
+
 function normalizeCitationLabel(value) {
   return String(value || '')
     .replace(/^\[/, '')
@@ -126,7 +165,7 @@ function matchingCitationsForBracket(part, citations, lookup) {
 
 function CitationChip({ citation, onOpenCitation }) {
   const label = citationLabel(citation);
-  const canOpen = Boolean(citationOpenId(citation));
+  const canOpen = Boolean(citationOpenTarget(citation));
   return (
     <button
       type="button"
@@ -178,7 +217,7 @@ function CitationList({ citations, onOpenCitation, t }) {
     <div className="flex flex-wrap gap-2">
       {citations.map((citation, index) => {
         const label = citationLabel(citation);
-        const canOpen = Boolean(citationOpenId(citation));
+        const canOpen = Boolean(citationOpenTarget(citation));
         return canOpen ? (
           <button
             type="button"
@@ -394,12 +433,13 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
     return null;
   }
   const page = drawer.document?.pages?.find((item) => Number(item.page_number) === Number(drawer.page));
+  const communication = drawer.communication;
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
       <aside className="h-full w-screen max-w-full overflow-y-auto overflow-x-hidden border-l border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-xl sm:p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Citation')}</div>
+            <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(communication ? 'Communication source' : 'Citation')}</div>
             <h2 className="truncate text-lg font-semibold text-gray-950 dark:text-white">{citationLabel(drawer.citation)}</h2>
           </div>
           <button
@@ -413,7 +453,43 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
         </div>
 
         {drawer.error ? <ErrorPanel title="Document preview failed" error={drawer.error} /> : null}
-        {drawer.loading ? (
+        {communication ? (
+          <div className="space-y-4">
+            <div className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+              <div className="flex flex-wrap gap-2">
+                {communication.platform ? <StatusBadge status="configured" label={communication.platform} /> : null}
+                {communication.timestamp_iso ? <span className="rounded-full border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">{communication.timestamp_iso}</span> : null}
+              </div>
+              <div className="mt-3 text-gray-700 dark:text-gray-300">
+                <span className="font-semibold">{communication.sender_display_name || communication.sender_address || t('Unknown sender')}</span>
+                {' '}
+                {t('to')}
+                {' '}
+                <span className="font-semibold">{communication.recipient_display_name || communication.recipient_address || t('Unknown recipient')}</span>
+              </div>
+              <div className="mt-2 space-y-1 break-all text-xs text-gray-500 dark:text-gray-400">
+                {communication.conversation_id ? <div>{t('Conversation')}: {communication.conversation_id}</div> : null}
+                {communication.message_id ? <div>{t('Message')}: {communication.message_id}</div> : null}
+              </div>
+            </div>
+            <Panel title={t('Message preview')}>
+              {communication.message_text_preview ? (
+                <div className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-900 dark:text-gray-100">
+                  {communication.message_text_preview}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {t('This saved answer only included the communication citation. Use the message id above for support lookup; new answers include a message preview when available.')}
+                </p>
+              )}
+            </Panel>
+            <Panel title={t('Full citation')}>
+              <div className="whitespace-pre-wrap break-words rounded-md bg-gray-950 p-3 text-xs leading-5 text-gray-100">
+                {communication.citation || citationLabel(drawer.citation)}
+              </div>
+            </Panel>
+          </div>
+        ) : drawer.loading ? (
           <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
             {t('Loading document.')}
@@ -609,7 +685,7 @@ export default function QueryPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
-  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const { debugEnabled } = useOperatorMode();
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [state, setState] = useState({
@@ -625,6 +701,7 @@ export default function QueryPage() {
     citation: null,
     page: null,
     document: null,
+    communication: null,
   });
   const [citationListDrawer, setCitationListDrawer] = useState({
     open: false,
@@ -644,7 +721,7 @@ export default function QueryPage() {
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const [copiedAnswer, setCopiedAnswer] = useState(false);
   const scrollRef = useRef(null);
-  const showDiagnostics = canSeeOperations || debugEnabled;
+  const showDiagnostics = debugEnabled;
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -810,10 +887,23 @@ export default function QueryPage() {
 
   const openCitation = useCallback(
     async (citation) => {
-      const documentId = citationOpenId(citation);
-      if (!documentId) {
+      const target = citationOpenTarget(citation);
+      if (!target) {
         return;
       }
+      if (target.type === 'communication') {
+        setDrawer({
+          open: true,
+          loading: false,
+          error: null,
+          citation,
+          page: null,
+          document: null,
+          communication: target.communication,
+        });
+        return;
+      }
+      const documentId = target.documentId;
       setDrawer({
         open: true,
         loading: true,
@@ -821,6 +911,7 @@ export default function QueryPage() {
         citation,
         page: citation.page_number || citation.page,
         document: null,
+        communication: null,
       });
       try {
         const token = await getAccessToken();
