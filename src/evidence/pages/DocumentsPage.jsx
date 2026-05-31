@@ -876,13 +876,18 @@ export default function DocumentsPage() {
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {t('This is not a legal review task. It means the source file is saved, but text extraction and search preparation have not finished yet.')}
                 </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  {showDiagnostics
+                    ? t('Resolution currently requires an operator processing run for the pending copied files.')
+                    : t('If this stays here, ask a workspace admin or support to run document processing.')}
+                </p>
               </div>
             </div>
             <Link
-              to={`/evidence/cases/${caseId}/intake`}
+              to={showDiagnostics ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/intake`}
               className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
             >
-              {t('Review Add Documents')}
+              {showDiagnostics ? t('Open operations metrics') : t('Review Add Documents')}
             </Link>
           </div>
         </section>
