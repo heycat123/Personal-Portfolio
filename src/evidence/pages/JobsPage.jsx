@@ -24,6 +24,9 @@ function formatJobCost(costSummary) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return null;
   }
+  if (!costSummary?.paidModelRequested && Number(value) === 0) {
+    return null;
+  }
   try {
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
@@ -257,26 +260,34 @@ export default function JobsPage() {
             >
               {t('Open details')}
             </Link>
-            <button
-              type="button"
-              onClick={() => cancelJob(job.job_id)}
-              disabled={!progress.canCancel || Boolean(state.actionJobId)}
-              title={t(progress.cancelMessage || 'Cancel job')}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-            >
-              <Ban size={13} aria-hidden="true" />
-              {busy && progress.canCancel ? t('Cancelling') : t(progress.cancelActionLabel || 'Cancel job')}
-            </button>
-            <button
-              type="button"
-              onClick={() => retryJob(job.job_id)}
-              disabled={!canRetry || Boolean(state.actionJobId)}
-              title={t('Retry failed or cancelled safe job')}
-              className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
-            >
-              <RotateCcw size={13} aria-hidden="true" />
-              {busy && canRetry ? t('Retrying') : t('Retry')}
-            </button>
+            {progress.canCancel ? (
+              <button
+                type="button"
+                onClick={() => cancelJob(job.job_id)}
+                disabled={Boolean(state.actionJobId)}
+                title={t(progress.cancelMessage || 'Cancel job')}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                <Ban size={13} aria-hidden="true" />
+                {busy ? t('Cancelling') : t(progress.cancelActionLabel || 'Cancel job')}
+              </button>
+            ) : isDocumentProcessingRequest(job) ? (
+              <span className="inline-flex max-w-48 items-center rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+                {t(progress.cancelMessage)}
+              </span>
+            ) : null}
+            {canRetry ? (
+              <button
+                type="button"
+                onClick={() => retryJob(job.job_id)}
+                disabled={Boolean(state.actionJobId)}
+                title={t('Retry failed or cancelled safe job')}
+                className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+              >
+                <RotateCcw size={13} aria-hidden="true" />
+                {busy ? t('Retrying') : t('Retry')}
+              </button>
+            ) : null}
           </div>
         );
       },

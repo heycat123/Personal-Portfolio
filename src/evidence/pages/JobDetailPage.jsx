@@ -62,6 +62,9 @@ function formatJobCost(costSummary) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return null;
   }
+  if (!costSummary?.paidModelRequested && Number(value) === 0) {
+    return null;
+  }
   try {
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
@@ -233,6 +236,11 @@ export default function JobDetailPage() {
                   <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                     {t('You can keep working in other parts of the workspace.')}
                   </p>
+                  {!progress.canCancel && isProcessingRequest ? (
+                    <p className="mt-1 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                      {t(progress.cancelMessage)}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
                   {isProcessingRequest ? (
