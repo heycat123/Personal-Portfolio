@@ -387,6 +387,15 @@ export function jobProgressModel(job) {
     result.cancel_action_label,
     status === 'running' ? 'Request cancel' : 'Cancel job',
   ));
+  const fallbackCancelMessage = isDocumentProcessingRequest(job) && recorded
+    ? 'No running extraction or search-indexing job is active from this request yet.'
+    : TERMINAL_SUCCESS.has(status)
+      ? 'This job is finished, so there is nothing to cancel.'
+      : TERMINAL_ATTENTION.has(status)
+        ? 'This job is no longer running.'
+        : status === 'running'
+          ? 'Cancellation will be requested and the worker will stop at the next safe checkpoint when supported.'
+          : 'Cancel this queued job before it starts.';
 
   return {
     title: jobDisplayTitle(job),
@@ -411,9 +420,7 @@ export function jobProgressModel(job) {
       job?.cancel_message,
       display.cancel_message,
       result.cancel_message,
-      status === 'running'
-        ? 'Cancellation will be requested and the worker will stop at the next safe checkpoint when supported.'
-        : 'Cancel this queued job before it starts.',
+      fallbackCancelMessage,
     )),
     costSummary: jobCostSummary(job),
   };
