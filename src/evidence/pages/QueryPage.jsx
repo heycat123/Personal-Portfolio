@@ -351,7 +351,11 @@ function QueryMessage({ message, onCopyAnswer, copied, onOpenCitation, onOpenCit
                 {displayGuidance}
               </div>
             ) : null}
-            {showDiagnostics ? <AgenticSummary result={result} t={t} /> : null}
+            {showDiagnostics ? (
+              <div className="hidden lg:block">
+                <AgenticSummary result={result} t={t} />
+              </div>
+            ) : null}
             {citations.length ? (
               <div className="mt-4">
                 <button
@@ -364,7 +368,7 @@ function QueryMessage({ message, onCopyAnswer, copied, onOpenCitation, onOpenCit
                 </button>
               </div>
             ) : null}
-            {showDiagnostics ? <div className="mt-4 grid gap-3 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3">
+            {showDiagnostics ? <div className="mt-4 hidden gap-3 text-xs text-gray-600 dark:text-gray-400 lg:grid lg:grid-cols-3">
               <div>
                 <div className="font-semibold uppercase tracking-normal">{t('Verifier')}</div>
                 <div>{verifier?.failure || (verified ? 'verified' : 'not verified')}</div>
@@ -987,7 +991,7 @@ export default function QueryPage() {
       </div>
 
       {state.result && showDiagnostics ? (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="mt-5 hidden gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_420px]">
           <Panel title={t('Retrieval Trace')}>
             {traceRows.length ? (
               <pre className="max-h-[360px] overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100">
