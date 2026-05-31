@@ -221,7 +221,8 @@ export default function DashboardPage() {
     'missing_date_documents',
     'missing_text_documents',
     'sensitive_info_warning_documents',
-  ]) || missingS3Files;
+  ]);
+  const documentsNeedingAttention = documentsNeedingReview + missingS3Files + copiedFilesPendingProcessing;
   const peopleNeedingReview = sumCounts(counts, [
     'people_contacts_needing_review',
     'contact_links_needing_review',
@@ -239,8 +240,9 @@ export default function DashboardPage() {
   const missingChildEmbeddings = vectorCoverage.missing_child_embeddings || 0;
   const missingParentEdges = parentGaps.missing_parent_edges || 0;
   const systemReady = documentFiles > 0
+    && copiedFilesPendingProcessing === 0
     && (!canSeeOperations || (missingS3Files === 0 && (!graph.configured || (graph.ok && missingChildEmbeddings === 0 && missingParentEdges === 0))));
-  const systemWorking = documentFiles > 0 || indexedRecords > 0;
+  const systemWorking = documentFiles > 0 || indexedRecords > 0 || copiedFilesPendingProcessing > 0;
 
   const readiness = [
     {
@@ -355,18 +357,20 @@ export default function DashboardPage() {
 
       <section className="mb-5">
         <div className="mb-3">
-          <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Review work')}</h2>
+          <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Needs attention')}</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {t('Important review items for document organization, contact links, and safe workspace access.')}
+            {t('Important items for document readiness, contact links, and safe workspace access.')}
           </p>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
           <ReviewCard
             icon={FileText}
-            title={t('Documents needing review')}
-            detail={t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.')}
+            title={t('Documents needing attention')}
+            detail={copiedFilesPendingProcessing > 0
+              ? t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing })
+              : t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.')}
             to={`/evidence/cases/${caseId}/documents`}
-            count={documentsNeedingReview}
+            count={documentsNeedingAttention}
             countLabel={t('items')}
           />
           {canContribute ? (
