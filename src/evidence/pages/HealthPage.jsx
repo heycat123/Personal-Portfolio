@@ -265,7 +265,12 @@ export default function HealthPage() {
         <MetricTile
           icon={Database}
           label="Postgres"
-          value={database?.ok ? t('Online') : state.loading ? t('Checking') : t('Unknown')}
+          value={
+            <StatusBadge
+              status={database?.ok ? 'online' : state.loading ? 'checking' : 'unknown'}
+              label={database?.ok ? t('Online') : state.loading ? t('Checking') : t('Unknown')}
+            />
+          }
           detail={database?.database_name || t('No database payload')}
           tone={database?.ok ? 'good' : 'warn'}
         />
