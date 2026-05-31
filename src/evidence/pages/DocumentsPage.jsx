@@ -863,6 +863,31 @@ export default function DocumentsPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
 
+      {s3OnlyFiles > 0 ? (
+        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+              <div>
+                <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
+                <p className="mt-1">
+                  {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: s3OnlyFiles })}
+                </p>
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  {t('This is not a legal review task. It means the source file is saved, but text extraction and search preparation have not finished yet.')}
+                </p>
+              </div>
+            </div>
+            <Link
+              to={`/evidence/cases/${caseId}/intake`}
+              className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+            >
+              {t('Review Add Documents')}
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
       <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
         <div className="flex items-start gap-3">
           <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
