@@ -1,4 +1,4 @@
-import { Info, KeyRound, RefreshCw, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
+import { Info, KeyRound, Mail, RefreshCw, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -27,6 +27,8 @@ export default function AdminPage() {
     users: [],
     memberships: [],
     invitations: [],
+    emailMessages: [],
+    deliveryConfig: null,
     error: null,
     result: null,
     invitationResult: null,
@@ -61,21 +63,25 @@ export default function AdminPage() {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const [usersResult, membershipsResult, invitationsResult] = await Promise.all([
+      const [usersResult, membershipsResult, invitationsResult, emailMessagesResult] = await Promise.all([
         evidenceApi.getAdminUsers({ token }),
         evidenceApi.getCaseMemberships(caseId, { token }),
         evidenceApi.getCaseInvitations(caseId, { token }),
+        evidenceApi.getCaseEmailMessages(caseId, { token }),
       ]);
       recordFingerprint(usersResult, 'Admin users');
       recordFingerprint(membershipsResult, 'Case memberships');
       recordFingerprint(invitationsResult, 'Case invitations');
+      recordFingerprint(emailMessagesResult, 'Email communications');
       setState((current) => ({
         ...current,
         loading: false,
         users: usersResult.data?.users || [],
         memberships: membershipsResult.data?.memberships || [],
         invitations: invitationsResult.data?.invitations || [],
-        fingerprint: invitationsResult.requestFingerprintId || membershipsResult.requestFingerprintId || usersResult.requestFingerprintId,
+        emailMessages: emailMessagesResult.data?.email_messages || [],
+        deliveryConfig: emailMessagesResult.data?.delivery_config || null,
+        fingerprint: emailMessagesResult.requestFingerprintId || invitationsResult.requestFingerprintId || membershipsResult.requestFingerprintId || usersResult.requestFingerprintId,
       }));
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -414,6 +420,8 @@ export default function AdminPage() {
       ),
     },
   ];
+  const deliveryConfigured = Boolean(state.deliveryConfig?.configured);
+  const deliveryLabel = deliveryConfigured ? t('Email delivery configured') : t('Manual invite fallback');
 
   return (
     <div>
@@ -675,6 +683,68 @@ export default function AdminPage() {
                 ))
               ) : (
                 <p className="text-sm text-gray-600 dark:text-gray-400">{t('No invitations yet.')}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-8 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-md border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                  <Mail size={18} aria-hidden="true" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Email communications')}</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {t('Review invitation and account emails sent or prepared for this case.')}
+                  </p>
+                </div>
+              </div>
+              <StatusBadge status={deliveryConfigured ? 'succeeded' : 'pending'} label={deliveryLabel} />
+            </div>
+            <div className="space-y-2">
+              {state.emailMessages.length ? (
+                state.emailMessages.map((message) => {
+                  const sender = message.sender_display_name || message.sender_user_email || message.sender_email || t('System');
+                  return (
+                    <div key={message.email_message_id} className="rounded-md border border-gray-200 p-3 text-sm dark:border-gray-800">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-gray-950 dark:text-white">{message.subject || message.template_key}</span>
+                            <StatusBadge status={message.status || 'unknown'} />
+                          </div>
+                          <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-2">
+                            <div>
+                              <dt className="font-semibold text-gray-700 dark:text-gray-300">{t('From')}</dt>
+                              <dd className="break-all">{sender}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-gray-700 dark:text-gray-300">{t('To')}</dt>
+                              <dd className="break-all">{message.recipient_email}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-gray-700 dark:text-gray-300">{t('Template')}</dt>
+                              <dd className="break-all">{message.template_key}</dd>
+                            </div>
+                            <div>
+                              <dt className="font-semibold text-gray-700 dark:text-gray-300">{t('Provider')}</dt>
+                              <dd className="break-all">{message.provider || t('manual')}</dd>
+                            </div>
+                          </dl>
+                          {message.error_message ? (
+                            <p className="mt-2 text-xs text-red-700 dark:text-red-300">{message.error_message}</p>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                          {message.sent_at ? formatDateTime(message.sent_at) : formatDateTime(message.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('No email communications recorded yet.')}</p>
               )}
             </div>
           </div>
