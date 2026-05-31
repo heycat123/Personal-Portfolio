@@ -655,6 +655,8 @@ export const UI_TRANSLATIONS = {
     'Processing started': 'Processamento iniciado',
     'Processing started for {count} copied file(s). Check Jobs for the latest status.': 'Processamento iniciado para {count} arquivo(s) copiado(s). Verifique Tarefas para o status mais recente.',
     'Processing started. Check Jobs for the latest status.': 'Processamento iniciado. Verifique Tarefas para o status mais recente.',
+    'Request received': 'Solicitacao recebida',
+    'Request received for {count} copied file(s). Check Jobs for the latest status.': 'Solicitacao recebida para {count} arquivo(s) copiado(s). Verifique Tarefas para o status mais recente.',
     'Review for sensitive information before sharing or filing. Court rules may require personal information to be removed or limited. Exports should be reviewed by you or your lawyer before use.': 'Revise informacoes sensiveis antes de compartilhar ou protocolar. Regras judiciais podem exigir que informacoes pessoais sejam removidas ou limitadas. Exportacoes devem ser revisadas por voce ou por seu advogado antes do uso.',
     'Review suggested issue tag': 'Revisar marcador sugerido',
     'Review Add Documents': 'Revisar Adicionar documentos',
