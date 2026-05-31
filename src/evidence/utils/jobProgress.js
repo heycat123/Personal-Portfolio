@@ -26,12 +26,26 @@ function firstString(...values) {
 
 function actionText(value) {
   if (typeof value === 'string') {
-    return value;
+    return userFacingProcessingText(value);
   }
   if (!value || typeof value !== 'object') {
     return null;
   }
-  return firstString(value.label, value.action_label, value.title, value.user_message, value.message);
+  return userFacingProcessingText(firstString(value.label, value.action_label, value.title, value.user_message, value.message));
+}
+
+function userFacingProcessingText(value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  return value
+    .replace(/run\s+operator\s+processing/gi, 'Start processing')
+    .replace(/run\s+the\s+operator\s+processing\s+pipeline/gi, 'finish text and search processing')
+    .replace(/operator\s+processing\s+run/gi, 'text and search processing')
+    .replace(/operator\s+processing\s+required/gi, 'processing still needed')
+    .replace(/processing\s+request\s+recorded/gi, 'Processing started')
+    .replace(/request\s+recorded/gi, 'Processing started')
+    .replace(/request\s+received/gi, 'Start processing');
 }
 
 function requestRecorded(job) {
@@ -40,7 +54,7 @@ function requestRecorded(job) {
 
 export function jobDisplayTitle(job) {
   if (isDocumentProcessingRequest(job)) {
-    return 'Document processing request';
+    return 'Document processing';
   }
   return humanizeKey(job?.job_type || 'Job');
 }
@@ -76,22 +90,22 @@ export function jobProgressModel(job) {
         : recorded
           ? Math.round((completedSteps / totalSteps) * 100)
           : 5;
-    const statusLabel = firstString(
+    const statusLabel = userFacingProcessingText(firstString(
       job?.display_status,
       display.display_status,
       display.status_label,
       job?.status_label,
       result.display_status,
       result.status_label,
-      failed ? 'Needs review' : recorded ? 'Request recorded' : 'Request received',
-    );
-    const currentStep = firstString(
+      failed ? 'Needs review' : recorded ? 'Processing started' : 'Start processing',
+    ));
+    const currentStep = userFacingProcessingText(firstString(
       job?.current_step,
       result.current_step,
       display.current_step,
       resolution.current_step,
-      recorded ? 'Operator processing required' : 'Waiting to record request',
-    );
+      recorded ? 'Processing still needed' : 'Waiting to start processing',
+    ));
     const userMessage = firstString(
       resolution.user_message,
       job?.user_message,
@@ -103,7 +117,7 @@ export function jobProgressModel(job) {
       result.message,
     );
     const nextActionLabel = firstString(
-      resolution.action_label,
+      actionText(resolution.action_label),
       actionText(job?.next_action),
       actionText(result.next_action),
       actionText(display.next_action),
@@ -113,12 +127,12 @@ export function jobProgressModel(job) {
     const steps = [
       {
         key: 'request',
-        label: 'Request received',
+        label: 'Start processing',
         state: failed ? 'blocked' : recorded || ACTIVE_STATUSES.has(status) ? 'complete' : 'current',
       },
       {
         key: 'operator',
-        label: 'Operator processing run',
+        label: 'Text and search processing',
         state: failed ? 'blocked' : recorded ? 'current' : 'pending',
       },
       {
@@ -143,10 +157,10 @@ export function jobProgressModel(job) {
       statusLabel,
       badgeStatus: failed ? 'degraded' : 'pending',
       progressPercent,
-      progressText: failed ? 'Needs attention' : hasBackendPercent ? currentStep : recorded ? '1 of 5 steps complete' : 'Waiting to record request',
-      message: userMessage || (recorded
-        ? `Request received for ${count || 'the selected'} copied file(s). Text extraction, search indexing, and source citation coverage still require the operator processing run.`
-        : 'Your documents were added for processing. They may appear before search and Q&A are fully ready. Operator processing is still required.'),
+      progressText: failed ? 'Needs attention' : hasBackendPercent ? userFacingProcessingText(currentStep) : recorded ? '1 of 5 steps complete' : 'Waiting to start processing',
+      message: userFacingProcessingText(userMessage) || (recorded
+        ? `Processing has been started for ${count || 'the selected'} copied file(s). Text extraction, search indexing, and source citation coverage are still catching up.`
+        : 'Your documents were added for processing. They may appear before search and Q&A are fully ready.'),
       nextActionLabel,
       nextActionHash: 'search-readiness-resolution',
       steps,

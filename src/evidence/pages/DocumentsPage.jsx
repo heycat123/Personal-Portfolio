@@ -910,8 +910,8 @@ export default function DocumentsPage() {
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {showDiagnostics
-                    ? t('Solution: request processing here, then an operator runs text extraction, search indexing, relationship-map indexing, and a final alignment check.')
-                    : t('If this stays here, ask a workspace admin or support to run document processing.')}
+                    ? t('Use Start processing here. Text extraction, search indexing, relationship-map indexing, and a final alignment check may still take time after it starts.')
+                    : t('If this stays here, ask a workspace admin or support to start document processing.')}
                 </p>
               </div>
             </div>
@@ -920,10 +920,10 @@ export default function DocumentsPage() {
                 <button
                   type="button"
                   onClick={requestPendingDocumentProcessing}
-                  disabled={processingRequest.busy}
+                  disabled={processingRequest.busy || Boolean(processingRequest.result)}
                   className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                 >
-                  {processingRequest.busy ? t('Requesting processing') : t('Request processing')}
+                  {processingRequest.result ? t('Processing started') : processingRequest.busy ? t('Starting processing') : t('Start processing')}
                 </button>
               ) : (
                 <Link
@@ -945,22 +945,22 @@ export default function DocumentsPage() {
           </div>
           {processingRequest.error ? (
             <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100">
-              <p className="font-semibold">{t('Processing request failed')}</p>
+              <p className="font-semibold">{t('Processing did not start')}</p>
               <p className="mt-1 text-xs">{processingRequest.error.message || t('Evidence API returned an error.')}</p>
             </div>
           ) : null}
           {processingRequest.result ? (
             <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
-              <p className="font-semibold">{t('Processing request queued')}</p>
+              <p className="font-semibold">{t('Processing started')}</p>
               <p className="mt-1 text-xs">
-                {t('Operator processing is now queued for {count} copied file(s). This records the request; extraction and indexing still require the operator processing run.', { count: processingRequestCount })}
+                {t('Processing has been started for {count} copied file(s). Text extraction, search indexing, and source citations are still catching up.', { count: processingRequestCount })}
               </p>
               {processingRequestJobId ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${processingRequestJobId}`}
                   className="mt-2 inline-flex text-xs font-semibold text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white"
                 >
-                  {t('Open request job')}
+                  {t('Open processing details')}
                 </Link>
               ) : null}
             </div>
