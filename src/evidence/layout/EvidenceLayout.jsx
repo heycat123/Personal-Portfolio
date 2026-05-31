@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
@@ -31,20 +31,24 @@ function EvidenceVersionBadge() {
 
 export default function EvidenceLayout({ darkTheme, setDarkTheme }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+  const isAskDocumentsRoute = /\/evidence\/cases\/[^/]+\/query(?:\/|$)/.test(location.pathname);
 
   return (
     <section className="h-dvh w-full max-w-full overflow-hidden bg-[#f6f7f9] text-gray-900 dark:bg-[#0b0f14] dark:text-gray-100">
       <div className="flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden lg:flex-row">
         <EvidenceSidebar open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
         <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">
-          <EvidenceTopbar
-            darkTheme={darkTheme}
-            setDarkTheme={setDarkTheme}
-            onOpenMenu={() => setMobileMenuOpen(true)}
-          />
+          <div className={isAskDocumentsRoute ? 'hidden lg:block' : ''}>
+            <EvidenceTopbar
+              darkTheme={darkTheme}
+              setDarkTheme={setDarkTheme}
+              onOpenMenu={() => setMobileMenuOpen(true)}
+            />
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
-            <div className="mx-auto w-full min-w-0 max-w-7xl px-3 py-4 sm:px-4 lg:px-6 lg:py-6">
-              <Outlet />
+            <div className={`${isAskDocumentsRoute ? 'h-full max-w-none px-0 py-0 lg:mx-auto lg:max-w-7xl lg:px-6 lg:py-6' : 'mx-auto max-w-7xl px-3 py-4 sm:px-4 lg:px-6 lg:py-6'} w-full min-w-0`}>
+              <Outlet context={{ openMobileMenu: () => setMobileMenuOpen(true) }} />
             </div>
           </div>
         </div>
