@@ -39,25 +39,78 @@ function factorLabel(code, t) {
     return t('No issue tag');
   }
   if (code === 'review_needed') {
-    return t('Needs review');
+    return t('Review suggested issue tag');
   }
   return FACTOR_LABELS[code] || code.toUpperCase();
 }
 
+function issueTagReviewState(document, t) {
+  const pipeline = document?.pipeline_status || {};
+  const graphStatus =
+    document?.pipeline_display?.relationship_map?.status ||
+    pipeline.graph ||
+    document?.graph_status ||
+    'pending';
+  const queryStatus = document?.query_readiness?.status;
+
+  if (queryStatus === 'not_ready') {
+    return {
+      label: t('Source/text review needed'),
+      tone: 'amber',
+      description: t('Evidence AI has a source record, but the file is not ready for search yet. Confirm the source copy or extracted text before relying on it in Ask Documents.'),
+    };
+  }
+
+  if (graphStatus === 'complete') {
+    return {
+      label: t('No issue tags suggested'),
+      tone: 'gray',
+      description: t('Processing finished, but no parenting, time-sharing, financial, or court-file issue tag was suggested.'),
+    };
+  }
+
+  return {
+    label: t('Issue tags pending'),
+    tone: 'sky',
+    description: t('Search and people/contact processing has not finished for this document yet. This is not a manual legal review task.'),
+  };
+}
+
 function FactorTags({ document, t, compact = false }) {
-  const codes = Array.isArray(document?.legal_factor_codes) ? document.legal_factor_codes : [];
+  const codes = Array.isArray(document?.issue_tag_codes)
+    ? document.issue_tag_codes
+    : Array.isArray(document?.legal_factor_codes)
+      ? document.legal_factor_codes
+      : [];
+  const suggestedTags = Array.isArray(document?.organizational_issue_tags) ? document.organizational_issue_tags : [];
   if (!codes.length) {
-    const label = document?.graph_status === 'complete' ? t('Uncategorized') : t('Needs review');
-    return <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>;
+    const state = issueTagReviewState(document, t);
+    const toneClass = state.tone === 'amber'
+      ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100'
+      : state.tone === 'sky'
+        ? 'border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-100'
+        : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-black/20 dark:text-gray-200';
+    return (
+      <span
+        className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${toneClass}`}
+        title={state.description}
+      >
+        {state.label}
+      </span>
+    );
   }
   const visibleCodes = compact ? codes.slice(0, 3) : codes;
   return (
     <div className="flex flex-wrap gap-1">
-      {visibleCodes.map((code) => (
-        <span key={code} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100" title={factorLabel(code, t)}>
-          {code === 'review_needed' ? t('Review') : code.toUpperCase()}
-        </span>
-      ))}
+      {visibleCodes.map((code) => {
+        const suggested = suggestedTags.find((tag) => tag.issue_tag_code === code);
+        const title = suggested?.display_label || suggested?.issue_tag_label || factorLabel(code, t);
+        return (
+          <span key={code} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100" title={title}>
+            {code === 'review_needed' ? t('Review tag') : code.toUpperCase()}
+          </span>
+        );
+      })}
       {compact && codes.length > visibleCodes.length ? (
         <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-black/20 dark:text-gray-200">
           +{codes.length - visibleCodes.length}
@@ -143,19 +196,28 @@ function statusText(status) {
   return String(status || 'pending').replace(/_/g, ' ');
 }
 
-function StorageSyncBadge({ document }) {
+function StorageSyncBadge({ document, t }) {
   const status = document?.source_status?.storage || document?.canonical_storage_status || 'unknown';
   const sourceLabel = document?.source_status?.label;
+  if (status === 'canonical' || status === 'synced' || status === 'complete' || document?.s3_key) {
+    return <StatusBadge status="configured" label={t('Secure copy ready')} />;
+  }
+  if (status === 'pending_verification') {
+    return <StatusBadge status="queued" label={t('Secure copy pending')} />;
+  }
+  if (status === 'needs_s3_sync') {
+    return <StatusBadge status="degraded" label={t('Needs secure copy')} />;
+  }
   if (sourceLabel) {
-    return <StatusBadge status={status === 'canonical' || status === 'synced' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={sourceLabel} />;
+    return <StatusBadge status="queued" label={t('Listed from {source}', { source: sourceLabel })} />;
   }
   const label = status === 'canonical'
-    ? 'Secure copy complete'
+    ? t('Secure copy ready')
     : status === 'pending_verification'
-      ? 'Secure copy pending'
+      ? t('Secure copy pending')
       : status === 'needs_s3_sync'
-        ? 'Needs secure copy'
-        : 'Not processed yet';
+        ? t('Needs secure copy')
+        : t('Not processed yet');
   return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
 }
 
@@ -174,10 +236,11 @@ function PipelineDot({ label, status, colorClass }) {
 
 function PipelineDots({ document, showLabels = false }) {
   const statuses = document?.pipeline_status || {};
+  const display = document?.pipeline_display || {};
   const items = [
-    { key: 'postgres', label: 'Document ready', status: statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
-    { key: 'vector', label: 'Search ready', status: statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
-    { key: 'graph', label: 'Relationship links', status: statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
+    { key: 'postgres', label: display.indexed?.label || 'Text ready', status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
+    { key: 'vector', label: display.search?.label || 'Q&A ready', status: display.search?.status || statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
+    { key: 'graph', label: display.relationship_map?.label || 'People/contact links ready', status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
   ];
   if (!showLabels) {
     return (
@@ -228,7 +291,7 @@ function ClassificationOverview({ classificationOptions, issueTagOptions, filter
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex items-start gap-2">
             <ShieldAlert className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
-            <span>{t('Uncategorized or needs-review items may need a person to confirm the label, source, date, or text before relying on them in query.')}</span>
+            <span>{t('Some files are listed from Google Drive before they are ready for search. Pending items usually mean text, search, or people/contact links are still being prepared.')}</span>
           </div>
         </div>
       </div>
@@ -263,7 +326,7 @@ function ClassificationOverview({ classificationOptions, issueTagOptions, filter
                 : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100'
             }`}
           >
-            {t('Needs review')}
+            {t('Review suggested issue tag')}
             <span className="ml-1 opacity-70">{reviewOption.count}</span>
           </button>
         ) : null}
@@ -707,16 +770,16 @@ export default function DocumentsPage() {
     },
     {
       key: 'canonical_storage_label',
-      header: t('Secure Copy'),
+      header: t('Source copy'),
       headerClassName: 'w-[12%]',
-      help: t('Whether Evidence AI has a secure workspace copy of this source document.'),
+      help: t('Whether Evidence AI has copied the source file into the secure workspace or is still only listing it from the connected source.'),
       filterOptions: facetOptions(state.facets, 'canonical_storage_label'),
       filterPlaceholder: t('Synced, pending, legacy'),
-      render: (document) => <StorageSyncBadge document={document} />,
+      render: (document) => <StorageSyncBadge document={document} t={t} />,
     },
     {
       key: 'pipeline_status',
-      header: t('Processing status'),
+      header: t('Search readiness'),
       headerClassName: 'w-[9%]',
       filterable: true,
       sortable: false,
@@ -724,7 +787,7 @@ export default function DocumentsPage() {
       filterOptions: facetOptions(state.facets, 'pipeline_status'),
       filterLabel: t('Require completed steps'),
       filterHint: t('Selected processing filters are combined with AND.'),
-      help: t('Processing coverage for document readiness, search, and relationship links. Lit dots mean that step has processed this document.'),
+      help: t('Shows whether text, Q&A search, and people/contact links are ready for this document. Empty dots usually mean processing has not finished yet.'),
       render: (document) => <PipelineDots document={document} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
@@ -821,9 +884,9 @@ export default function DocumentsPage() {
           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('secure workspace copy records')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs Secure Copy')}</div>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs source copy review')}</div>
           <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">{missingS3Files}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Processed documents missing secure-copy confirmation')}</div>
+          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Files that need a secure workspace copy confirmed before full search')}</div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Not processed yet')}</div>
@@ -849,7 +912,7 @@ export default function DocumentsPage() {
               {t('Evidence classifications and issue tags help group communications, finances, parenting-plan materials, school records, medical records, court filings, and other case materials. They do not decide whether a document is admissible, complete, or ready to file.')}
             </p>
             <p className="text-xs text-sky-800 dark:text-sky-200">
-              {t('Needs-review or uncategorized items may mean processing is incomplete or a person should confirm the classification.')}
+              {t('Pending issue tags usually mean the file is not ready for search yet or no issue tag was suggested. It is not a legal review task.')}
             </p>
           </div>
         </div>
@@ -922,7 +985,7 @@ export default function DocumentsPage() {
             {document.original_filename || document.file_id}
           </Link>
         )}
-        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${document.evidence_type_label || 'Document'} | ${document.canonical_storage_label || 'unknown'}`}
+        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${document.evidence_type_label || 'Document'} | ${document.query_readiness?.label || document.canonical_storage_label || 'pending'}`}
         mobileActions={(document) => (
           <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open document detail page')}>
             <ExternalLink size={15} aria-hidden="true" />
@@ -1058,11 +1121,11 @@ export default function DocumentsPage() {
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.evidence_type_label || 'Document'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure Copy')}</div>
-                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.canonical_storage_label || 'unknown'}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source copy')}</div>
+                    <div className="mt-1 break-words"><StorageSyncBadge document={drawer.document} t={t} /></div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing status')}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
                     <div className="mt-2"><PipelineDots document={drawer.document} /></div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
@@ -1109,7 +1172,7 @@ export default function DocumentsPage() {
                 ) : null}
 
                 <div className="mt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing status')}</div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
                   <PipelineDots document={drawer.document} showLabels />
                 </div>
 
