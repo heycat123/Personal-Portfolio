@@ -212,6 +212,7 @@ export default function DashboardPage() {
   const documentFiles = counts.document_files || counts.document_extractions || 0;
   const indexedRecords = sumCounts(counts, ['communication_messages', 'canonical_people', 'person_aliases', 'entity_mentions']);
   const missingS3Files = counts.extracted_files_missing_s3 || 0;
+  const copiedFilesPendingProcessing = counts.s3_files_not_extracted || 0;
   const documentsNeedingReview = sumCounts(counts, [
     'documents_needing_review',
     'needs_review_documents',
@@ -279,6 +280,8 @@ export default function DashboardPage() {
         ? t('Checking whether files are ready to search.')
         : systemReady
           ? t('Files are ready to search and review.')
+          : copiedFilesPendingProcessing > 0
+            ? t('{count} copied file(s) still need text/search processing before full Ask Documents coverage.', { count: copiedFilesPendingProcessing })
           : systemWorking
             ? t('Documents are still being prepared for search and Q&A.')
             : t('Add or connect source files to prepare them for search.'),
@@ -305,6 +308,28 @@ export default function DashboardPage() {
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
+
+      {copiedFilesPendingProcessing > 0 ? (
+        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+              <div>
+                <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
+                <p className="mt-1">
+                  {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing })}
+                </p>
+              </div>
+            </div>
+            <Link
+              to={`/evidence/cases/${caseId}/documents`}
+              className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+            >
+              {t('Open Documents')}
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mb-5">
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
