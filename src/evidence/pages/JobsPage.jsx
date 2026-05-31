@@ -147,6 +147,13 @@ export default function JobsPage() {
 
   const activeJobCount = state.jobs.filter(isActiveJob).length;
   const processingRequestJobs = state.jobs.filter(isDocumentProcessingRequest);
+  const latestProcessingRequestJob = processingRequestJobs
+    .slice()
+    .sort((first, second) => new Date(second.created_at || 0) - new Date(first.created_at || 0))[0] || null;
+  const hiddenProcessingRequestCount = Math.max(0, processingRequestJobs.length - (latestProcessingRequestJob ? 1 : 0));
+  const visibleJobs = state.jobs.filter((job) => (
+    !isDocumentProcessingRequest(job) || job.job_id === latestProcessingRequestJob?.job_id
+  ));
 
   return (
     <div>
@@ -208,10 +215,15 @@ export default function JobsPage() {
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="font-semibold">{t('Document processing requests')}</h2>
+              <h2 className="font-semibold">{t('Document processing started')}</h2>
               <p className="mt-1">
-                {t('A completed request means the request was recorded. It does not mean text extraction, search indexing, or source citations are ready yet.')}
+                {t('Processing has been started for copied files. Text extraction, search indexing, and source citations are still catching up.')}
               </p>
+              {hiddenProcessingRequestCount ? (
+                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  {t('{count} earlier processing start record(s) are hidden here to keep this page focused.', { count: hiddenProcessingRequestCount })}
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                 {t('You can keep working in other parts of the workspace.')}
               </p>
@@ -227,7 +239,7 @@ export default function JobsPage() {
       ) : null}
 
       <DataTable
-        rows={state.jobs}
+        rows={visibleJobs}
         rowKey={(job) => job.job_id}
         loading={state.loading}
         emptyTitle={state.loading ? t('Loading jobs') : t('No jobs returned')}
@@ -308,6 +320,16 @@ export default function JobsPage() {
               const busy = state.actionJobId === job.job_id;
               const canCancel = job.status === 'queued';
               const canRetry = ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+              if (isDocumentProcessingRequest(job)) {
+                return (
+                  <Link
+                    to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
+                    className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+                  >
+                    {t('Open details')}
+                  </Link>
+                );
+              }
               return (
                 <div className="flex flex-wrap gap-2">
                   <button
