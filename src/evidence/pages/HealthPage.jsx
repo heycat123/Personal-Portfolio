@@ -1,6 +1,6 @@
 import { Activity, Database, GitCompare, Play, Server } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import MetricTile from '../components/MetricTile';
@@ -17,8 +17,60 @@ function fulfilledValue(result) {
   return result.status === 'fulfilled' ? result.value : null;
 }
 
+function extractGoogleDrivePendingHashCount(recommendations = []) {
+  const recommendation = recommendations.find((item) => {
+    const text = String(item || '').toLowerCase();
+    return text.includes('google drive') && text.includes('mirrored') && text.includes('not extracted');
+  });
+  const count = Number(String(recommendation || '').match(/google drive has\s+(\d+)/i)?.[1] || 0);
+  return Number.isFinite(count) ? count : 0;
+}
+
+function StatusActionCard({ title, detail, action, secondaryAction }) {
+  const actionClassName = 'inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10';
+  const renderAction = (item, key) => {
+    if (!item) {
+      return null;
+    }
+    if (item.to) {
+      return (
+        <Link key={key} to={item.to} className={actionClassName}>
+          {item.label}
+        </Link>
+      );
+    }
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={item.onClick}
+        disabled={item.disabled}
+        className={actionClassName}
+      >
+        {item.label}
+      </button>
+    );
+  };
+
+  return (
+    <article className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="font-semibold">{title}</h3>
+          <p className="mt-1 leading-6 text-amber-900 dark:text-amber-100">{detail}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {renderAction(action, 'primary')}
+          {renderAction(secondaryAction, 'secondary')}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function HealthPage() {
   const { caseId } = useParams();
+  const { hash } = useLocation();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
@@ -200,14 +252,16 @@ export default function HealthPage() {
     name,
     ...comparison,
   }));
+  const sourceAlignmentRecommendations = sourceAlignment?.recommendations || [];
+  const recommendationPendingHashCount = extractGoogleDrivePendingHashCount(sourceAlignmentRecommendations);
   const driveExtraHashRow = alignmentRows.find((row) => (
     Number(row.extra_count || 0) > 0 &&
     String(row.label || row.name || '').toLowerCase().includes('google drive') &&
     String(row.label || row.name || '').toLowerCase().includes('extracted')
   ));
-  const driveExtraHashCount = Number(driveExtraHashRow?.extra_count || 0);
-  const showPropagationResolution = copiedFilesPendingProcessing > 0 || driveExtraHashCount > 0;
-  const alignmentRecommendations = (sourceAlignment?.recommendations || []).slice(0, 4).map((item) => {
+  const driveExtraHashCount = Number(driveExtraHashRow?.extra_count || 0) || recommendationPendingHashCount;
+  const showPropagationResolution = copiedFilesPendingProcessing > 0 || driveExtraHashCount > 0 || recommendationPendingHashCount > 0;
+  const alignmentRecommendations = sourceAlignmentRecommendations.slice(0, 4).map((item) => {
     const text = String(item || '');
     if (text.includes('mirrored to intake') && text.includes('not extracted')) {
       return t('Google Drive has {hashCount} unique copied file content item(s) that still need processing. Documents may show {documentCount} document row(s) because duplicate records can share one file hash. Solution: request processing, run the operator processing pipeline, then queue a new source alignment check.', {
@@ -220,6 +274,94 @@ export default function HealthPage() {
   const alignmentGapCount = alignmentRows.filter((row) => !row.skipped && row.ok === false).length;
   const alignmentAvailable = Boolean(sourceAlignment?.available);
   const alignmentOk = Boolean(alignmentAvailable && sourceAlignment?.strict_alignment_ok);
+  const queueConfigured = Boolean(queue.rabbitmq?.configured || queue.redis?.configured);
+  const queueReady = Boolean(queue.rabbitmq?.ok && queue.redis?.ok);
+  const statusActions = [];
+
+  if (!state.loading && database && !database.ok) {
+    statusActions.push({
+      key: 'database',
+      title: t('Database check needs support review'),
+      detail: t('Case information may be slow or unavailable while the database check is unhealthy. Try a refresh; if it stays unhealthy, contact support so an operator can review the service.'),
+      action: { label: t('Refresh'), onClick: loadHealth },
+      secondaryAction: { label: t('Help & Support'), to: `/evidence/cases/${caseId}/support` },
+    });
+  }
+
+  if (!state.loading && storage && !storage.ok) {
+    statusActions.push({
+      key: 'storage',
+      title: t('Secure file storage needs attention'),
+      detail: t('Existing records may still show, but new file copies or previews can pause until storage is healthy. Run the storage check again or contact support if it stays offline.'),
+      action: { label: state.smokeRunning ? t('Running') : t('Run storage check'), onClick: runStorageSmoke, disabled: state.smokeRunning },
+      secondaryAction: { label: t('Help & Support'), to: `/evidence/cases/${caseId}/support` },
+    });
+  }
+
+  if (!state.loading && graph?.configured && !graph.ok) {
+    statusActions.push({
+      key: 'graph',
+      title: t('Relationship map needs support review'),
+      detail: t('People/contact links and relationship-map features may be incomplete while this check is offline. You can keep reviewing documents, and support can review the graph service.'),
+      action: { label: t('Open People & Contacts'), to: `/evidence/cases/${caseId}/entities` },
+      secondaryAction: { label: t('Help & Support'), to: `/evidence/cases/${caseId}/support` },
+    });
+  }
+
+  if (!state.loading && queueConfigured && !queueReady) {
+    statusActions.push({
+      key: 'queue',
+      title: t('Background processing needs attention'),
+      detail: t('Jobs such as sync, processing, and alignment may wait until the queue is healthy. Open Jobs to see queued work, or refresh after the service recovers.'),
+      action: { label: t('Open Jobs'), to: `/evidence/cases/${caseId}/jobs` },
+      secondaryAction: { label: t('Refresh'), onClick: loadHealth },
+    });
+  }
+
+  if (!state.loading && graph?.ok && !vectorOk) {
+    statusActions.push({
+      key: 'vectors',
+      title: t('Search index coverage needs attention'),
+      detail: copiedFilesPendingProcessing > 0
+        ? t('Some copied files still need text extraction and search indexing before Ask Documents can cover them.')
+        : t('Some relationship-map records are missing search coverage. Queue a fresh alignment check or ask support to review processing.'),
+      action: copiedFilesPendingProcessing > 0
+        ? { label: state.processingRequestRunning ? t('Requesting processing') : t('Request processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning }
+        : { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
+      secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
+    });
+  }
+
+  if (!state.loading && alignmentAvailable && !alignmentOk && !showPropagationResolution) {
+    statusActions.push({
+      key: 'alignment',
+      title: t('Source check needs review'),
+      detail: t('Some files do not yet match across connected sources and processed records. This affects app completeness checks, not the legal meaning of the documents. Queue a new source alignment check after reviewing the source list.'),
+      action: { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
+      secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
+    });
+  }
+
+  if (!state.loading && !alignmentAvailable) {
+    statusActions.push({
+      key: 'alignment-missing',
+      title: t('Source check has not run yet'),
+      detail: t('The app has not published a current source alignment check for this case. Queue one to compare connected files with processed records.'),
+      action: { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
+      secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
+    });
+  }
+
+  useEffect(() => {
+    if (state.loading || !hash) {
+      return;
+    }
+    const target = document.getElementById(hash.slice(1));
+    if (!target) {
+      return;
+    }
+    window.setTimeout(() => target.scrollIntoView({ block: 'start', behavior: 'smooth' }), 0);
+  }, [hash, state.loading, showPropagationResolution, statusActions.length]);
 
   return (
     <div>
@@ -352,8 +494,28 @@ export default function HealthPage() {
         />
       </div>
 
+      {statusActions.length ? (
+        <section id="status-actions" className="mt-6 space-y-3 scroll-mt-4">
+          <div>
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Status actions')}</h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              {t('Every item below explains what the status affects and the next step to resolve it.')}
+            </p>
+          </div>
+          {statusActions.map((item) => (
+            <StatusActionCard
+              key={item.key}
+              title={item.title}
+              detail={item.detail}
+              action={item.action}
+              secondaryAction={item.secondaryAction}
+            />
+          ))}
+        </section>
+      ) : null}
+
       {showPropagationResolution ? (
-        <section className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <section id="search-readiness-resolution" className="mt-6 scroll-mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <h3 className="text-base font-semibold">{t('Full search coverage is not complete')}</h3>
@@ -371,7 +533,13 @@ export default function HealthPage() {
                 {t('Why this happened: Google Drive sync copied the files, but the older processing pipeline has not run extraction, search indexing, and relationship-map indexing for those copied files yet.')}
               </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
+                {t('What it affects: Ask Documents may not include these files yet, and source alignment will keep showing a gap until processing finishes.')}
+              </p>
+              <p className="text-xs text-amber-900 dark:text-amber-100">
                 {t('Solution: request document processing, run the operator processing pipeline, then queue a new source alignment check to confirm coverage.')}
+              </p>
+              <p className="text-xs text-amber-900 dark:text-amber-100">
+                {t('You can keep working in other parts of the workspace.')}
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
