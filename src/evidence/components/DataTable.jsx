@@ -265,10 +265,39 @@ export default function DataTable({
   };
 
   if (!hasRows && !loading) {
+    const hasActiveFilters = activeFilterLabels.length > 0;
     return (
       <div className={tableClassName}>
         {toolbar ? <div className="mb-3">{toolbar}</div> : null}
-        <EmptyState title={emptyTitle} />
+        {hasActiveFilters ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {activeFilterLabels.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => onClearFilter?.(filter.id)}
+                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-100"
+                title={t('Remove this filter')}
+              >
+                {filter.label}
+                <X size={12} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <EmptyState
+          title={emptyTitle}
+          description={hasActiveFilters ? 'No rows match the current filters. Clear filters to see the full table again.' : undefined}
+          action={hasActiveFilters && onClearAllFilters ? (
+            <button
+              type="button"
+              onClick={onClearAllFilters}
+              className="rounded-md border border-sky-700 bg-sky-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-800"
+            >
+              {t('Clear filters')}
+            </button>
+          ) : null}
+        />
       </div>
     );
   }
