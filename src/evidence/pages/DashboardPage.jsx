@@ -281,7 +281,7 @@ export default function DashboardPage() {
           ? t('Files are ready to search and review.')
           : systemWorking
             ? t('Documents are still being prepared for search and Q&A.')
-            : t('Add or connect source files to start propagation.'),
+            : t('Add or connect source files to prepare them for search.'),
       actionLabel: canSeeOperations ? t('Open operations metrics') : t('Open documents'),
       to: canSeeOperations ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/documents`,
     },

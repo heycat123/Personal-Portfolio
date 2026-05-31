@@ -57,24 +57,62 @@ function factorLabel(code, t) {
     return t('No issue tag');
   }
   if (code === 'review_needed') {
-    return t('Needs review');
+    return t('Review suggested issue tag');
   }
   return String(code).toUpperCase();
 }
 
+function issueTagReviewState(document, t) {
+  const pipeline = document?.pipeline_status || {};
+  const graphStatus =
+    document?.pipeline_display?.relationship_map?.status ||
+    pipeline.graph ||
+    document?.graph_status ||
+    'pending';
+  const queryStatus = document?.query_readiness?.status;
+
+  if (queryStatus === 'not_ready') {
+    return {
+      label: t('Source/text review needed'),
+      description: t('Evidence AI has a source record, but the file is not ready for search yet. Confirm the source copy or extracted text before relying on it in Ask Documents.'),
+    };
+  }
+
+  if (graphStatus === 'complete') {
+    return {
+      label: t('No issue tags suggested'),
+      description: t('Processing finished, but no parenting, time-sharing, financial, or court-file issue tag was suggested.'),
+    };
+  }
+
+  return {
+    label: t('Issue tags pending'),
+    description: t('Search and people/contact processing has not finished for this document yet. This is not a manual legal review task.'),
+  };
+}
+
 function FactorTags({ document, t }) {
-  const codes = Array.isArray(document?.legal_factor_codes) ? document.legal_factor_codes : [];
+  const codes = Array.isArray(document?.issue_tag_codes)
+    ? document.issue_tag_codes
+    : Array.isArray(document?.legal_factor_codes)
+      ? document.legal_factor_codes
+      : [];
+  const suggestedTags = Array.isArray(document?.organizational_issue_tags) ? document.organizational_issue_tags : [];
   if (!codes.length) {
-    const label = document?.graph_status === 'complete' ? t('No issue tag') : t('Needs review');
-    return <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>;
+    const state = issueTagReviewState(document, t);
+    return <span className="text-sm text-gray-600 dark:text-gray-400" title={state.description}>{state.label}</span>;
   }
   return (
     <div className="flex flex-wrap gap-1">
-      {codes.map((code) => (
-        <span key={code} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100" title={factorLabel(code, t)}>
-          {code === 'review_needed' ? t('Review') : String(code).toUpperCase()}
-        </span>
-      ))}
+      {codes.map((code) => {
+        const suggested = suggestedTags.find((tag) => tag.issue_tag_code === code);
+        const title = suggested?.display_label || suggested?.issue_tag_label || factorLabel(code, t);
+        return (
+          <span key={code} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100" title={title}>
+            {code === 'review_needed' ? t('Review tag') : String(code).toUpperCase()}
+          </span>
+        );
+      })}
     </div>
   );
 }
