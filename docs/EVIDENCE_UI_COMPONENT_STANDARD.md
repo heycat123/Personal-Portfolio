@@ -145,6 +145,33 @@ Rules:
 - Badge text must be meaningful without relying on color.
 - Add translations for new customer-visible status labels.
 
+### Statuses Need Solutions
+
+No readiness tile, health check, warning banner, empty/error state, or badge-led status may end in a dead end.
+
+Every issue state must answer:
+
+- What is happening in plain language.
+- What it affects in the app.
+- What the user, admin, operator, or support team can do next.
+- Where the action goes, and that destination must repeat the same issue and solution.
+
+Rules:
+
+- Prefer calm labels such as `Processing documents`, `Search still catching up`, `Connection needs attention`, or `Source check needs review`.
+- Avoid issue labels that imply legal conclusions or panic, such as `evidence failed`, `not court-ready`, `disclosure incomplete`, or `legally insufficient`.
+- A status action can be self-service, such as `Reconnect`, `Request processing`, `Review documents`, `Resend invite`, or `Refresh status`.
+- A status action can be operator/support routed, such as `Queue alignment check`, `Open Jobs`, or `Help & Support`, but the destination must explain what the operator/support action resolves.
+- If the user can safely continue elsewhere, say so.
+- For operations-only details, translate raw infrastructure symptoms into workflow effects before showing them in normal workspace paths.
+
+Examples:
+
+- Pending copied documents: explain that files are saved but still need text extraction and search indexing; link to Documents or Health resolution with `Request processing`.
+- Source alignment gaps: explain that connected files and processed records do not fully match yet; provide `Queue alignment check` and `Open Documents`.
+- Connector offline: explain that new sync may pause while existing workspace documents remain available; provide `Reconnect` or `Try sync again`.
+- Invite/email uncertainty: explain that the invite is still pending or delivery could not be confirmed; provide `Resend invite` and `Copy invite link`.
+
 ### Metrics
 
 Use `MetricTile` for dashboard and health summary numbers.
