@@ -24,11 +24,13 @@ import {
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
 function CompactProgress({ progress, t }) {
+  const percentLabel = progress.progressPercentLabel || `${progress.progressPercent}%`;
+  const detail = progress.progressEstimateDetail || progress.progressText;
   return (
-    <div className="min-w-0 text-xs" title={t(progress.progressText)}>
+    <div className="min-w-0 text-xs" title={t(detail)}>
       <div className="flex items-center justify-between gap-2 font-semibold text-gray-800 dark:text-gray-100">
         <span className="truncate">{t(progress.progressLabel)}</span>
-        <span className="shrink-0">{progress.progressPercent}%</span>
+        <span className="shrink-0">{percentLabel}</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-black/40">
         <div
@@ -37,6 +39,9 @@ function CompactProgress({ progress, t }) {
         />
       </div>
       <p className="mt-1 truncate text-gray-500 dark:text-gray-400">{t(progress.progressText)}</p>
+      {progress.progressEstimateDetail ? (
+        <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-500">{t(progress.progressEstimateDetail)}</p>
+      ) : null}
     </div>
   );
 }

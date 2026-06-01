@@ -362,8 +362,15 @@ export default function JobDetailPage() {
                   ) : null}
                   <ProgressMeter
                     value={progress.progressPercent}
+                    valueLabel={progress.progressPercentLabel}
                     label={t(progress.progressLabel)}
-                    detail={t('{percent}% processed. {meaning}', { percent: progress.progressPercent, meaning: progress.progressText })}
+                    detail={[
+                      t('{percentLabel} processed. {meaning}', {
+                        percentLabel: progress.progressPercentLabel,
+                        meaning: progress.progressText,
+                      }),
+                      progress.progressEstimateDetail ? t(progress.progressEstimateDetail) : null,
+                    ].filter(Boolean).join(' ')}
                     className="mt-3 max-w-lg"
                   />
                   {isProcessingRequest ? (

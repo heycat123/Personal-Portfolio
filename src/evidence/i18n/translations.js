@@ -861,6 +861,8 @@ export const UI_TRANSLATIONS = {
     'Refresh status': 'Atualizar status',
     'Your documents were added for processing. They may appear before search and Q&A are fully ready.': 'Seus documentos foram adicionados para processamento. Eles podem aparecer antes que pesquisa e perguntas estejam totalmente prontas.',
     '{percent}% processed. {meaning}': '{percent}% processado. {meaning}',
+    '{percentLabel} processed. {meaning}': '{percentLabel} processado. {meaning}',
+    'Estimated from elapsed time. This is taking longer than usual; waiting for the next worker checkpoint.': 'Estimado pelo tempo decorrido. Esta tarefa esta demorando mais que o normal; aguardando o proximo checkpoint do worker.',
     'Use admin-created credentials only as a fallback when self-registration or email delivery is unavailable. Share temporary passwords through a secure channel and require the user to set their own password.': 'Use credenciais criadas por administrador apenas como alternativa quando o autocadastro ou envio por email estiver indisponivel. Compartilhe senhas temporarias por um canal seguro e exija que o usuario defina sua propria senha.',
     '{count} documents in this export may contain sensitive information.': '{count} documentos nesta exportacao podem conter informacoes sensiveis.',
     '{count} copied file(s) still need text/search processing before full Ask Documents coverage.': '{count} arquivo(s) copiado(s) ainda precisam de processamento de texto/pesquisa antes da cobertura completa em Perguntar aos documentos.',
