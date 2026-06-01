@@ -268,13 +268,11 @@ export default function DashboardPage() {
     : canSeeOperations
       ? t('Open operations metrics')
       : t('Open documents');
-  const searchReadinessActionTo = copiedFilesPendingProcessing > 0 && canSeeOperations
+  const searchReadinessActionTo = copiedFilesPendingProcessing > 0
     ? `/evidence/cases/${caseId}/jobs#processing-status`
-    : copiedFilesPendingProcessing > 0
-      ? `/evidence/cases/${caseId}/documents`
-      : canSeeOperations
-        ? `/evidence/cases/${caseId}/health`
-        : `/evidence/cases/${caseId}/documents`;
+    : canSeeOperations
+      ? `/evidence/cases/${caseId}/health`
+      : `/evidence/cases/${caseId}/documents`;
   const shouldLivePollReadiness = copiedFilesPendingProcessing > 0;
 
   useEffect(() => {
