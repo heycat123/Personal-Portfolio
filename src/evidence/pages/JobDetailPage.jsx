@@ -536,7 +536,7 @@ export default function JobDetailPage() {
                   />
                   {isProcessingRequest ? (
                     <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                      {t('Processing readiness means the app can search and cite the document. It does not mean the document is legally complete, admissible, sufficient, or ready for court.')}
+                      {t('Processing readiness means the app can search and cite the document. It does not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
                     </p>
                   ) : null}
                   <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">

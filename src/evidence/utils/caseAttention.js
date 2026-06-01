@@ -138,7 +138,7 @@ export function buildCaseAttentionItems({
       pages: ['case-home', 'documents'],
       title: 'Documents need review',
       detail: 'Some documents may be uncategorized or missing source, date, text, or sensitive-information review.',
-      impact: 'Labels help organize documents. They do not decide admissibility, legal importance, or proof.',
+      impact: 'Labels help organize documents. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.',
       count: documentsNeedingReview,
       countLabel: 'items',
       actionLabel: 'Review documents',
@@ -225,7 +225,7 @@ export function buildCaseAttentionItems({
       detail: sourceAlignment.reason || 'The app has not published a current source coverage check for this case.',
       impact: 'Source coverage compares connected files with processed records so completeness gaps are visible.',
       actionLabel: 'Open Health',
-      to: caseId ? `/evidence/cases/${caseId}/health#source-alignment-proof` : null,
+      to: caseId ? `/evidence/cases/${caseId}/health#source-coverage` : null,
     });
   } else if (sourceAlignment?.available && !sourceAlignment.strict_alignment_ok) {
     const reconciliationClasses = sourceAlignment.reconciliation?.classes || [];
@@ -244,7 +244,7 @@ export function buildCaseAttentionItems({
           count: numberValue(item.count),
           countLabel: 'items',
           actionLabel: 'Open Health',
-          to: caseId ? `/evidence/cases/${caseId}/health#source-alignment-proof` : null,
+          to: caseId ? `/evidence/cases/${caseId}/health#source-coverage` : null,
           secondaryActionLabel: 'Open Documents',
           secondaryTo: caseId ? `/evidence/cases/${caseId}/documents` : null,
         });
@@ -259,7 +259,7 @@ export function buildCaseAttentionItems({
         detail: 'Some files do not yet match across connected sources and processed records.',
         impact: 'This affects app completeness checks, not the legal meaning of the documents.',
         actionLabel: 'Open Health',
-        to: caseId ? `/evidence/cases/${caseId}/health#source-alignment-proof` : null,
+        to: caseId ? `/evidence/cases/${caseId}/health#source-coverage` : null,
       });
     }
   }

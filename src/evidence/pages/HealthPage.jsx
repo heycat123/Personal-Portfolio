@@ -760,7 +760,7 @@ export default function HealthPage() {
           />
 
           <div className="mt-6">
-            <h3 id="source-alignment-proof" className="mb-3 scroll-mt-4 text-base font-semibold text-gray-950 dark:text-white">{t('Source coverage')}</h3>
+            <h3 id="source-coverage" className="mb-3 scroll-mt-4 text-base font-semibold text-gray-950 dark:text-white">{t('Source coverage')}</h3>
             {alignmentAvailable ? (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="flex flex-wrap items-center gap-3">

@@ -1,0 +1,620 @@
+import { AlertTriangle, ExternalLink, FileText, Filter, Info, Quote } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useLocaleSettings } from '../context/LocaleContext';
+import { formatCount, humanizeKey } from '../utils/formatters';
+import ErrorPanel from './ErrorPanel';
+import StatusBadge from './StatusBadge';
+
+function categoryKey(category) {
+  return String(category?.category_id || category?.code || category?.label || 'category');
+}
+
+function lensId(lens) {
+  return String(lens?.lens_id || lens?.id || lens?.value || lens || '');
+}
+
+function lensLabel(lens) {
+  if (!lens) {
+    return '';
+  }
+  if (typeof lens === 'string') {
+    return humanizeKey(lens);
+  }
+  return lens.label || lens.name || humanizeKey(lens.lens_id || lens.id || lens.value || 'Review lens');
+}
+
+function reviewBadgeStatus(status) {
+  const normalized = String(status || 'suggested').toLowerCase();
+  if (normalized.includes('confirmed')) {
+    return { label: humanizeKey(normalized), className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300' };
+  }
+  return { label: normalized === 'needs_review' ? 'Needs review' : humanizeKey(normalized), className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300' };
+}
+
+function ReviewStatusBadge({ status }) {
+  const { t } = useLocaleSettings();
+  const badge = reviewBadgeStatus(status);
+  return (
+    <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold ${badge.className}`}>
+      {t(badge.label)}
+    </span>
+  );
+}
+
+function basisLabel(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'lens_spans_available') return 'Source snippets available';
+  if (normalized === 'source_metadata_only') return 'Source metadata only';
+  if (normalized === 'graph_tag_only') return 'Issue tag only';
+  if (normalized === 'needs_lens_review') return 'Needs quote-level review';
+  return normalized ? humanizeKey(normalized) : 'Review basis not recorded';
+}
+
+function categoryMatchesView(category, view) {
+  if (view === 'all') return true;
+  const counts = category?.counts || {};
+  if (view === 'needs_review') {
+    return category?.review_status === 'needs_review'
+      || category?.basis_status === 'needs_lens_review'
+      || Number(counts.needs_review || 0) > 0
+      || Number(counts.documents_missing_lens_spans || 0) > 0;
+  }
+  if (view === 'uncategorized') {
+    const label = `${category?.category_id || ''} ${category?.code || ''} ${category?.label || ''}`.toLowerCase();
+    return label.includes('uncategorized') || Number(counts.uncategorized || 0) > 0 || Number(counts.not_tagged || 0) > 0;
+  }
+  if (view === 'by_category') {
+    return category?.kind === 'document_category';
+  }
+  return true;
+}
+
+function CountCard({ label, value, tone = 'default' }) {
+  const toneClass = tone === 'good'
+    ? 'text-emerald-700 dark:text-emerald-300'
+    : tone === 'review'
+      ? 'text-amber-700 dark:text-amber-300'
+      : 'text-gray-950 dark:text-white';
+  return (
+    <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+      <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{label}</div>
+      <div className={`mt-1 text-lg font-semibold ${toneClass}`}>{formatCount(value || 0)}</div>
+    </div>
+  );
+}
+
+function categoryReason(category, spanLookup, t) {
+  if (!category) {
+    return '';
+  }
+  if (category.basis_status === 'lens_spans_available') {
+    return t('This grouping includes source snippets from the selected review lens. Review the cited snippets and open the source documents before relying on a summary.');
+  }
+  if (category.basis_status === 'graph_tag_only') {
+    return t('This grouping is based on issue tags from document processing. No quote-level lens review has been run yet for this category.');
+  }
+  if (category.basis_status === 'source_metadata_only') {
+    return t('This grouping is based on document metadata and classification labels. No quote-level lens review has been run yet for this category.');
+  }
+  if (category.basis_status === 'needs_lens_review') {
+    return t('This category needs quote-level lens review before source snippets can explain the grouping.');
+  }
+  if (spanLookup?.available === false) {
+    return t('No quote-level lens review has been run yet.');
+  }
+  return t('Review the representative documents and source status to understand this category.');
+}
+
+function spanLookupReasonMessage(reason, t) {
+  const normalized = String(reason || '').toLowerCase();
+  if (normalized.includes('unavailable') || normalized.includes('not_run') || normalized.includes('not run')) {
+    return t('Quote-level lens review has not been run yet, so this category review cannot show source snippets.');
+  }
+  if (normalized.includes('version')) {
+    return t('Some quote-level review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
+  }
+  return reason || t('Category summaries may be based on metadata or issue tags until source snippets are available.');
+}
+
+function exceptionMessage(exception, t) {
+  const backendMessage = exception?.resolution?.user_message || exception?.next_action?.user_message;
+  if (backendMessage) {
+    return t(backendMessage);
+  }
+  const normalized = String(exception?.resolution?.issue_state || exception?.exception_type || exception?.type || exception?.code || '').toLowerCase();
+  if (normalized.includes('uncategorized')) {
+    return t('Some documents are not assigned to a category yet. Review the Documents list before lawyer handoff.');
+  }
+  if (normalized.includes('no_extracted_text') || normalized.includes('text') || normalized.includes('extraction')) {
+    return t('Some documents do not have extracted text yet. Review text/search processing before using category summaries for handoff.');
+  }
+  if (normalized.includes('lens_spans_unavailable') || normalized.includes('span')) {
+    return t('Quote-level lens review has not been run yet, so this category review cannot show source snippets.');
+  }
+  if (normalized.includes('lens_version_mismatch') || normalized.includes('version')) {
+    return t('Some quote-level review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
+  }
+  if (normalized.includes('removed') || normalized.includes('excluded')) {
+    return t('Some documents have been removed or excluded from processing or source coverage. Review the Documents list if they should be included.');
+  }
+  return exception?.detail || exception?.message || exception?.resolution?.user_message || exception?.reason || t('This item needs review before category review is complete.');
+}
+
+function docName(document) {
+  return document?.filename || document?.original_filename || document?.file_id || document?.document_id || 'Document';
+}
+
+function docIssueTags(document) {
+  const codes = Array.isArray(document?.issue_tag_codes)
+    ? document.issue_tag_codes
+    : [];
+  const tags = Array.isArray(document?.organizational_issue_tags)
+    ? document.organizational_issue_tags
+    : [];
+  if (!codes.length && !tags.length) {
+    return [];
+  }
+  const fromCodes = codes.map((code) => {
+    const match = tags.find((tag) => String(tag.issue_tag_code || '').toLowerCase() === String(code).toLowerCase());
+    return {
+      code,
+      label: match?.display_label || match?.issue_tag_label || humanizeKey(code),
+    };
+  });
+  const extraTags = tags
+    .filter((tag) => !fromCodes.find((item) => String(item.code).toLowerCase() === String(tag.issue_tag_code || '').toLowerCase()))
+    .map((tag) => ({
+      code: tag.issue_tag_code || tag.display_label || tag.issue_tag_label,
+      label: tag.display_label || tag.issue_tag_label || humanizeKey(tag.issue_tag_code),
+    }));
+  return [...fromCodes, ...extraTags].filter((item) => item.label);
+}
+
+function LensSpan({ span }) {
+  const { t } = useLocaleSettings();
+  const snippet = span?.snippet || span?.quote || '';
+  return (
+    <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Quote size={14} aria-hidden="true" />
+        <span className="font-semibold">{span?.factor_name || span?.factor_code || t('Source snippet')}</span>
+        {span?.factor_citation ? <span className="text-xs opacity-80">{span.factor_citation}</span> : null}
+        {span?.page_number ? <span className="text-xs opacity-80">{t('Page')} {span.page_number}</span> : null}
+      </div>
+      {snippet ? <p className="leading-6">{snippet}</p> : <p>{t('No snippet text returned for this lens span.')}</p>}
+      {(span?.why_material || span?.limitations) ? (
+        <dl className="mt-3 grid gap-2 md:grid-cols-2">
+          {span.why_material ? (
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-normal opacity-75">{t('Why this matters')}</dt>
+              <dd className="mt-1">{span.why_material}</dd>
+            </div>
+          ) : null}
+          {span.limitations ? (
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-normal opacity-75">{t('Limitations')}</dt>
+              <dd className="mt-1">{span.limitations}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+      {(span?.quote_verification || span?.quote_match_ratio) ? (
+        <div className="mt-2 text-xs opacity-80">
+          {span.quote_verification ? `${t('Quote check')}: ${humanizeKey(span.quote_verification)}` : null}
+          {span.quote_match_ratio !== undefined && span.quote_match_ratio !== null ? ` | ${t('Match')}: ${span.quote_match_ratio}` : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RepresentativeDocument({ document, caseId }) {
+  const { t } = useLocaleSettings();
+  const fileId = document?.file_id || document?.document_id;
+  const spans = Array.isArray(document?.lens_spans) ? document.lens_spans : [];
+  const tags = docIssueTags(document);
+  return (
+    <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h4 className="break-words text-sm font-semibold text-gray-950 dark:text-white">{docName(document)}</h4>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+            <span>{document?.source_label || t('Source file')}</span>
+            {document?.readiness?.label || document?.readiness ? <StatusBadge status={document?.readiness?.status || document?.readiness} label={document?.readiness?.label || humanizeKey(document.readiness)} /> : null}
+            {document?.document_review_state ? <StatusBadge status={document.document_review_state} label={humanizeKey(document.document_review_state)} /> : null}
+          </div>
+          {document?.evidence_classification?.label ? (
+            <p className="mt-2 text-sm text-gray-700 dark:text-gray-300">
+              <span className="font-semibold">{t('Category')}:</span> {document.evidence_classification.label}
+            </p>
+          ) : null}
+          {tags.length ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {tags.map((tag) => (
+                <span key={`${tag.code}-${tag.label}`} className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-900 dark:border-indigo-900/70 dark:bg-indigo-950/50 dark:text-indigo-100">
+                  {tag.code ? `${String(tag.code).toUpperCase()} - ` : ''}{tag.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {fileId ? (
+          <Link
+            to={`/evidence/cases/${caseId}/documents/${fileId}`}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            <ExternalLink size={15} aria-hidden="true" />
+            {t('Open document')}
+          </Link>
+        ) : null}
+      </div>
+      <div className="mt-3 space-y-2">
+        {spans.length ? (
+          spans.slice(0, 3).map((span, index) => <LensSpan key={`${span?.source_text_hash || span?.factor_code || 'span'}-${index}`} span={span} />)
+        ) : (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+            <div className="font-semibold">{t('No quote-level lens review has been run yet')}</div>
+            <p className="mt-1">{document?.why_missing || t('This document is represented by category metadata or issue tags, but no source snippet was returned for this review lens.')}</p>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function exceptionAction(exception, caseId, onFilterUncategorized, t) {
+  const resolution = exception?.resolution || {};
+  const action = resolution.next_action || exception?.next_action || {};
+  const routeHint = action.route_hint || resolution.route_hint;
+  if (routeHint && String(routeHint).startsWith('/')) {
+    return {
+      label: t(action.label || action.action_label || resolution.action_label || 'Open details'),
+      to: routeHint,
+    };
+  }
+  const text = `${resolution.issue_state || ''} ${exception?.exception_type || ''} ${exception?.type || ''} ${exception?.code || ''} ${exception?.category || ''} ${exception?.reason || ''}`.toLowerCase();
+  if (text.includes('uncategorized')) {
+    return {
+      label: t('Review uncategorized documents'),
+      onClick: onFilterUncategorized,
+    };
+  }
+  if (text.includes('text') || text.includes('processing') || text.includes('extraction')) {
+    return { label: t('Review processing status'), to: `/evidence/cases/${caseId}/documents` };
+  }
+  if (text.includes('span') || text.includes('lens') || text.includes('version')) {
+    return { label: t('Help & Support'), to: `/evidence/cases/${caseId}/support` };
+  }
+  if (text.includes('excluded') || text.includes('removed')) {
+    return { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` };
+  }
+  return { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` };
+}
+
+function ExceptionsList({ exceptions, caseId, onFilterUncategorized }) {
+  const { t } = useLocaleSettings();
+  if (!Array.isArray(exceptions) || !exceptions.length) {
+    return null;
+  }
+  return (
+    <section className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+        <div>
+          <h3 className="font-semibold">{t('Items to review before handoff')}</h3>
+          <p className="mt-1">{t('These items need a quick review before the category summary is ready to share for workspace organization.')}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 lg:grid-cols-2">
+        {exceptions.map((exception, index) => {
+          const action = exceptionAction(exception, caseId, onFilterUncategorized, t);
+          const count = exception.count ?? exception.document_rows ?? exception.unique_file_hashes ?? exception.total ?? null;
+          return (
+            <article key={`${exception?.exception_type || exception?.type || exception?.code || 'exception'}-${index}`} className="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-900/60 dark:bg-black/20">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="font-semibold">{exception.label || exception.title || humanizeKey(exception.exception_type || exception.type || exception.code || exception.category || 'Needs review')}</div>
+                  <p className="mt-1 text-amber-900 dark:text-amber-100">{exceptionMessage(exception, t)}</p>
+                  {count !== null ? <div className="mt-1 text-xs font-semibold">{formatCount(count)} {t('item(s)')}</div> : null}
+                </div>
+                {action.to ? (
+                  <Link to={action.to} className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40">
+                    {action.label}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={action.onClick}
+                    className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                  >
+                    {action.label}
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+export default function CategoryReviewPanel({
+  caseId,
+  data,
+  error,
+  exportBusy = false,
+  loading = false,
+  lensId: selectedLensId,
+  onExportCurrentView,
+  onFilterCategory,
+  onFilterUncategorized,
+  onLensChange,
+  onRetry,
+}) {
+  const { t } = useLocaleSettings();
+  const [activeView, setActiveView] = useState('all');
+  const [selectedKey, setSelectedKey] = useState('');
+  const summaries = useMemo(() => (
+    Array.isArray(data?.category_summaries) ? data.category_summaries : []
+  ), [data]);
+  const filteredSummaries = useMemo(() => summaries.filter((category) => categoryMatchesView(category, activeView)), [activeView, summaries]);
+  const selectedCategory = filteredSummaries.find((category) => categoryKey(category) === selectedKey) || filteredSummaries[0] || null;
+  const guardrail = data?.guardrail || {};
+  const displayTerms = guardrail.display_terms || {};
+  const configuredLenses = Array.isArray(data?.configured_lenses) ? data.configured_lenses : [];
+  const activeLens = data?.active_lens || configuredLenses.find((lens) => lensId(lens) === selectedLensId) || selectedLensId;
+  const totals = data?.totals || {};
+  const spanLookup = data?.span_lookup || {};
+  const tabs = [
+    { id: 'all', label: 'All' },
+    { id: 'needs_review', label: 'Needs review' },
+    { id: 'uncategorized', label: 'Uncategorized' },
+    { id: 'by_category', label: 'By category' },
+  ];
+
+  return (
+    <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]" id="category-review">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="max-w-3xl">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Category review')}</div>
+          <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{t('Category review for lawyer handoff')}</h2>
+          <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+            {t('This review helps you and your lawyer see how documents are grouped. It is for organization and review only.')}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+            {guardrail.message || t('Categories and issue tags are organizational review aids. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+          {configuredLenses.length ? (
+            <label className="block text-sm font-semibold text-gray-800 dark:text-gray-100">
+              {t('Review lens')}
+              <select
+                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-900 dark:border-gray-700 dark:bg-[#0c1218] dark:text-gray-100"
+                onChange={(event) => onLensChange?.(event.target.value)}
+                value={selectedLensId || data?.filters?.lens_id || ''}
+              >
+                {configuredLenses.map((lens) => (
+                  <option key={lensId(lens)} value={lensId(lens)}>{lensLabel(lens)}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-gray-800 dark:bg-black/20">
+              <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Review lens')}</div>
+              <div className="font-semibold text-gray-950 dark:text-white">{lensLabel(activeLens) || t('Current review lens')}</div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            {loading ? t('Loading') : t('Refresh category review')}
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="mt-4">
+          <ErrorPanel
+            title={t('Category review unavailable')}
+            error={error}
+            onRetry={onRetry}
+          />
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <CountCard label={t('Document rows')} value={totals.total_visible_document_rows ?? totals.document_rows_considered} />
+        <CountCard label={t('Rows considered')} value={totals.document_rows_considered} />
+        <CountCard label={t('Unique files')} value={totals.unique_file_hashes_considered} />
+        <CountCard label={t('Lens span rows')} value={totals.lens_span_rows} tone={Number(totals.lens_span_rows || 0) > 0 ? 'good' : 'review'} />
+        <CountCard label={t('Max rows')} value={totals.max_document_rows} />
+      </div>
+
+      {totals.result_limited ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          {t('This category review is limited to the returned document rows. Refine filters or ask support if the handoff needs a larger review set.')}
+        </div>
+      ) : null}
+
+      {spanLookup.available === false ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="font-semibold">{t('No quote-level lens review has been run yet')}</div>
+          <p className="mt-1">{spanLookupReasonMessage(spanLookup.reason, t)}</p>
+        </div>
+      ) : null}
+
+      <ExceptionsList exceptions={data?.exceptions || []} caseId={caseId} onFilterUncategorized={onFilterUncategorized} />
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveView(tab.id)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+              activeView === tab.id
+                ? 'border-sky-700 bg-sky-700 text-white'
+                : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-700 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30'
+            }`}
+          >
+            {t(tab.label)}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.6fr)]">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Categories')}</h3>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{formatCount(filteredSummaries.length)} {t('shown')}</span>
+          </div>
+          <div className="max-h-[32rem] space-y-2 overflow-auto pr-1">
+            {loading ? (
+              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+                {t('Loading category review.')}
+              </div>
+            ) : filteredSummaries.length ? filteredSummaries.map((category) => {
+              const counts = category.counts || {};
+              const selected = categoryKey(category) === categoryKey(selectedCategory);
+              return (
+                <button
+                  key={categoryKey(category)}
+                  type="button"
+                  onClick={() => setSelectedKey(categoryKey(category))}
+                  className={`w-full rounded-md border p-3 text-left transition ${
+                    selected
+                      ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-500/20 dark:border-sky-800 dark:bg-sky-950/25'
+                      : 'border-gray-200 bg-white hover:border-sky-300 hover:bg-sky-50/60 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-900 dark:hover:bg-sky-950/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="break-words text-sm font-semibold text-gray-950 dark:text-white">{category.label || category.code || t('Unnamed category')}</div>
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(humanizeKey(category.kind || 'category'))}</div>
+                    </div>
+                    <ReviewStatusBadge status={category.review_status} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
+                    <span>{formatCount(counts.document_rows)} {t('document rows')}</span>
+                    <span>{formatCount(counts.unique_file_hashes)} {t('unique files')}</span>
+                    <span>{formatCount(counts.ready_for_search)} {t('ready')}</span>
+                    <span>{formatCount(counts.needs_review)} {t('needs review')}</span>
+                  </div>
+                </button>
+              );
+            }) : (
+              <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+                {t('No category rows matched this review tab.')}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#101820]">
+          {selectedCategory ? (
+            <>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(humanizeKey(selectedCategory.kind || 'category'))}</div>
+                  <h3 className="mt-1 break-words text-lg font-semibold text-gray-950 dark:text-white">{selectedCategory.label || selectedCategory.code || t('Unnamed category')}</h3>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <ReviewStatusBadge status={selectedCategory.review_status} />
+                    <StatusBadge status={selectedCategory.basis_status === 'lens_spans_available' ? 'configured' : 'needs_review'} label={basisLabel(selectedCategory.basis_status)} />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onFilterCategory?.(selectedCategory)}
+                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+                  >
+                    <Filter size={15} aria-hidden="true" />
+                    {t('Filter Documents')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onExportCurrentView}
+                    disabled={exportBusy}
+                    title={t('Use Filter Documents first to export this category.')}
+                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+                  >
+                    <FileText size={15} aria-hidden="true" />
+                    {exportBusy ? t('Exporting') : t('Export current document table')}
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {t('Use Filter Documents first if you want the export to match this selected category.')}
+              </p>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <CountCard label={t('Document rows')} value={selectedCategory.counts?.document_rows} />
+                <CountCard label={t('Unique files')} value={selectedCategory.counts?.unique_file_hashes} />
+                <CountCard label={t('Ready for search')} value={selectedCategory.counts?.ready_for_search} tone="good" />
+                <CountCard label={t('Needs review')} value={selectedCategory.counts?.needs_review} tone="review" />
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
+                  <div className="font-semibold text-gray-950 dark:text-white">{t(displayTerms.category_summary || 'Category summary')}</div>
+                  <p className="mt-2 leading-6 text-gray-700 dark:text-gray-300">
+                    {selectedCategory.category_summary || t('No category summary has been returned yet. Review representative documents and source status before lawyer handoff.')}
+                  </p>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
+                  <div className="font-semibold text-gray-950 dark:text-white">{t(displayTerms.grouping_reason || 'Why this is grouped here')}</div>
+                  <p className="mt-2 leading-6 text-gray-700 dark:text-gray-300">
+                    {categoryReason(selectedCategory, spanLookup, t)}
+                  </p>
+                </div>
+              </div>
+
+              {Number(selectedCategory.counts?.documents_missing_lens_spans || 0) > 0 ? (
+                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                  <div className="font-semibold">{t('No quote-level lens review has been run yet')}</div>
+                  <p className="mt-1">
+                    {t('{count} document row(s) in this category do not have source snippets for this review lens yet.', { count: selectedCategory.counts.documents_missing_lens_spans })}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="mt-5">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h4 className="text-base font-semibold text-gray-950 dark:text-white">{t('Representative documents')}</h4>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{formatCount(selectedCategory.representative_documents?.length || 0)} {t('shown')}</span>
+                </div>
+                <div className="space-y-3">
+                  {Array.isArray(selectedCategory.representative_documents) && selectedCategory.representative_documents.length ? (
+                    selectedCategory.representative_documents.map((document, index) => (
+                      <RepresentativeDocument key={`${document?.file_id || document?.document_id || docName(document)}-${index}`} document={document} caseId={caseId} />
+                    ))
+                  ) : (
+                    <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-black/20 dark:text-gray-400">
+                      {t('No representative documents were returned for this category.')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600 dark:border-gray-800 dark:bg-black/20 dark:text-gray-400">
+              {t('No category summary rows are available yet.')}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+          <p>{t('Category review is read-only in this version. Use source documents, snippets, and review status for lawyer handoff, then ask support if a category needs to be changed.')}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
