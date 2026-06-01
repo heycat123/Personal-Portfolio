@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
@@ -11,6 +12,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import useJobStatusPolling from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { formatDateTime, humanizeKey, truncateMiddle } from '../utils/formatters';
 
 const PAGE_SIZE = 50;
@@ -3110,6 +3112,22 @@ export default function EntitiesPage() {
     </aside>
   );
 
+  const peopleAttentionItems = useMemo(() => {
+    const reviewStatusCount = (state.contactStatusCounts || []).reduce((total, item) => {
+      const status = String(item.link_status || '').toLowerCase();
+      if (!status || ['confirmed', 'rejected', 'ignored'].includes(status)) {
+        return total;
+      }
+      return total + Number(item.count || 0);
+    }, 0);
+    return filterAttentionItems(buildCaseAttentionItems({
+      caseId,
+      people: {
+        needsReview: reviewStatusCount + state.suggestions.length,
+      },
+    }), 'people-contacts');
+  }, [caseId, state.contactStatusCounts, state.suggestions.length]);
+
   return (
     <div>
       <PageHeader
@@ -3172,6 +3190,14 @@ export default function EntitiesPage() {
           {t('Relationship labels help organize the case. They do not decide legal status or prove a claim.')}
         </p>
       </section>
+
+      <NeedsAttentionPanel
+        items={peopleAttentionItems}
+        title="People & contact attention"
+        description="Contact links, possible duplicates, and relationship labels that need review."
+        emptyTitle="No people or contact attention items right now"
+        emptyDetail="Contact links and possible duplicates do not show open review items."
+      />
 
       {roleResolutionReview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

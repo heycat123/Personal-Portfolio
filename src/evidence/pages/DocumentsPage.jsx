@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
@@ -11,6 +12,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
@@ -385,6 +387,8 @@ export default function DocumentsPage() {
     total: 0,
     facets: {},
     inventorySummary: {},
+    documentsPanelStatus: null,
+    documentProcessingReadiness: null,
     fingerprint: null,
   });
   const [drawer, setDrawer] = useState({
@@ -461,6 +465,8 @@ export default function DocumentsPage() {
         total: result.data?.total || 0,
         facets: result.data?.facets || {},
         inventorySummary: result.data?.inventory_summary || {},
+        documentsPanelStatus: result.data?.documents_panel_status || null,
+        documentProcessingReadiness: result.data?.document_processing_readiness || null,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -847,7 +853,7 @@ export default function DocumentsPage() {
 
   const firstVisibleRow = state.total ? offset + 1 : 0;
   const lastVisibleRow = Math.min(state.total, offset + state.documents.length);
-  const inventorySummary = state.inventorySummary || {};
+  const inventorySummary = useMemo(() => state.inventorySummary || {}, [state.inventorySummary]);
   const extractedFiles = inventorySummary.extracted_files || 0;
   const s3SyncedFiles = inventorySummary.extracted_files_synced_to_s3 || 0;
   const missingS3Files = inventorySummary.extracted_files_missing_s3 || 0;
@@ -857,12 +863,39 @@ export default function DocumentsPage() {
   const issueTagOptions = facetOptions(state.facets, 'legal_factor_code');
   const processingRequestData = processingRequest.result || {};
   const processingRequestJobId = processingRequestData.job?.job_id || processingRequestData.existing_job?.job_id || processingRequestData.job_id || null;
-  const processingRequestCount = processingRequestData.requested_document_count || s3OnlyFiles;
+  const processingBatchDocumentCount = Number(
+    processingRequestData.requested_document_count
+    || processingRequestData.job?.requested_document_count
+    || processingRequestData.existing_job?.requested_document_count
+    || 0,
+  );
+  const processingRequestCount = s3OnlyFiles;
+  const processingBatchDiffers = Boolean(
+    processingBatchDocumentCount
+    && processingRequestCount
+    && processingBatchDocumentCount !== processingRequestCount,
+  );
   const processingStartFinished = Boolean(processingRequest.result && processingRequestData.can_start_processing === false);
   const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
     ? 'Processing already started. Check Jobs for per-document progress.'
     : 'Processing started. Check Jobs for per-document progress.');
+  const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
+    caseId,
+    counts: inventorySummary,
+    documentsPanelStatus: state.documentsPanelStatus,
+    documentProcessingReadiness: state.documentProcessingReadiness,
+  }), 'documents'), [caseId, inventorySummary, state.documentProcessingReadiness, state.documentsPanelStatus]);
+
+  useEffect(() => {
+    if (!s3OnlyFiles && !processingRequest.busy) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      void loadDocuments();
+    }, 5000);
+    return () => window.clearInterval(timerId);
+  }, [loadDocuments, processingRequest.busy, s3OnlyFiles]);
 
   const applyColumnFilter = (columnId, value) => {
     setOffset(0);
@@ -898,6 +931,14 @@ export default function DocumentsPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
 
+      <NeedsAttentionPanel
+        items={attentionItems}
+        title="Document attention"
+        description="Document issues that affect processing, source copies, search, export, or source checks."
+        emptyTitle="No document attention items right now"
+        emptyDetail="Documents do not show processing or source-copy blockers in this view."
+      />
+
       {s3OnlyFiles > 0 ? (
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -906,7 +947,7 @@ export default function DocumentsPage() {
               <div>
                 <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
                 <p className="mt-1">
-                  {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: s3OnlyFiles })}
+                  {t('{count} document row(s) still need text/search processing before they are fully available in Ask Documents.', { count: s3OnlyFiles })}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {t('This is not a legal review task. It means the source file is saved, but text extraction and search preparation have not finished yet.')}
@@ -962,8 +1003,13 @@ export default function DocumentsPage() {
                 {t(processingStartMessage)}
               </p>
               <p className="mt-1 text-xs">
-                {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: processingRequestCount })}
+                {t('Current document list shows {count} document row(s) still need text/search processing before they are fully available in Ask Documents.', { count: processingRequestCount })}
               </p>
+              {processingBatchDiffers ? (
+                <p className="mt-1 text-xs">
+                  {t('The existing processing batch includes {count} file(s) from when it started. That can differ from the current document count after duplicates, completed files, or excluded files are accounted for.', { count: processingBatchDocumentCount })}
+                </p>
+              ) : null}
               {processingRequestJobId ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${processingRequestJobId}`}

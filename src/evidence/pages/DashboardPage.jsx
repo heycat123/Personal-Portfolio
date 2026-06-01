@@ -15,6 +15,7 @@ import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom';
 import AnimatedCount from '../components/AnimatedCount';
 import ErrorPanel from '../components/ErrorPanel';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
@@ -22,6 +23,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { formatDateTime, sumCounts } from '../utils/formatters';
 
 function fulfilledValue(result) {
@@ -164,6 +166,7 @@ export default function DashboardPage() {
     summary: null,
     connectors: [],
     health: null,
+    sourceAlignment: null,
   });
 
   const loadDashboard = useCallback(async ({ quiet = false } = {}) => {
@@ -177,6 +180,7 @@ export default function DashboardPage() {
     ];
     if (canSeeOperations) {
       requests.push({ key: 'health', label: 'Case health', promise: evidenceApi.getCaseHealth(caseId, { token }) });
+      requests.push({ key: 'sourceAlignment', label: 'Source alignment', promise: evidenceApi.getSourceAlignmentLatest(caseId, { token }) });
     }
     const results = await Promise.allSettled(requests.map((request) => request.promise));
 
@@ -195,6 +199,7 @@ export default function DashboardPage() {
       summary: fulfilledByKey.summary || null,
       connectors: fulfilledByKey.connectors?.providers || [],
       health: fulfilledByKey.health || null,
+      sourceAlignment: fulfilledByKey.sourceAlignment || null,
     });
   }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
 
@@ -206,9 +211,11 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timerId);
   }, [loadDashboard]);
 
-  const counts = canSeeOperations && state.health?.summary?.counts
-    ? state.health.summary.counts
-    : state.summary?.counts || state.health?.summary?.counts || {};
+  const counts = useMemo(() => (
+    canSeeOperations && state.health?.summary?.counts
+      ? state.health.summary.counts
+      : state.summary?.counts || state.health?.summary?.counts || {}
+  ), [canSeeOperations, state.health, state.summary]);
   const google = useMemo(
     () => state.connectors.find((provider) => provider.provider === 'google_drive') || null,
     [state.connectors],
@@ -322,7 +329,7 @@ export default function DashboardPage() {
             ? (
               <PendingProcessingText
                 count={copiedFilesPendingProcessing}
-                suffix={t('copied file(s) still need text/search processing before full Ask Documents coverage.')}
+                suffix={t('document row(s) still need text/search processing before full Ask Documents coverage.')}
               />
             )
           : systemWorking
@@ -332,6 +339,13 @@ export default function DashboardPage() {
       to: searchReadinessActionTo,
     },
   ];
+  const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
+    caseId,
+    counts,
+    health: state.health,
+    sourceAlignment: state.sourceAlignment,
+    connectors: state.connectors,
+  }), 'case-home'), [caseId, counts, state.connectors, state.health, state.sourceAlignment]);
 
   return (
     <div>
@@ -352,37 +366,12 @@ export default function DashboardPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
 
-      {copiedFilesPendingProcessing > 0 ? (
-        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-              <div>
-                <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
-                <p className="mt-1">
-                  <AnimatedCount value={copiedFilesPendingProcessing} className="font-semibold" />{' '}
-                  {t('copied file(s) still need text/search processing before they are fully available in Ask Documents.')}
-                </p>
-                <p className="mt-1 text-xs font-semibold text-amber-900 dark:text-amber-100">
-                  {t('Live updates are on while processing is catching up.')}
-                </p>
-                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('Why this happened: the files are saved in the workspace, but the extraction and search-indexing run has not processed them yet.')}
-                </p>
-                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('Solution: open Documents and start text/search processing so the pending batch is tracked for extraction, search indexing, and the final alignment check.')}
-                </p>
-              </div>
-            </div>
-            <Link
-              to={`/evidence/cases/${caseId}/documents`}
-              className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
-            >
-              {t('Open Documents')}
-            </Link>
-          </div>
-        </section>
-      ) : null}
+      <NeedsAttentionPanel
+        items={attentionItems}
+        description="Items that may block full propagation, sync, search, access, or review."
+        emptyTitle="No attention items blocking readiness"
+        emptyDetail="Source sync, search readiness, and access checks do not show open issues right now."
+      />
 
       <section className="mb-5">
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -421,7 +410,7 @@ export default function DashboardPage() {
               ? (
                 <PendingProcessingText
                   count={copiedFilesPendingProcessing}
-                  suffix={t('copied file(s) still need text/search processing before they are fully available in Ask Documents.')}
+                  suffix={t('document row(s) still need text/search processing before they are fully available in Ask Documents.')}
                 />
               )
               : t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.')}
@@ -444,7 +433,7 @@ export default function DashboardPage() {
               icon={ShieldAlert}
               title={t('Access & sharing')}
               detail={t('Only authorized people should have workspace access. Review pending invitations and sharing before exports.')}
-              to={`/evidence/cases/${caseId}/admin`}
+              to={`/evidence/cases/${caseId}/access`}
               count={pendingInvitations}
               countLabel={t('pending')}
             />

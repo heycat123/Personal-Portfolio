@@ -2,6 +2,7 @@ import { CheckCircle2, ChevronRight, ExternalLink, Eye, FileText, FileUp, Folder
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
@@ -10,6 +11,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 
 function DetailRow({ label, value }) {
   const { t } = useLocaleSettings();
@@ -721,6 +723,10 @@ export default function IntakePage() {
   const upload = state.presign?.upload;
   const activeWatchItems = driveBrowser.watchItems.filter((item) => item.status === 'active');
   const contactsPermissionMissing = Boolean(activeGoogleConnection && !activeGoogleConnection.can_sync_contacts);
+  const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
+    caseId,
+    connectors: state.connectors,
+  }), 'add-documents'), [caseId, state.connectors]);
   const sortedDriveItems = [...driveBrowser.files].sort((left, right) => {
     const leftFolder = left.mimeType === GOOGLE_FOLDER_MIME_TYPE ? 0 : 1;
     const rightFolder = right.mimeType === GOOGLE_FOLDER_MIME_TYPE ? 0 : 1;
@@ -745,6 +751,14 @@ export default function IntakePage() {
           {state.connectorMessage}
         </div>
       ) : null}
+
+      <NeedsAttentionPanel
+        items={attentionItems}
+        title="Add Documents attention"
+        description="Source connection and contact-sync items that can affect document intake or review."
+        emptyTitle="No source attention items right now"
+        emptyDetail="Connected sources do not show setup blockers in this view."
+      />
 
       <section className="mb-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

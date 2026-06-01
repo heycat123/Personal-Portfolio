@@ -2,6 +2,7 @@ import { AlertTriangle, Bot, Check, Clipboard, ExternalLink, FileText, History, 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
@@ -10,6 +11,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 
 const EXAMPLE_QUESTION = 'Which documents mention the parenting schedule?';
 
@@ -720,12 +722,38 @@ export default function QueryPage() {
   });
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const [copiedAnswer, setCopiedAnswer] = useState(false);
+  const [readinessState, setReadinessState] = useState({
+    loading: true,
+    health: null,
+    error: null,
+  });
   const scrollRef = useRef(null);
   const showDiagnostics = debugEnabled;
+
+  const loadQueryReadiness = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) {
+      setReadinessState((current) => ({ ...current, loading: true, error: null }));
+    }
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getCaseHealth(caseId, { token });
+      recordFingerprint(result, 'Ask Documents readiness');
+      setReadinessState({ loading: false, health: result.data || null, error: null });
+    } catch (error) {
+      setReadinessState((current) => ({ ...current, loading: false, error }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      void loadQueryReadiness();
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [loadQueryReadiness]);
 
   const loadConversation = useCallback(
     async (conversationId) => {
@@ -943,6 +971,21 @@ export default function QueryPage() {
   const latestReady = Boolean(latestVerifier?.verified || latestVerifier?.sufficient || latestSourceReferences > 0) && !latestNeedsReview;
   const hasMessages = messages.length > 0;
   const traceRows = useMemo(() => state.result?.retrieval_trace || [], [state.result?.retrieval_trace]);
+  const askAttentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
+    caseId,
+    health: readinessState.health,
+  }), 'ask-documents'), [caseId, readinessState.health]);
+  const askProcessingPending = askAttentionItems.some((item) => item.id === 'search-processing');
+
+  useEffect(() => {
+    if (!askProcessingPending) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      void loadQueryReadiness({ quiet: true });
+    }, 5000);
+    return () => window.clearInterval(timerId);
+  }, [askProcessingPending, loadQueryReadiness]);
 
   return (
     <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden lg:h-auto lg:overflow-x-hidden">
@@ -997,6 +1040,20 @@ export default function QueryPage() {
           <ErrorPanel title="Query failed" error={state.error} />
         </div>
       ) : null}
+      {readinessState.error ? (
+        <div className="mb-5">
+          <ErrorPanel title="Ask Documents readiness failed" error={readinessState.error} onRetry={loadQueryReadiness} />
+        </div>
+      ) : null}
+
+      <NeedsAttentionPanel
+        items={askAttentionItems}
+        title="Ask Documents attention"
+        description="Search and citation readiness items that may affect source-based answers."
+        emptyTitle="Ask Documents is not showing readiness blockers"
+        emptyDetail="Review source citations and keep working in other parts of the workspace."
+        limit={3}
+      />
 
       <div className="grid h-full min-h-0 w-full min-w-0 max-w-full gap-4 overflow-hidden lg:h-[calc(100dvh_-_240px)] lg:min-h-[420px] xl:grid-cols-[300px_minmax(0,1fr)]">
         <div className="hidden min-h-0 xl:block">

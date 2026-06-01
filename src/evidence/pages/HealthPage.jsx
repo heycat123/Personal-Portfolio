@@ -4,6 +4,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import MetricTile from '../components/MetricTile';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
@@ -11,6 +12,7 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { formatDateTime } from '../utils/formatters';
 
 function fulfilledValue(result) {
@@ -187,6 +189,22 @@ export default function HealthPage() {
         },
       }));
     } catch (error) {
+      const detail = error?.payload?.detail || error?.payload || null;
+      if (error?.status === 409 && detail?.workflow_status === 'blocked_by_active_processing') {
+        setState((current) => ({
+          ...current,
+          alignmentJobRunning: false,
+          alignmentJobError: null,
+          alignmentJob: {
+            data: detail,
+            fingerprint: {
+              id: error.requestFingerprintId,
+              correlationId: error.correlationId,
+            },
+          },
+        }));
+        return;
+      }
       setState((current) => ({ ...current, alignmentJobRunning: false, alignmentJobError: error }));
     }
   }, [caseId, getAccessToken, recordFingerprint]);
@@ -246,7 +264,9 @@ export default function HealthPage() {
   const vectorOk = Boolean(graph?.ok && childChunks > 0 && missingChildEmbeddings === 0 && missingParentEdges === 0);
   const rawTables = state.rawParity?.tables || [];
   const counts = state.caseHealth?.summary?.counts || {};
-  const copiedFilesPendingProcessing = counts.s3_files_not_extracted || 0;
+  const documentProcessingReadiness = state.caseHealth?.document_processing_readiness || {};
+  const copiedFilesPendingProcessing = documentProcessingReadiness.copied_not_extracted_records || counts.s3_files_not_extracted || 0;
+  const copiedFileHashesPendingProcessing = documentProcessingReadiness.copied_not_extracted_hashes || 0;
   const sourceAlignment = state.sourceAlignment;
   const alignmentRows = Object.entries(sourceAlignment?.comparisons || {}).map(([name, comparison]) => ({
     name,
@@ -264,7 +284,7 @@ export default function HealthPage() {
   const alignmentRecommendations = sourceAlignmentRecommendations.slice(0, 4).map((item) => {
     const text = String(item || '');
     if (text.includes('mirrored to intake') && text.includes('not extracted')) {
-      return t('Google Drive has {hashCount} unique copied file content item(s) that still need processing. Documents may show {documentCount} document row(s) because duplicate records can share one file hash. Solution: start text/search processing, then queue a new source alignment check after text and search are ready.', {
+      return t('Google Drive has {hashCount} unique copied file content item(s) that still need processing. Documents may show {documentCount} document row(s) because duplicate records can share one file hash. Solution: start text/search processing, then run source coverage after text and search are ready.', {
         hashCount: driveExtraHashCount || '?',
         documentCount: copiedFilesPendingProcessing || '?',
       });
@@ -279,10 +299,22 @@ export default function HealthPage() {
   const statusActions = [];
   const processingRequestData = state.processingRequest?.data || {};
   const processingRequestStarted = Boolean(state.processingRequest && processingRequestData.can_start_processing === false);
+  const processingBatchDocumentCount = Number(
+    processingRequestData.requested_document_count
+    || processingRequestData.job?.requested_document_count
+    || processingRequestData.existing_job?.requested_document_count
+    || 0,
+  );
+  const processingBatchDiffers = Boolean(
+    processingBatchDocumentCount
+    && copiedFilesPendingProcessing
+    && processingBatchDocumentCount !== copiedFilesPendingProcessing,
+  );
   const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
     ? 'Processing already started. Check Jobs for per-document progress.'
     : 'Processing started. Check Jobs for per-document progress.');
+  const alignmentBlockedByProcessing = copiedFilesPendingProcessing > 0 || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0);
 
   if (!state.loading && database && !database.ok) {
     statusActions.push({
@@ -329,11 +361,11 @@ export default function HealthPage() {
       key: 'vectors',
       title: t('Search index coverage needs attention'),
       detail: copiedFilesPendingProcessing > 0
-        ? t('Some copied files still need text extraction and search indexing before Ask Documents can cover them.')
-        : t('Some relationship-map records are missing search coverage. Queue a fresh alignment check or ask support to review processing.'),
+        ? t('Some document rows still need text extraction and search indexing before Ask Documents can cover them.')
+        : t('Some relationship-map records are missing search coverage. Run source coverage after processing finishes, or ask support to review processing.'),
       action: copiedFilesPendingProcessing > 0
         ? { label: processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
-        : { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
+        : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
   }
@@ -342,8 +374,10 @@ export default function HealthPage() {
     statusActions.push({
       key: 'alignment',
       title: t('Source check needs review'),
-      detail: t('Some files do not yet match across connected sources and processed records. This affects app completeness checks, not the legal meaning of the documents. Queue a new source alignment check after reviewing the source list.'),
-      action: { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
+      detail: t('Some files do not yet match across connected sources and processed records. This affects app completeness checks, not the legal meaning of the documents. Run source coverage after reviewing the source list.'),
+      action: alignmentBlockedByProcessing
+        ? { label: t('Finish processing first'), to: `/evidence/cases/${caseId}/health#search-readiness-resolution` }
+        : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
   }
@@ -352,11 +386,24 @@ export default function HealthPage() {
     statusActions.push({
       key: 'alignment-missing',
       title: t('Source check has not run yet'),
-      detail: t('The app has not published a current source alignment check for this case. Queue one to compare connected files with processed records.'),
-      action: { label: state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
+      detail: t('The app has not published a current source coverage check for this case. Run one to compare connected files with processed records.'),
+      action: alignmentBlockedByProcessing
+        ? { label: t('Finish processing first'), to: `/evidence/cases/${caseId}/health#search-readiness-resolution` }
+        : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
   }
+  const attentionItems = filterAttentionItems(buildCaseAttentionItems({
+    caseId,
+    counts,
+    health: {
+      ...state.caseHealth,
+      storage,
+      graph,
+      queue,
+    },
+    sourceAlignment,
+  }), 'health');
 
   useEffect(() => {
     if (state.loading || !hash) {
@@ -369,10 +416,20 @@ export default function HealthPage() {
     window.setTimeout(() => target.scrollIntoView({ block: 'start', behavior: 'smooth' }), 0);
   }, [hash, state.loading, showPropagationResolution, statusActions.length]);
 
+  useEffect(() => {
+    if (!alignmentBlockedByProcessing) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      void loadHealth();
+    }, 5000);
+    return () => window.clearInterval(timerId);
+  }, [alignmentBlockedByProcessing, loadHealth]);
+
   return (
     <div>
       <PageHeader
-        title="Health"
+      title="Health"
         description="Database, storage, source coverage, and operational readiness for the active case."
         actions={
           <>
@@ -395,11 +452,12 @@ export default function HealthPage() {
             <button
               type="button"
               onClick={queueSourceAlignmentAudit}
-              disabled={state.alignmentJobRunning}
+              disabled={state.alignmentJobRunning || alignmentBlockedByProcessing}
+              title={alignmentBlockedByProcessing ? t('Finish document text/search processing before queueing a new source check.') : undefined}
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Play size={16} aria-hidden="true" />
-              {state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check')}
+              {alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
             </button>
           </>
         }
@@ -407,7 +465,15 @@ export default function HealthPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadHealth} /></div> : null}
       {state.smokeError ? <div className="mb-5"><ErrorPanel title="Storage smoke failed" error={state.smokeError} /></div> : null}
-      {state.alignmentJobError ? <div className="mb-5"><ErrorPanel title="Alignment job failed" error={state.alignmentJobError} /></div> : null}
+      {state.alignmentJobError ? <div className="mb-5"><ErrorPanel title="Source coverage action failed" error={state.alignmentJobError} /></div> : null}
+
+      <NeedsAttentionPanel
+        items={attentionItems}
+        title="Needs attention report"
+        description="Central readiness issues that can block propagation, sync, source checks, access, or search."
+        emptyTitle="No health attention items right now"
+        emptyDetail="System checks do not show open readiness blockers."
+      />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <MetricTile
@@ -484,17 +550,17 @@ export default function HealthPage() {
         />
         <MetricTile
           icon={GitCompare}
-          label="Source Alignment"
+          label="Source coverage"
           value={
             <StatusBadge
               status={alignmentOk ? 'online' : alignmentAvailable ? 'degraded' : 'unknown'}
-              label={alignmentOk ? t('Aligned') : alignmentAvailable ? t('Gaps found') : t('No manifest')}
+              label={alignmentOk ? t('Aligned') : alignmentAvailable ? t('Needs review') : t('Not checked')}
             />
           }
           detail={
             alignmentAvailable
               ? t('{count} strict gap(s); finished {time}', { count: alignmentGapCount, time: formatDateTime(sourceAlignment.audit_finished_at) })
-              : sourceAlignment?.reason || t('Queue an alignment check to compare source files with processed records.')
+              : sourceAlignment?.reason || t('Run source coverage to compare source files with processed records.')
           }
           tone={alignmentOk ? 'good' : alignmentAvailable ? 'warn' : 'default'}
         />
@@ -528,21 +594,21 @@ export default function HealthPage() {
               <p>
                 {copiedFilesPendingProcessing > 0
                   ? t('{count} document row(s) are copied into the workspace but still need text extraction and search indexing.', { count: copiedFilesPendingProcessing })
-                  : t('Source alignment found copied Google Drive files that still need text extraction and search indexing.')}
+                  : t('Source coverage found copied Google Drive files that still need text extraction and search indexing.')}
               </p>
-              {driveExtraHashCount > 0 ? (
+              {(copiedFileHashesPendingProcessing || driveExtraHashCount) > 0 ? (
                 <p className="text-xs text-amber-900 dark:text-amber-100">
-                  {t('Health counts {count} unique file hash(es). Documents may show a larger number because multiple document rows can share the same underlying file content.', { count: driveExtraHashCount })}
+                  {t('Health counts {count} unique file hash(es). Documents may show a larger number because multiple document rows can share the same underlying file content.', { count: copiedFileHashesPendingProcessing || driveExtraHashCount })}
                 </p>
               ) : null}
               <p className="text-xs text-amber-900 dark:text-amber-100">
                 {t('Why this happened: Google Drive sync copied the files, but the older processing pipeline has not run extraction, search indexing, and relationship-map indexing for those copied files yet.')}
               </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
-                {t('What it affects: Ask Documents may not include these files yet, and source alignment will keep showing a gap until processing finishes.')}
+                {t('What it affects: Ask Documents may not include these files yet, and source coverage will keep showing a gap until processing finishes.')}
               </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
-                {t('Solution: start text/search processing, then queue a new source alignment check after text and search are ready.')}
+                {t('Solution: start text/search processing, then run source coverage after text and search are ready.')}
               </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
                 {t('You can keep working in other parts of the workspace.')}
@@ -560,10 +626,11 @@ export default function HealthPage() {
               <button
                 type="button"
                 onClick={queueSourceAlignmentAudit}
-                disabled={state.alignmentJobRunning}
+                disabled={state.alignmentJobRunning || alignmentBlockedByProcessing}
+                title={alignmentBlockedByProcessing ? t('Finish document text/search processing before queueing a new source check.') : undefined}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
-                {state.alignmentJobRunning ? t('Queueing') : t('Queue alignment check')}
+                {alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
               </button>
               <Link
                 to={`/evidence/cases/${caseId}/documents`}
@@ -586,8 +653,13 @@ export default function HealthPage() {
                 {t(processingStartMessage)}
               </p>
               <p className="mt-1 text-xs">
-                {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: state.processingRequest.data?.requested_document_count || copiedFilesPendingProcessing || driveExtraHashCount })}
+                {t('Current health shows {count} document row(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing || driveExtraHashCount })}
               </p>
+              {processingBatchDiffers ? (
+                <p className="mt-1 text-xs">
+                  {t('The existing processing batch includes {count} file(s) from when it started. That can differ from the current health count after duplicates, completed files, or excluded files are accounted for.', { count: processingBatchDocumentCount })}
+                </p>
+              ) : null}
               {(state.processingRequest.data?.job?.job_id || state.processingRequest.data?.existing_job?.job_id) ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${state.processingRequest.data.job?.job_id || state.processingRequest.data.existing_job?.job_id}`}
@@ -615,11 +687,11 @@ export default function HealthPage() {
           />
 
           <div className="mt-6">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Source Alignment')}</h3>
+            <h3 id="source-alignment-proof" className="mb-3 scroll-mt-4 text-base font-semibold text-gray-950 dark:text-white">{t('Source coverage')}</h3>
             {alignmentAvailable ? (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="flex flex-wrap items-center gap-3">
-                  <StatusBadge status={alignmentOk ? 'succeeded' : 'degraded'} label={alignmentOk ? t('Strict alignment passed') : t('Strict alignment has gaps')} />
+                  <StatusBadge status={alignmentOk ? 'succeeded' : 'degraded'} label={alignmentOk ? t('Source coverage passed') : t('Source coverage has gaps')} />
                   <span className="text-gray-600 dark:text-gray-400">
                     {sourceAlignment.stores?.local_source?.unique_hash_count || 0} local hashes,
                     {' '}
@@ -640,16 +712,16 @@ export default function HealthPage() {
               </div>
             ) : (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-                {sourceAlignment?.reason || t('No source alignment check has been published by the API runtime.')}
+                {sourceAlignment?.reason || t('No source coverage check has been published yet.')}
               </div>
             )}
             <DataTable
               rows={alignmentRows}
               rowKey={(row) => row.name}
-              emptyTitle={t('No source alignment rows returned')}
+              emptyTitle={t('No source coverage rows returned')}
               toolbar={(
                 <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-                  {t('Each row compares a reference hash set to a target hash set. Missing means the hash exists in the reference but not the target. Extra means the hash exists in the target but not the reference. Hover the Missing or Extra number for row-specific meaning.')}
+                  {t('Each row compares source files with processed records. Missing or extra counts can mean processing is still catching up or a source needs review. Hover the Missing or Extra number for row-specific meaning.')}
                 </div>
               )}
               columns={[
@@ -702,13 +774,13 @@ export default function HealthPage() {
 
         <div className="space-y-5">
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Storage Details')}</h3>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Storage details')}</h3>
             <dl className="mt-4 space-y-3 text-sm">
               {[
                 ['Bucket', storage?.bucket],
                 ['Region', storage?.region],
                 ['Smoke Prefix', storage?.smoke_prefix],
-                  ['Configured', storage?.configured ? t('yes') : t('no')],
+                ['Storage status', storage?.configured ? <StatusBadge key="storage-status" status={storage?.ok ? 'online' : 'degraded'} label={storage?.ok ? t('Online') : t('Needs attention')} /> : t('Not configured')],
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(label)}</dt>
@@ -753,14 +825,22 @@ export default function HealthPage() {
           {state.alignmentJob ? (
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Latest Alignment Job')}</h3>
-                <StatusBadge status={state.alignmentJob.data?.job?.status || 'queued'} />
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Latest source coverage action')}</h3>
+                <StatusBadge
+                  status={state.alignmentJob.data?.display_status === 'Wait for processing' ? 'degraded' : state.alignmentJob.data?.job?.display_status || state.alignmentJob.data?.job?.status || 'queued'}
+                  label={t(state.alignmentJob.data?.display_status || state.alignmentJob.data?.job?.display_status || state.alignmentJob.data?.job?.status || 'Queued')}
+                />
               </div>
+              {state.alignmentJob.data?.display_message || state.alignmentJob.data?.resolution?.user_message ? (
+                <p className="mt-3 text-sm leading-6 text-gray-700 dark:text-gray-300">
+                  {t(state.alignmentJob.data.display_message || state.alignmentJob.data.resolution.user_message)}
+                </p>
+              ) : null}
               <dl className="mt-4 space-y-3 text-sm">
                 {[
-                  ['Job ID', state.alignmentJob.data?.job?.job_id],
-                  ['Type', state.alignmentJob.data?.job?.job_type],
-                  ['Status', state.alignmentJob.data?.job?.status],
+                  ['Job ID', state.alignmentJob.data?.job?.job_id || state.alignmentJob.data?.existing_job?.job_id || state.alignmentJob.data?.active_jobs?.[0]?.job_id],
+                  ['Type', state.alignmentJob.data?.job?.job_type || state.alignmentJob.data?.existing_job?.job_type || state.alignmentJob.data?.active_jobs?.[0]?.job_type],
+                  ['Status', state.alignmentJob.data?.job?.display_status || state.alignmentJob.data?.job?.status || state.alignmentJob.data?.workflow_status],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <dt className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(label)}</dt>
@@ -768,12 +848,12 @@ export default function HealthPage() {
                   </div>
                 ))}
               </dl>
-              {state.alignmentJob.data?.job?.job_id ? (
+              {(state.alignmentJob.data?.job?.job_id || state.alignmentJob.data?.existing_job?.job_id || state.alignmentJob.data?.active_jobs?.[0]?.job_id) ? (
                 <Link
-                  to={`/evidence/cases/${caseId}/jobs/${state.alignmentJob.data.job.job_id}`}
+                  to={state.alignmentJob.data?.next_action?.route_hint || `/evidence/cases/${caseId}/jobs/${state.alignmentJob.data?.job?.job_id || state.alignmentJob.data?.existing_job?.job_id || state.alignmentJob.data?.active_jobs?.[0]?.job_id}`}
                   className="mt-3 inline-flex rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
                 >
-                  {t('Open job')}
+                  {t(state.alignmentJob.data?.next_action?.label || 'Open job')}
                 </Link>
               ) : null}
               {state.alignmentJob.fingerprint?.id ? (
