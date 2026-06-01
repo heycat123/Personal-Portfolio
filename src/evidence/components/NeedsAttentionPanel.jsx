@@ -5,6 +5,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 function interpolate(text, issue) {
   return String(text || '')
     .replaceAll('{count}', String(issue?.count ?? 0))
+    .replaceAll('{hashCount}', String(issue?.hashCount ?? 0))
     .replaceAll('{label}', String(issue?.countLabel || ''));
 }
 
