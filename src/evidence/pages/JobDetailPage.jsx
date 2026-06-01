@@ -187,7 +187,7 @@ export default function JobDetailPage() {
     }
     const timerId = window.setInterval(() => {
       void loadJob({ quiet: true });
-    }, 2500);
+    }, 1500);
     return () => window.clearInterval(timerId);
   }, [loadJob, shouldLivePoll]);
 
