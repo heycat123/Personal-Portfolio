@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, Ban, RefreshCw, RotateCcw } from 'lucide-react';
+import { Archive, ArrowLeft, Ban, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -99,6 +99,9 @@ export default function JobDetailPage() {
     actionLoading: null,
     error: null,
     actionError: null,
+    cleanupLoadingFileId: null,
+    cleanupError: null,
+    cleanupNotice: null,
     job: null,
     fingerprint: null,
   });
@@ -168,6 +171,59 @@ export default function JobDetailPage() {
       setState((current) => ({ ...current, actionLoading: null }));
     }
   }, [caseId, getAccessToken, jobId, navigate, recordFingerprint]);
+
+  const requestDocumentCleanup = useCallback(async (document) => {
+    const fileId = document?.file_id || document?.fileId || document?.id;
+    if (!fileId || state.cleanupLoadingFileId) {
+      return;
+    }
+
+    const reason = window.prompt(t('Why should this file be removed from the case? This queues a cleanup review and excludes the source selection when approved.'));
+    if (reason === null) {
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      cleanupLoadingFileId: fileId,
+      cleanupError: null,
+      cleanupNotice: null,
+    }));
+
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createDocumentRemovalPlan(
+        caseId,
+        fileId,
+        {
+          removal_scope: 'single_document',
+          reason: reason.trim() || 'File does not belong in this case.',
+          remove_source_selection: true,
+          remove_cloud_copy: false,
+          delete_from_original_source: false,
+          requested_from: 'job_detail_processing_batch',
+          source_job_id: jobId,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Document cleanup review');
+      setState((current) => ({
+        ...current,
+        cleanupLoadingFileId: null,
+        cleanupError: null,
+        cleanupNotice: {
+          fileName: jobProcessingDocumentName(document),
+          jobId: result.data?.job?.job_id || result.data?.job_id,
+        },
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        cleanupLoadingFileId: null,
+        cleanupError: error,
+      }));
+    }
+  }, [caseId, getAccessToken, jobId, recordFingerprint, state.cleanupLoadingFileId, t]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -355,6 +411,9 @@ export default function JobDetailPage() {
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {t('Each listed file shows its current text/search processing state. Files that need OCR or another extractor will stay marked for review.')}
                   </p>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {t('If a file does not belong in this case, use Review removal. Today that queues a cleanup review; it does not delete the original source file or secure workspace copy yet.')}
+                  </p>
                 </div>
                 <Link
                   to={`/evidence/cases/${caseId}/documents`}
@@ -363,14 +422,30 @@ export default function JobDetailPage() {
                   {t('Open Documents')}
                 </Link>
               </div>
+              {state.cleanupError ? (
+                <div className="px-4 pt-4">
+                  <ErrorPanel title="Cleanup review failed" error={state.cleanupError} />
+                </div>
+              ) : null}
+              {state.cleanupNotice ? (
+                <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                  <div className="font-semibold">{t('Removal review queued. Nothing was deleted yet.')}</div>
+                  <div className="mt-1">
+                    {state.cleanupNotice.fileName}
+                    {state.cleanupNotice.jobId ? ` ${t('Job')}: ${state.cleanupNotice.jobId}` : ''}
+                  </div>
+                </div>
+              ) : null}
               {processingDocuments.length ? (
                 <div className="max-h-[28rem] space-y-2 overflow-auto p-3">
                   {processingDocuments.map((document, index) => {
                     const documentStatus = jobProcessingDocumentStatus(document);
+                    const fileId = document?.file_id || document?.fileId || document?.id;
+                    const cleanupBusy = state.cleanupLoadingFileId === fileId;
                     return (
                       <div
                         key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}
-                        className="grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.5fr)_minmax(11rem,0.8fr)_minmax(13rem,1fr)]"
+                        className="grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.35fr)_minmax(10rem,0.75fr)_minmax(12rem,1fr)_auto]"
                       >
                         <div className="min-w-0">
                           <div className="break-words font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
@@ -390,6 +465,18 @@ export default function JobDetailPage() {
                             meaning: documentStatus.message,
                           })}
                         />
+                        <div className="flex items-start justify-start md:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => requestDocumentCleanup(document)}
+                            disabled={!fileId || Boolean(state.cleanupLoadingFileId)}
+                            title={fileId ? t('Queue a cleanup review for this file. Nothing is deleted yet.') : t('Open Documents to review this file.')}
+                            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+                          >
+                            <Trash2 size={14} aria-hidden="true" />
+                            {cleanupBusy ? t('Queueing') : t('Review removal')}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
