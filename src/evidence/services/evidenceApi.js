@@ -268,6 +268,12 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  excludeDocument: (caseId, fileId, payload = {}, options = {}) =>
+    request(casePath(caseId, `/documents/${encodeURIComponent(fileId)}/exclude`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   getEntities: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/entities'), { ...options, query: params }),
   auditEntityReviewStatus: (caseId, payload = {}, options = {}) =>

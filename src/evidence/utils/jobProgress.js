@@ -226,6 +226,7 @@ export function jobProcessingDocumentStatus(document) {
     missing_hash: 'Needs review',
     failed: 'Needs attention',
     cancelled: 'Cancelled',
+    excluded_from_case: 'Excluded from processing',
   };
   const badgeStatuses = {
     waiting: 'pending',
@@ -241,6 +242,7 @@ export function jobProcessingDocumentStatus(document) {
     missing_hash: 'pending',
     failed: 'failed',
     cancelled: 'degraded',
+    excluded_from_case: 'unknown',
   };
   return {
     rawStatus,
@@ -271,6 +273,7 @@ function documentProgressFallback(rawStatus) {
     'failed',
     'cancelled',
     'canceled',
+    'excluded_from_case',
   ].includes(rawStatus)) {
     return 100;
   }

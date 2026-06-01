@@ -275,40 +275,37 @@ export default function DocumentDetailPage() {
     }
   }, [caseId, document?.content_hash, document?.file_id, getAccessToken, preferences.language, recordFingerprint]);
 
-  const requestDocumentRemovalPlan = useCallback(async () => {
+  const excludeDocumentFromProcessing = useCallback(async () => {
     if (!document?.file_id || state.removalBusy) {
       return;
     }
-    const reason = window.prompt(t('Why should this document be removed or excluded? This only queues a cleanup review.'));
+    const reason = window.prompt(t('Why should this document be excluded from this workspace processing list? The original source file and secure copy will not be deleted.'));
     if (reason === null) {
       return;
     }
     setState((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.createDocumentRemovalPlan(
+      const result = await evidenceApi.excludeDocument(
         caseId,
         document.file_id,
         {
-          removal_scope: 'single_document',
           reason: reason.trim(),
-          remove_source_selection: true,
-          remove_cloud_copy: false,
-          delete_from_original_source: false,
         },
         { token },
       );
-      recordFingerprint(result, 'Document cleanup review');
+      recordFingerprint(result, 'Exclude document from processing');
       setState((current) => ({
         ...current,
         removalBusy: false,
         removalError: null,
-        removalJob: result.data?.job || result.data,
+        removalJob: result.data,
       }));
+      await loadDocument();
     } catch (error) {
       setState((current) => ({ ...current, removalBusy: false, removalError: error }));
     }
-  }, [caseId, document?.file_id, getAccessToken, recordFingerprint, state.removalBusy, t]);
+  }, [caseId, document?.file_id, getAccessToken, loadDocument, recordFingerprint, state.removalBusy, t]);
 
   return (
     <div>
@@ -338,13 +335,13 @@ export default function DocumentDetailPage() {
             </button>
             <button
               type="button"
-              onClick={requestDocumentRemovalPlan}
+              onClick={excludeDocumentFromProcessing}
               disabled={!document || state.removalBusy}
               className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
-              title={t('Queues a non-destructive cleanup review. It does not delete the source file, secure workspace copy, search index, or relationship data.')}
+              title={t('Exclude this file from workspace document lists and text/search processing. It does not delete the original source file or secure workspace copy.')}
             >
               <Trash2 size={16} aria-hidden="true" />
-              {state.removalBusy ? t('Queueing') : t('Request cleanup review')}
+              {state.removalBusy ? t('Excluding') : t('Exclude from processing')}
             </button>
             <Link
               to={`/evidence/cases/${caseId}/documents`}
@@ -380,12 +377,12 @@ export default function DocumentDetailPage() {
           </div>
         </div>
       ) : null}
-      {state.removalError ? <div className="mb-5"><ErrorPanel title="Cleanup review failed" error={state.removalError} /></div> : null}
+      {state.removalError ? <div className="mb-5"><ErrorPanel title={t('Exclude action failed')} error={state.removalError} /></div> : null}
       {state.removalJob ? (
-        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-          <div className="font-semibold">{t('Cleanup review queued. Nothing was deleted.')}</div>
+        <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="font-semibold">{t('File excluded from processing. Nothing was deleted.')}</div>
           <div className="mt-1 break-words">
-            {state.removalJob.job_type || t('Job')} {state.removalJob.job_id ? `| ${state.removalJob.job_id}` : ''}
+            {state.removalJob.display_message ? t(state.removalJob.display_message) : ''}
           </div>
         </div>
       ) : null}

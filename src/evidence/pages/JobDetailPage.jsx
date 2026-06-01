@@ -176,13 +176,13 @@ export default function JobDetailPage() {
     }
   }, [caseId, getAccessToken, jobId, navigate, recordFingerprint]);
 
-  const requestDocumentCleanup = useCallback(async (document) => {
+  const excludeProcessingDocument = useCallback(async (document) => {
     const fileId = document?.file_id || document?.fileId || document?.id;
     if (!fileId || state.cleanupLoadingFileId) {
       return;
     }
 
-    const reason = window.prompt(t('Why should this file be removed from the case? This queues a cleanup review and excludes the source selection when approved.'));
+    const reason = window.prompt(t('Why should this file be excluded from this workspace processing list? The original source file and secure copy will not be deleted.'));
     if (reason === null) {
       return;
     }
@@ -196,30 +196,26 @@ export default function JobDetailPage() {
 
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.createDocumentRemovalPlan(
+      const result = await evidenceApi.excludeDocument(
         caseId,
         fileId,
         {
-          removal_scope: 'single_document',
           reason: reason.trim() || 'File does not belong in this case.',
-          remove_source_selection: true,
-          remove_cloud_copy: false,
-          delete_from_original_source: false,
-          requested_from: 'job_detail_processing_batch',
           source_job_id: jobId,
         },
         { token },
       );
-      recordFingerprint(result, 'Document cleanup review');
+      recordFingerprint(result, 'Exclude document from processing');
       setState((current) => ({
         ...current,
         cleanupLoadingFileId: null,
         cleanupError: null,
         cleanupNotice: {
           fileName: jobProcessingDocumentName(document),
-          jobId: result.data?.job?.job_id || result.data?.job_id,
+          message: result.data?.display_message,
         },
       }));
+      await loadJob({ quiet: true });
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -227,7 +223,7 @@ export default function JobDetailPage() {
         cleanupError: error,
       }));
     }
-  }, [caseId, getAccessToken, jobId, recordFingerprint, state.cleanupLoadingFileId, t]);
+  }, [caseId, getAccessToken, jobId, loadJob, recordFingerprint, state.cleanupLoadingFileId, t]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -255,8 +251,13 @@ export default function JobDetailPage() {
   const canRetry = job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
   const canArchive = Boolean(job && progress && !progress.canCancel && !job.archived_at);
   const isProcessingRequest = isDocumentProcessingRequest(job);
-  const processingDocuments = isProcessingRequest ? jobProcessingDocuments(job) : [];
+  const processingDocuments = isProcessingRequest
+    ? jobProcessingDocuments(job).filter((document) => String(document?.status || '').toLowerCase() !== 'excluded_from_case')
+    : [];
   const processingDocumentCount = isProcessingRequest ? jobProcessingRequestedCount(job) : 0;
+  const excludedProcessingDocumentCount = isProcessingRequest
+    ? Math.max(0, (processingDocumentCount || 0) - processingDocuments.length)
+    : 0;
   const processingUniqueHashes = isProcessingRequest ? jobProcessingUniqueHashCount(job) : 0;
   const costText = progress ? formatJobCost(progress.costSummary) : null;
   const costDetail = progress?.costSummary?.hasPaidCost
@@ -416,14 +417,22 @@ export default function JobDetailPage() {
                 <div>
                   <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents in this processing batch')}</h2>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('{count} copied file(s) are included in this processing batch.', { count: processingDocumentCount || processingDocuments.length })}
+                    {excludedProcessingDocumentCount
+                      ? t('{visible} file(s) are still shown in this batch. {total} copied file(s) were included when processing started.', {
+                        visible: processingDocuments.length,
+                        total: processingDocumentCount,
+                      })
+                      : t('{count} copied file(s) are included in this processing batch.', { count: processingDocumentCount || processingDocuments.length })}
                     {processingUniqueHashes ? ` ${t('{count} unique file hash(es).', { count: processingUniqueHashes })}` : ''}
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {t('Each listed file shows its current text/search processing state. Files that need OCR or another extractor will stay marked for review.')}
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('If a file does not belong in this case, use Review removal. Today that queues a cleanup review; it does not delete the original source file or secure workspace copy yet.')}
+                    {t('If a file does not belong in this case, exclude it from processing. The original source file and secure workspace copy are kept, but the file stops counting against search readiness.')}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {t('If you want to keep the file, resolve it by uploading or exporting a searchable copy, such as a PDF, image, text file, or transcript, then start text/search processing again.')}
                   </p>
                 </div>
                 <Link
@@ -435,15 +444,15 @@ export default function JobDetailPage() {
               </div>
               {state.cleanupError ? (
                 <div className="px-4 pt-4">
-                  <ErrorPanel title="Cleanup review failed" error={state.cleanupError} />
+                  <ErrorPanel title={t('Exclude action failed')} error={state.cleanupError} />
                 </div>
               ) : null}
               {state.cleanupNotice ? (
                 <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
-                  <div className="font-semibold">{t('Removal review queued. Nothing was deleted yet.')}</div>
+                  <div className="font-semibold">{t('File excluded from processing. Nothing was deleted.')}</div>
                   <div className="mt-1">
                     {state.cleanupNotice.fileName}
-                    {state.cleanupNotice.jobId ? ` ${t('Job')}: ${state.cleanupNotice.jobId}` : ''}
+                    {state.cleanupNotice.message ? ` ${state.cleanupNotice.message}` : ''}
                   </div>
                 </div>
               ) : null}
@@ -479,13 +488,13 @@ export default function JobDetailPage() {
                         <div className="flex items-start justify-start md:justify-end">
                           <button
                             type="button"
-                            onClick={() => requestDocumentCleanup(document)}
+                            onClick={() => excludeProcessingDocument(document)}
                             disabled={!fileId || Boolean(state.cleanupLoadingFileId)}
-                            title={fileId ? t('Queue a cleanup review for this file. Nothing is deleted yet.') : t('Open Documents to review this file.')}
+                            title={fileId ? t('Exclude this file from the workspace processing list. Nothing is deleted.') : t('Open Documents to review this file.')}
                             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                           >
                             <Trash2 size={14} aria-hidden="true" />
-                            {cleanupBusy ? t('Queueing') : t('Review removal')}
+                            {cleanupBusy ? t('Excluding') : t('Exclude from processing')}
                           </button>
                         </div>
                       </div>

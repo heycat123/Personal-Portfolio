@@ -674,41 +674,38 @@ export default function DocumentsPage() {
     });
   };
 
-  const requestDocumentRemovalPlan = useCallback(async () => {
+  const excludeDocumentFromProcessing = useCallback(async () => {
     const document = drawer.document;
     if (!document?.file_id || drawer.removalBusy) {
       return;
     }
-    const reason = window.prompt(t('Why should this document be removed or excluded? This only queues a cleanup review.'));
+    const reason = window.prompt(t('Why should this document be excluded from this workspace processing list? The original source file and secure copy will not be deleted.'));
     if (reason === null) {
       return;
     }
     setDrawer((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.createDocumentRemovalPlan(
+      const result = await evidenceApi.excludeDocument(
         caseId,
         document.file_id,
         {
-          removal_scope: 'single_document',
           reason: reason.trim(),
-          remove_source_selection: true,
-          remove_cloud_copy: false,
-          delete_from_original_source: false,
         },
         { token },
       );
-      recordFingerprint(result, 'Document cleanup review');
+      recordFingerprint(result, 'Exclude document from processing');
       setDrawer((current) => ({
         ...current,
         removalBusy: false,
         removalError: null,
-        removalJob: result.data?.job || result.data,
+        removalJob: result.data,
       }));
+      await loadDocuments();
     } catch (error) {
       setDrawer((current) => ({ ...current, removalBusy: false, removalError: error }));
     }
-  }, [caseId, drawer.document, drawer.removalBusy, getAccessToken, recordFingerprint, t]);
+  }, [caseId, drawer.document, drawer.removalBusy, getAccessToken, loadDocuments, recordFingerprint, t]);
 
   const loadDocumentDetail = useCallback(async (document) => {
     if (!document?.file_id) {
@@ -1341,10 +1338,10 @@ export default function DocumentsPage() {
                   <FactorTags document={drawer.document} t={t} />
                 </div>
 
-                {drawer.removalError ? <div className="mt-4"><ErrorPanel title="Cleanup review failed" error={drawer.removalError} /></div> : null}
+                {drawer.removalError ? <div className="mt-4"><ErrorPanel title={t('Exclude action failed')} error={drawer.removalError} /></div> : null}
                 {drawer.removalJob ? (
-                  <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-                    {t('Cleanup review queued. Nothing was deleted.')} {drawer.removalJob.job_id ? `${t('Job')}: ${drawer.removalJob.job_id}` : ''}
+                  <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                    {t('File excluded from processing. Nothing was deleted.')} {drawer.removalJob.display_message ? t(drawer.removalJob.display_message) : ''}
                   </div>
                 ) : null}
 
@@ -1358,13 +1355,13 @@ export default function DocumentsPage() {
                   </Link>
                   <button
                     type="button"
-                    onClick={requestDocumentRemovalPlan}
+                    onClick={excludeDocumentFromProcessing}
                     disabled={drawer.removalBusy || !drawer.document?.file_id}
                     className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
-                    title={t('Queues a non-destructive cleanup review. It does not delete the source file, secure workspace copy, search index, or relationship data.')}
+                    title={t('Exclude this file from workspace document lists and text/search processing. It does not delete the original source file or secure workspace copy.')}
                   >
                     <Trash2 size={16} aria-hidden="true" />
-                    {drawer.removalBusy ? t('Queueing') : t('Request cleanup review')}
+                    {drawer.removalBusy ? t('Excluding') : t('Exclude from processing')}
                   </button>
                 </div>
               </section>
