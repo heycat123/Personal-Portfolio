@@ -12,6 +12,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { chooseDocumentRemovalPayload } from '../utils/documentRemoval';
 import { formatDateTime } from '../utils/formatters';
 
 function parseLowTextPages(value) {
@@ -279,8 +280,8 @@ export default function DocumentDetailPage() {
     if (!document?.file_id || state.removalBusy) {
       return;
     }
-    const reason = window.prompt(t('Why should this document be excluded from this workspace processing list? The original source file and secure copy will not be deleted.'));
-    if (reason === null) {
+    const removalPayload = chooseDocumentRemovalPayload(t);
+    if (!removalPayload) {
       return;
     }
     setState((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
@@ -289,9 +290,7 @@ export default function DocumentDetailPage() {
       const result = await evidenceApi.excludeDocument(
         caseId,
         document.file_id,
-        {
-          reason: reason.trim(),
-        },
+        removalPayload,
         { token },
       );
       recordFingerprint(result, 'Exclude document from processing');
@@ -338,10 +337,10 @@ export default function DocumentDetailPage() {
               onClick={excludeDocumentFromProcessing}
               disabled={!document || state.removalBusy}
               className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
-              title={t('Exclude this file from workspace document lists and text/search processing. It does not delete the original source file or secure workspace copy.')}
+              title={t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.')}
             >
               <Trash2 size={16} aria-hidden="true" />
-              {state.removalBusy ? t('Excluding') : t('Exclude from processing')}
+              {state.removalBusy ? t('Removing') : t('Remove from workspace')}
             </button>
             <Link
               to={`/evidence/cases/${caseId}/documents`}
@@ -380,7 +379,7 @@ export default function DocumentDetailPage() {
       {state.removalError ? <div className="mb-5"><ErrorPanel title={t('Exclude action failed')} error={state.removalError} /></div> : null}
       {state.removalJob ? (
         <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
-          <div className="font-semibold">{t('File excluded from processing. Nothing was deleted.')}</div>
+          <div className="font-semibold">{t(state.removalJob.display_status || 'Removed from workspace')}</div>
           <div className="mt-1 break-words">
             {state.removalJob.display_message ? t(state.removalJob.display_message) : ''}
           </div>

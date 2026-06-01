@@ -227,6 +227,7 @@ export function jobProcessingDocumentStatus(document) {
     failed: 'Needs attention',
     cancelled: 'Cancelled',
     excluded_from_case: 'Excluded from processing',
+    workspace_copy_deleted: 'Workspace copy deleted',
   };
   const badgeStatuses = {
     waiting: 'pending',
@@ -243,6 +244,7 @@ export function jobProcessingDocumentStatus(document) {
     failed: 'failed',
     cancelled: 'degraded',
     excluded_from_case: 'unknown',
+    workspace_copy_deleted: 'unknown',
   };
   return {
     rawStatus,
@@ -274,6 +276,7 @@ function documentProgressFallback(rawStatus) {
     'cancelled',
     'canceled',
     'excluded_from_case',
+    'workspace_copy_deleted',
   ].includes(rawStatus)) {
     return 100;
   }

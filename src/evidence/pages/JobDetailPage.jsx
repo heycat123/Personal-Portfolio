@@ -13,6 +13,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { chooseDocumentRemovalPayload, removalResultTitle } from '../utils/documentRemoval';
 import { formatDateTime } from '../utils/formatters';
 import {
   isDocumentProcessingRequest,
@@ -182,8 +183,8 @@ export default function JobDetailPage() {
       return;
     }
 
-    const reason = window.prompt(t('Why should this file be excluded from this workspace processing list? The original source file and secure copy will not be deleted.'));
-    if (reason === null) {
+    const removalPayload = chooseDocumentRemovalPayload(t);
+    if (!removalPayload) {
       return;
     }
 
@@ -200,7 +201,7 @@ export default function JobDetailPage() {
         caseId,
         fileId,
         {
-          reason: reason.trim() || 'File does not belong in this case.',
+          ...removalPayload,
           source_job_id: jobId,
         },
         { token },
@@ -212,6 +213,7 @@ export default function JobDetailPage() {
         cleanupError: null,
         cleanupNotice: {
           fileName: jobProcessingDocumentName(document),
+          title: removalResultTitle(result.data, t),
           message: result.data?.display_message,
         },
       }));
@@ -252,7 +254,7 @@ export default function JobDetailPage() {
   const canArchive = Boolean(job && progress && !progress.canCancel && !job.archived_at);
   const isProcessingRequest = isDocumentProcessingRequest(job);
   const processingDocuments = isProcessingRequest
-    ? jobProcessingDocuments(job).filter((document) => String(document?.status || '').toLowerCase() !== 'excluded_from_case')
+    ? jobProcessingDocuments(job).filter((document) => !['excluded_from_case', 'workspace_copy_deleted'].includes(String(document?.status || '').toLowerCase()))
     : [];
   const processingDocumentCount = isProcessingRequest ? jobProcessingRequestedCount(job) : 0;
   const excludedProcessingDocumentCount = isProcessingRequest
@@ -429,7 +431,7 @@ export default function JobDetailPage() {
                     {t('Each listed file shows its current text/search processing state. Files that need OCR or another extractor will stay marked for review.')}
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('If a file does not belong in this case, exclude it from processing. The original source file and secure workspace copy are kept, but the file stops counting against search readiness.')}
+                    {t('If a file does not belong in this case, remove it from workspace processing. Soft remove keeps the secure workspace copy. Delete workspace copy removes the secure cloud copy too. The original source file is not deleted.')}
                   </p>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {t('If you want to keep the file, resolve it by uploading or exporting a searchable copy, such as a PDF, image, text file, or transcript, then start text/search processing again.')}
@@ -449,7 +451,7 @@ export default function JobDetailPage() {
               ) : null}
               {state.cleanupNotice ? (
                 <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
-                  <div className="font-semibold">{t('File excluded from processing. Nothing was deleted.')}</div>
+                  <div className="font-semibold">{state.cleanupNotice.title || t('Removed from workspace')}</div>
                   <div className="mt-1">
                     {state.cleanupNotice.fileName}
                     {state.cleanupNotice.message ? ` ${state.cleanupNotice.message}` : ''}
@@ -490,11 +492,11 @@ export default function JobDetailPage() {
                             type="button"
                             onClick={() => excludeProcessingDocument(document)}
                             disabled={!fileId || Boolean(state.cleanupLoadingFileId)}
-                            title={fileId ? t('Exclude this file from the workspace processing list. Nothing is deleted.') : t('Open Documents to review this file.')}
+                            title={fileId ? t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.') : t('Open Documents to review this file.')}
                             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                           >
                             <Trash2 size={14} aria-hidden="true" />
-                            {cleanupBusy ? t('Excluding') : t('Exclude from processing')}
+                            {cleanupBusy ? t('Removing') : t('Remove from workspace')}
                           </button>
                         </div>
                       </div>
