@@ -626,27 +626,26 @@ export default function JobDetailPage() {
                     return (
                       <article
                         key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}
-                        aria-label={canInspect ? t('Open document preview for {name}', { name: jobProcessingDocumentName(document) }) : undefined}
                         className={`grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm transition dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.35fr)_minmax(10rem,0.75fr)_minmax(12rem,1fr)_auto] ${
                           canInspect ? 'cursor-pointer hover:border-sky-300 hover:bg-sky-50/60 focus-within:border-sky-400 dark:hover:border-sky-900 dark:hover:bg-sky-950/20' : ''
                         }`}
-                        onClick={() => {
-                          if (canInspect) {
-                            openProcessingDocumentDrawer(document);
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (!canInspect || (event.key !== 'Enter' && event.key !== ' ')) {
-                            return;
-                          }
-                          event.preventDefault();
-                          openProcessingDocumentDrawer(document);
-                        }}
-                        role={canInspect ? 'button' : undefined}
-                        tabIndex={canInspect ? 0 : undefined}
+                        onClick={() => canInspect && openProcessingDocumentDrawer(document)}
                       >
                         <div className="min-w-0">
-                          <div className="break-words font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
+                          {canInspect ? (
+                            <button
+                              type="button"
+                              className="break-words text-left font-semibold text-gray-950 hover:text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500/40 dark:text-white dark:hover:text-sky-300"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openProcessingDocumentDrawer(document);
+                              }}
+                            >
+                              {jobProcessingDocumentName(document)}
+                            </button>
+                          ) : (
+                            <div className="break-words font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
+                          )}
                           <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                             {document?.origin_label || document?.source_provider || t('Source file')}
                           </div>
