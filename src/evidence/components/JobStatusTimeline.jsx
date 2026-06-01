@@ -2,21 +2,48 @@ import { CheckCircle2, Circle, Clock, XCircle } from 'lucide-react';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { formatDateTime, humanizeKey } from '../utils/formatters';
 
-function eventIcon(eventType) {
+function eventTone(eventType) {
   const normalized = String(eventType || '').toLowerCase();
   if (normalized.includes('succeed') || normalized.includes('complete')) {
-    return CheckCircle2;
+    return 'success';
   }
   if (normalized.includes('fail') || normalized.includes('error')) {
-    return XCircle;
+    return 'error';
   }
   if (normalized.includes('start') || normalized.includes('run')) {
-    return Clock;
+    return 'running';
   }
-  return Circle;
+  return 'default';
 }
 
-export default function JobStatusTimeline({ events, limit = 12 }) {
+function EventItem({ event }) {
+  const { t } = useLocaleSettings();
+  const tone = eventTone(event.event_type);
+  return (
+    <li className="flex gap-2 pb-2 last:pb-0">
+      <div className="mt-0.5 text-gray-500 dark:text-gray-400">
+        {tone === 'success' ? <CheckCircle2 size={14} aria-hidden="true" /> : null}
+        {tone === 'error' ? <XCircle size={14} aria-hidden="true" /> : null}
+        {tone === 'running' ? <Clock size={14} aria-hidden="true" /> : null}
+        {tone === 'default' ? <Circle size={14} aria-hidden="true" /> : null}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">
+          {t(humanizeKey(event.event_type))}
+        </p>
+        <p
+          className="mt-0.5 overflow-hidden text-xs text-gray-600 dark:text-gray-400"
+          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
+        >
+          {event.message}
+        </p>
+        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-500">{formatDateTime(event.created_at)}</p>
+      </div>
+    </li>
+  );
+}
+
+export default function JobStatusTimeline({ events, limit = 4 }) {
   const { t } = useLocaleSettings();
   if (!events?.length) {
     return (
@@ -29,34 +56,35 @@ export default function JobStatusTimeline({ events, limit = 12 }) {
   const visibleEvents = Number.isFinite(Number(limit)) && Number(limit) > 0
     ? events.slice(-Number(limit))
     : events;
-  const hiddenCount = Math.max(0, events.length - visibleEvents.length);
+  const olderEvents = Number.isFinite(Number(limit)) && Number(limit) > 0
+    ? events.slice(0, Math.max(0, events.length - visibleEvents.length))
+    : [];
+  const hiddenCount = olderEvents.length;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
       {hiddenCount ? (
         <div className="border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
-          {t('Showing the latest {count} events. Older events stay available in diagnostics.', { count: visibleEvents.length })}
+          {t('Showing the latest {count} events. Older events are collapsed below.', { count: visibleEvents.length })}
         </div>
       ) : null}
-      <ol className="max-h-96 overflow-auto p-4">
-      {visibleEvents.map((event, index) => {
-        const Icon = eventIcon(event.event_type);
-        return (
-          <li key={`${event.event_type}-${event.created_at}-${index}`} className="flex gap-3 pb-4 last:pb-0">
-            <div className="mt-0.5 text-gray-500 dark:text-gray-400">
-              <Icon size={16} aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {t(humanizeKey(event.event_type))}
-              </p>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{event.message}</p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-500">{formatDateTime(event.created_at)}</p>
-            </div>
-          </li>
-        );
-      })}
+      <ol className="max-h-56 overflow-auto p-3">
+        {visibleEvents.map((event, index) => (
+          <EventItem key={`${event.event_type}-${event.created_at}-${index}`} event={event} />
+        ))}
       </ol>
+      {hiddenCount ? (
+        <details className="border-t border-gray-200 px-3 py-2 text-sm dark:border-gray-800">
+          <summary className="cursor-pointer font-semibold text-gray-700 hover:text-sky-700 dark:text-gray-300 dark:hover:text-sky-300">
+            {t('Show {count} older event(s)', { count: hiddenCount })}
+          </summary>
+          <ol className="mt-3 max-h-48 overflow-auto">
+            {olderEvents.map((event, index) => (
+              <EventItem key={`older-${event.event_type}-${event.created_at}-${index}`} event={event} />
+            ))}
+          </ol>
+        </details>
+      ) : null}
     </div>
   );
 }
