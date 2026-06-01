@@ -6,6 +6,7 @@ import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
+import AnimatedCount from '../components/AnimatedCount';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
@@ -23,11 +24,13 @@ import {
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
 function CompactProgress({ progress, t }) {
+  const percentLabel = progress.progressPercentLabel || `${progress.progressPercent}%`;
+  const detail = progress.progressEstimateDetail || progress.progressText;
   return (
-    <div className="min-w-0 text-xs" title={t(progress.progressText)}>
+    <div className="min-w-0 text-xs" title={t(detail)}>
       <div className="flex items-center justify-between gap-2 font-semibold text-gray-800 dark:text-gray-100">
         <span className="truncate">{t(progress.progressLabel)}</span>
-        <span className="shrink-0">{progress.progressPercent}%</span>
+        <span className="shrink-0">{percentLabel}</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-black/40">
         <div
@@ -36,6 +39,9 @@ function CompactProgress({ progress, t }) {
         />
       </div>
       <p className="mt-1 truncate text-gray-500 dark:text-gray-400">{t(progress.progressText)}</p>
+      {progress.progressEstimateDetail ? (
+        <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-500">{t(progress.progressEstimateDetail)}</p>
+      ) : null}
     </div>
   );
 }
@@ -117,7 +123,7 @@ export default function JobsPage() {
 
   const liveJobs = useJobStatusPolling({
     caseId,
-    intervalMs: 5000,
+    intervalMs: 2000,
     onJobsChange: handleLiveJobs,
   });
 
@@ -171,6 +177,13 @@ export default function JobsPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.retryJob(caseId, jobId, { token });
       recordFingerprint(result, 'Retry job');
+      const retriedJob = result.data?.job || result.data?.new_job;
+      if (retriedJob?.job_id) {
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) => (job.job_id === retriedJob.job_id ? retriedJob : job)),
+        }));
+      }
       await loadJobs({ quiet: true });
     } catch (error) {
       setState((current) => ({ ...current, actionError: error }));
@@ -210,7 +223,8 @@ export default function JobsPage() {
   const processingJobs = [...state.jobs]
     .filter(isDocumentProcessingRequest)
     .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
-  const latestProcessingJob = processingJobs[0] || null;
+  const activeProcessingJob = processingJobs.find((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
+  const latestProcessingJob = activeProcessingJob || processingJobs[0] || null;
   const latestProcessingProgress = latestProcessingJob ? jobProgressModel(latestProcessingJob) : null;
   const activeProcessingJobs = processingJobs.filter((job) => jobProgressModel(job).canCancel || isActiveJob(job)).length;
   const processingDocumentCount = processingJobs.reduce((sum, job) => sum + (jobProcessingRequestedCount(job) || jobProcessingDocuments(job).length || 0), 0);
@@ -347,7 +361,7 @@ export default function JobsPage() {
 
       <div className="mb-4 flex flex-wrap gap-2">
         <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
-          {t('Live updates: {count} active', { count: activeJobCount || liveJobs.activeCount })}
+          {t('Live updates:')} <AnimatedCount value={activeJobCount || liveJobs.activeCount} /> {t('active')}
         </span>
         {liveJobs.lastFinishedJob ? (
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
@@ -374,16 +388,16 @@ export default function JobsPage() {
                 <h2 className="font-semibold">{t('Processing at a glance')}</h2>
                 <StatusBadge status={latestProcessingProgress.badgeStatus} label={t(latestProcessingProgress.statusLabel)} />
                 <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
-                  {t('{count} processing job(s)', { count: processingJobs.length })}
+                  <AnimatedCount value={processingJobs.length} /> {t('processing job(s)')}
                 </span>
                 {activeProcessingJobs ? (
                   <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
-                    {t('{count} active', { count: activeProcessingJobs })}
+                    <AnimatedCount value={activeProcessingJobs} /> {t('active')}
                   </span>
                 ) : null}
                 {processingDocumentCount ? (
                   <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
-                    {t('{count} copied file(s)', { count: processingDocumentCount })}
+                    <AnimatedCount value={processingDocumentCount} /> {t('copied file(s)')}
                   </span>
                 ) : null}
               </div>

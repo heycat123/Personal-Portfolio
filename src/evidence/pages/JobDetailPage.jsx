@@ -150,6 +150,10 @@ export default function JobDetailPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.retryJob(caseId, jobId, { token });
       recordFingerprint(result, 'Retry job');
+      const retriedJob = result.data?.job || result.data?.new_job;
+      if (retriedJob?.job_id === jobId) {
+        setState((current) => ({ ...current, job: retriedJob }));
+      }
       await loadJob();
     } catch (error) {
       setState((current) => ({ ...current, actionError: error }));
@@ -243,7 +247,7 @@ export default function JobDetailPage() {
     }
     const timerId = window.setInterval(() => {
       void loadJob({ quiet: true });
-    }, 2500);
+    }, 1500);
     return () => window.clearInterval(timerId);
   }, [loadJob, shouldLivePoll]);
 
@@ -358,8 +362,15 @@ export default function JobDetailPage() {
                   ) : null}
                   <ProgressMeter
                     value={progress.progressPercent}
+                    valueLabel={progress.progressPercentLabel}
                     label={t(progress.progressLabel)}
-                    detail={t('{percent}% processed. {meaning}', { percent: progress.progressPercent, meaning: progress.progressText })}
+                    detail={[
+                      t('{percentLabel} processed. {meaning}', {
+                        percentLabel: progress.progressPercentLabel,
+                        meaning: progress.progressText,
+                      }),
+                      progress.progressEstimateDetail ? t(progress.progressEstimateDetail) : null,
+                    ].filter(Boolean).join(' ')}
                     className="mt-3 max-w-lg"
                   />
                   {isProcessingRequest ? (

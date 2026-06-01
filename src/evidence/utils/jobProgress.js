@@ -4,6 +4,17 @@ const ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling']);
 const TERMINAL_SUCCESS = new Set(['succeeded', 'success', 'completed']);
 const TERMINAL_ATTENTION = new Set(['failed', 'cancelled', 'canceled']);
 const DOCUMENT_PROCESSING_TOTAL_STEPS = 5;
+const ESTIMATED_PROGRESS_CAP = 90;
+const ESTIMATED_QUEUE_CAP = 12;
+const DEFAULT_EXPECTED_SECONDS = 180;
+const JOB_EXPECTED_SECONDS = {
+  noop: 12,
+  s3_storage_smoke: 75,
+  source_alignment_audit: 600,
+  agentic_quality_test: 900,
+  document_remove_plan: 150,
+  document_upload_register: 240,
+};
 
 function isLegacyDocumentProcessingRequest(job) {
   return job?.job_type === 'document_processing_request';
@@ -61,6 +72,53 @@ function clampPercent(value) {
     return null;
   }
   return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function parseTime(value) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function elapsedSeconds(job) {
+  const startedAt = parseTime(job?.started_at || job?.claimed_at || job?.created_at);
+  if (!startedAt) {
+    return null;
+  }
+  return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+}
+
+function expectedSeconds(job) {
+  const input = inputPayload(job);
+  const result = resultPayload(job);
+  const explicit = firstNumber(
+    job?.estimated_seconds,
+    result.estimated_seconds,
+    input.estimated_seconds,
+    result.expected_seconds,
+    input.expected_seconds,
+  );
+  if (explicit && explicit > 0) {
+    return explicit;
+  }
+  return JOB_EXPECTED_SECONDS[job?.job_type] || DEFAULT_EXPECTED_SECONDS;
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) {
+    return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const extraMinutes = minutes % 60;
+  return extraMinutes ? `${hours}h ${extraMinutes}m` : `${hours}h`;
 }
 
 function userFacingProcessingText(value) {
@@ -320,12 +378,50 @@ function fallbackPercent(status) {
     return 0;
   }
   if (status === 'running' || status === 'cancelling') {
-    return 50;
+    return 15;
   }
   if (TERMINAL_SUCCESS.has(status)) {
     return 100;
   }
   return 0;
+}
+
+function estimatedActiveProgress(job, status, backendPercent, documentSummary) {
+  if (!ACTIVE_STATUSES.has(status) || documentSummary || isDocumentProcessingRequest(job)) {
+    return null;
+  }
+
+  const elapsed = elapsedSeconds(job);
+  if (elapsed === null) {
+    return null;
+  }
+
+  const expected = expectedSeconds(job);
+  const elapsedLabel = formatDuration(elapsed);
+
+  if (status === 'queued') {
+    const queuedPercent = Math.min(ESTIMATED_QUEUE_CAP, Math.max(0, Math.round((elapsed / Math.max(expected, 1)) * ESTIMATED_QUEUE_CAP)));
+    return {
+      progressPercent: Math.max(backendPercent ?? 0, queuedPercent),
+      progressEstimated: true,
+      progressPercentLabel: `~${Math.max(backendPercent ?? 0, queuedPercent)}%`,
+      progressEstimateDetail: `Estimated from elapsed time. Waiting for a worker; ${elapsedLabel} elapsed.`,
+    };
+  }
+
+  const runningBase = Math.round(15 + Math.min(75, (elapsed / Math.max(expected, 1)) * 75));
+  const progressPercent = Math.min(ESTIMATED_PROGRESS_CAP, Math.max(backendPercent ?? 0, runningBase));
+  const remaining = Math.max(0, expected - elapsed);
+  const progressEstimateDetail = remaining > 0
+    ? `Estimated from elapsed time. About ${formatDuration(remaining)} remaining if this run follows recent timing.`
+    : 'Estimated from elapsed time. This is taking longer than usual; waiting for the next worker checkpoint.';
+
+  return {
+    progressPercent,
+    progressEstimated: true,
+    progressPercentLabel: `~${progressPercent}%`,
+    progressEstimateDetail,
+  };
 }
 
 function fallbackStatusLabel(status) {
@@ -475,9 +571,19 @@ export function jobProgressModel(job) {
     display.progress_percent,
     resolution.progress_percent,
   ));
-  const progressPercent = backendPercent
-    ?? documentSummary?.progressPercent
+  const backendLooksGeneric = ACTIVE_STATUSES.has(status)
+    && !documentSummary
+    && !isDocumentProcessingRequest(job)
+    && (backendPercent === null || backendPercent === 0 || backendPercent === 50);
+  const estimatedProgress = backendLooksGeneric
+    ? estimatedActiveProgress(job, status, backendPercent, documentSummary)
+    : null;
+  const progressPercent = documentSummary?.progressPercent
+    ?? estimatedProgress?.progressPercent
+    ?? backendPercent
     ?? (isDocumentProcessingRequest(job) && recorded ? 0 : fallbackPercent(status));
+  const progressEstimated = Boolean(estimatedProgress);
+  const progressPercentLabel = estimatedProgress?.progressPercentLabel || `${progressPercent}%`;
   const statusLabel = userFacingProcessingText(firstString(
     job?.display_status,
     display.display_status,
@@ -585,6 +691,9 @@ export function jobProgressModel(job) {
     statusLabel,
     badgeStatus: documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status),
     progressPercent,
+    progressPercentLabel,
+    progressEstimated,
+    progressEstimateDetail: estimatedProgress?.progressEstimateDetail || null,
     progressText,
     message: userMessage || userFacingProcessingText(fallbackMessage),
     nextActionLabel,

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import AnimatedCount from '../components/AnimatedCount';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
@@ -117,6 +118,14 @@ function QuickActionCard({ icon, title, detail, to, tone = 'default' }) {
   );
 }
 
+function PendingProcessingText({ count, suffix }) {
+  return (
+    <>
+      <AnimatedCount value={count} className="font-semibold" /> {suffix}
+    </>
+  );
+}
+
 function ReviewCard({ icon, title, detail, to, count, countLabel }) {
   return (
     <Link
@@ -135,7 +144,7 @@ function ReviewCard({ icon, title, detail, to, count, countLabel }) {
         </div>
         {Number.isFinite(count) ? (
           <div className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-            {count} {countLabel}
+            <AnimatedCount value={count} /> {countLabel}
           </div>
         ) : null}
       </div>
@@ -157,8 +166,10 @@ export default function DashboardPage() {
     health: null,
   });
 
-  const loadDashboard = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: null }));
+  const loadDashboard = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) {
+      setState((current) => ({ ...current, loading: true, error: null }));
+    }
     const token = await getAccessToken();
     const requests = [
       { key: 'summary', label: 'Case summary', promise: evidenceApi.getCaseSummary(caseId, { token }) },
@@ -195,7 +206,9 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timerId);
   }, [loadDashboard]);
 
-  const counts = state.summary?.counts || state.health?.summary?.counts || {};
+  const counts = canSeeOperations && state.health?.summary?.counts
+    ? state.health.summary.counts
+    : state.summary?.counts || state.health?.summary?.counts || {};
   const google = useMemo(
     () => state.connectors.find((provider) => provider.provider === 'google_drive') || null,
     [state.connectors],
@@ -255,6 +268,17 @@ export default function DashboardPage() {
       : canSeeOperations
         ? `/evidence/cases/${caseId}/health`
         : `/evidence/cases/${caseId}/documents`;
+  const shouldLivePollReadiness = copiedFilesPendingProcessing > 0;
+
+  useEffect(() => {
+    if (!shouldLivePollReadiness) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      void loadDashboard({ quiet: true });
+    }, 5000);
+    return () => window.clearInterval(timerId);
+  }, [loadDashboard, shouldLivePollReadiness]);
 
   const readiness = [
     {
@@ -295,7 +319,12 @@ export default function DashboardPage() {
         : systemReady
           ? t('Files are ready to search and review.')
           : copiedFilesPendingProcessing > 0
-            ? t('{count} copied file(s) still need text/search processing before full Ask Documents coverage.', { count: copiedFilesPendingProcessing })
+            ? (
+              <PendingProcessingText
+                count={copiedFilesPendingProcessing}
+                suffix={t('copied file(s) still need text/search processing before full Ask Documents coverage.')}
+              />
+            )
           : systemWorking
             ? t('Documents are still being prepared for search and Q&A.')
             : t('Add or connect source files to prepare them for search.'),
@@ -331,7 +360,11 @@ export default function DashboardPage() {
               <div>
                 <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
                 <p className="mt-1">
-                  {t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing })}
+                  <AnimatedCount value={copiedFilesPendingProcessing} className="font-semibold" />{' '}
+                  {t('copied file(s) still need text/search processing before they are fully available in Ask Documents.')}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                  {t('Live updates are on while processing is catching up.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {t('Why this happened: the files are saved in the workspace, but the extraction and search-indexing run has not processed them yet.')}
@@ -385,7 +418,12 @@ export default function DashboardPage() {
             icon={FileText}
             title={t('Documents needing attention')}
             detail={copiedFilesPendingProcessing > 0
-              ? t('{count} copied file(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing })
+              ? (
+                <PendingProcessingText
+                  count={copiedFilesPendingProcessing}
+                  suffix={t('copied file(s) still need text/search processing before they are fully available in Ask Documents.')}
+                />
+              )
               : t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.')}
             to={`/evidence/cases/${caseId}/documents`}
             count={documentsNeedingAttention}

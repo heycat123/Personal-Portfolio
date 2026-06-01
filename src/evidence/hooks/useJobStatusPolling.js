@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { evidenceApi } from '../services/evidenceApi';
 
-const ACTIVE_STATUSES = new Set(['queued', 'running']);
+const ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling']);
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
 
 export function isActiveJob(job) {
@@ -84,10 +84,19 @@ export default function useJobStatusPolling({
     const timerId = window.setInterval(() => {
       void poll();
     }, intervalMs);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void poll();
+      }
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
 
     return () => {
       mountedRef.current = false;
       window.clearInterval(timerId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [caseId, enabled, intervalMs, poll, runImmediately]);
 

@@ -2,10 +2,12 @@ export default function ProgressMeter({
   value = 0,
   label,
   detail,
+  valueLabel,
   className = '',
 }) {
   const percent = Math.max(0, Math.min(100, Number(value) || 0));
   const displayLabel = label || `${percent}%`;
+  const displayValue = valueLabel || `${percent}%`;
 
   return (
     <div
@@ -14,11 +16,12 @@ export default function ProgressMeter({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percent}
+      aria-valuetext={displayValue}
       aria-label={displayLabel}
     >
       <div className="mb-1 flex items-center justify-between gap-3 text-xs font-semibold text-gray-700 dark:text-gray-200">
         <span>{displayLabel}</span>
-        <span>{percent}%</span>
+        <span>{displayValue}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-black/40">
         <div
