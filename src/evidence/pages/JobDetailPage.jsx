@@ -150,6 +150,10 @@ export default function JobDetailPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.retryJob(caseId, jobId, { token });
       recordFingerprint(result, 'Retry job');
+      const retriedJob = result.data?.job || result.data?.new_job;
+      if (retriedJob?.job_id === jobId) {
+        setState((current) => ({ ...current, job: retriedJob }));
+      }
       await loadJob();
     } catch (error) {
       setState((current) => ({ ...current, actionError: error }));

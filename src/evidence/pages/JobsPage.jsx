@@ -172,6 +172,13 @@ export default function JobsPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.retryJob(caseId, jobId, { token });
       recordFingerprint(result, 'Retry job');
+      const retriedJob = result.data?.job || result.data?.new_job;
+      if (retriedJob?.job_id) {
+        setState((current) => ({
+          ...current,
+          jobs: current.jobs.map((job) => (job.job_id === retriedJob.job_id ? retriedJob : job)),
+        }));
+      }
       await loadJobs({ quiet: true });
     } catch (error) {
       setState((current) => ({ ...current, actionError: error }));
