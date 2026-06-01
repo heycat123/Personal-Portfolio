@@ -1,25 +1,22 @@
-export function chooseDocumentRemovalPayload(t, { defaultReason = 'File does not belong in this case.' } = {}) {
-  const reason = window.prompt(t('Why should this file be removed from this workspace?'));
-  if (reason === null) {
-    return null;
-  }
-  const deleteWorkspaceCopy = window.confirm(
-    t('Choose removal type. Press OK to delete the secure workspace copy from cloud storage. Press Cancel to only remove it from workspace processing and search readiness. The original source file is not deleted.'),
-  );
-  if (deleteWorkspaceCopy) {
-    const confirmation = window.prompt(t('Type DELETE to confirm deleting the secure workspace copy. The original source file will not be deleted.'));
-    if (confirmation !== 'DELETE') {
-      return null;
-    }
-  }
-  return {
-    reason: reason.trim() || defaultReason,
-    removal_mode: deleteWorkspaceCopy ? 'delete_workspace_copy' : 'soft_exclude',
-    confirm_delete_workspace_copy: deleteWorkspaceCopy,
-  };
-}
-
 export function removalResultTitle(result, t) {
   return t(result?.display_status || 'Removed from workspace');
+}
+
+export function removalResultDetail(result, payload, t) {
+  const mode = payload?.removal_mode || result?.removal_mode;
+  const displayMessage = result?.display_message ? t(result.display_message) : '';
+  const workspaceCopyDeleted = result?.secure_workspace_copy_deleted === true;
+  const workspaceCopyPreserved = result?.secure_workspace_copy_preserved === true;
+  const originalPreserved = result?.original_source_preserved !== false && result?.original_source_deleted !== true;
+  const actionMessage = mode === 'delete_workspace_copy' || workspaceCopyDeleted
+    ? t('This file was removed from workspace processing, search readiness, and source coverage. The Evidence AI secure workspace copy was deleted or queued for deletion.')
+    : workspaceCopyPreserved
+      ? t('This file was removed from workspace processing, search readiness, and source coverage. The secure workspace copy was kept for audit and support review.')
+      : t('This file was removed from workspace processing, search readiness, and source coverage.');
+  const originalMessage = originalPreserved
+    ? t('The original source file was not deleted.')
+    : '';
+  const resolutionMessage = result?.resolution?.user_message ? t(result.resolution.user_message) : '';
+  return [displayMessage, actionMessage, originalMessage, resolutionMessage].filter(Boolean).join(' ');
 }
 

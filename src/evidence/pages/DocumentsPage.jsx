@@ -2,6 +2,8 @@ import { Download, ExternalLink, FileText, Info, Search, ShieldAlert, Trash2, X 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
+import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
+import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
 import ErrorPanel from '../components/ErrorPanel';
 import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
@@ -13,7 +15,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
-import { chooseDocumentRemovalPayload } from '../utils/documentRemoval';
+import { removalResultDetail } from '../utils/documentRemoval';
 import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
@@ -119,38 +121,6 @@ function FactorTags({ document, t, compact = false }) {
           +{codes.length - visibleCodes.length}
         </span>
       ) : null}
-    </div>
-  );
-}
-
-function DocumentPreviewPanel({ previewUrl, contentType, fileName, t }) {
-  if (!previewUrl) {
-    return null;
-  }
-  const normalizedType = String(contentType || '').toLowerCase();
-  if (normalizedType.startsWith('image/')) {
-    return (
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-black/30">
-        <img src={previewUrl} alt={fileName || t('Document preview')} className="max-h-[55vh] w-full object-contain" />
-      </div>
-    );
-  }
-  if (normalizedType.includes('pdf') || normalizedType.startsWith('text/')) {
-    return (
-      <iframe
-        title={fileName || t('Document preview')}
-        src={previewUrl}
-        className="h-[58vh] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
-      />
-    );
-  }
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
-      <p>{t('Inline preview is not available for this file type.')}</p>
-      <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800">
-        <ExternalLink size={16} aria-hidden="true" />
-        {t('Open source file')}
-      </a>
     </div>
   );
 }
@@ -405,6 +375,8 @@ export default function DocumentsPage() {
     removalBusy: false,
     removalError: null,
     removalJob: null,
+    removalMessage: null,
+    removalDialogOpen: false,
   });
   const [expandedDocuments, setExpandedDocuments] = useState({});
   const [documentDetails, setDocumentDetails] = useState({});
@@ -612,6 +584,8 @@ export default function DocumentsPage() {
       removalBusy: false,
       removalError: null,
       removalJob: null,
+      removalMessage: null,
+      removalDialogOpen: false,
     });
     try {
       const token = await getAccessToken();
@@ -634,6 +608,8 @@ export default function DocumentsPage() {
         removalBusy: false,
         removalError: null,
         removalJob: null,
+        removalMessage: null,
+        removalDialogOpen: false,
       });
       if (detailDocument.s3_key) {
         try {
@@ -675,16 +651,41 @@ export default function DocumentsPage() {
     });
   };
 
-  const excludeDocumentFromProcessing = useCallback(async () => {
+  const openRemovalDialog = useCallback(() => {
+    if (!drawer.document?.file_id || drawer.removalBusy) {
+      return;
+    }
+    setDrawer((current) => ({
+      ...current,
+      removalDialogOpen: true,
+      removalError: null,
+      removalJob: null,
+      removalMessage: null,
+    }));
+  }, [drawer.document?.file_id, drawer.removalBusy]);
+
+  const closeRemovalDialog = useCallback(() => {
+    if (drawer.removalBusy) {
+      return;
+    }
+    setDrawer((current) => ({ ...current, removalDialogOpen: false }));
+  }, [drawer.removalBusy]);
+
+  const excludeDocumentFromProcessing = useCallback(async (removalPayload) => {
     const document = drawer.document;
     if (!document?.file_id || drawer.removalBusy) {
       return;
     }
-    const removalPayload = chooseDocumentRemovalPayload(t);
     if (!removalPayload) {
       return;
     }
-    setDrawer((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
+    setDrawer((current) => ({
+      ...current,
+      removalBusy: true,
+      removalError: null,
+      removalJob: null,
+      removalMessage: null,
+    }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.excludeDocument(
@@ -699,6 +700,8 @@ export default function DocumentsPage() {
         removalBusy: false,
         removalError: null,
         removalJob: result.data,
+        removalMessage: removalResultDetail(result.data, removalPayload, t),
+        removalDialogOpen: false,
       }));
       await loadDocuments();
     } catch (error) {
@@ -1341,7 +1344,7 @@ export default function DocumentsPage() {
                 {drawer.removalJob ? (
                   <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                     <div className="font-semibold">{t(drawer.removalJob.display_status || 'Removed from workspace')}</div>
-                    {drawer.removalJob.display_message ? <div className="mt-1">{t(drawer.removalJob.display_message)}</div> : null}
+                    {drawer.removalMessage ? <div className="mt-1">{drawer.removalMessage}</div> : null}
                   </div>
                 ) : null}
 
@@ -1355,7 +1358,7 @@ export default function DocumentsPage() {
                   </Link>
                   <button
                     type="button"
-                    onClick={excludeDocumentFromProcessing}
+                    onClick={openRemovalDialog}
                     disabled={drawer.removalBusy || !drawer.document?.file_id}
                     className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
                     title={t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.')}
@@ -1373,17 +1376,14 @@ export default function DocumentsPage() {
                 </div>
                 {drawer.previewLoading ? (
                   <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>
-                ) : drawer.previewError ? (
-                  <ErrorPanel title={t('Source file preview failed')} error={drawer.previewError} />
-                ) : drawer.previewUrl ? (
+                ) : (
                   <DocumentPreviewPanel
                     previewUrl={drawer.previewUrl}
-                    contentType={drawer.previewContentType}
+                    previewError={drawer.previewError}
+                    contentType={drawer.previewContentType || drawer.document?.media_type}
                     fileName={drawer.document?.original_filename}
-                    t={t}
+                    document={drawer.document}
                   />
-                ) : (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{t('No source file preview is available for this document yet.')}</p>
                 )}
               </section>
 
@@ -1410,6 +1410,14 @@ export default function DocumentsPage() {
           </div>
         </div>
       ) : null}
+      <DocumentRemovalDialog
+        busy={drawer.removalBusy}
+        documentName={drawer.document?.original_filename || drawer.document?.file_id}
+        hasSecureWorkspaceCopy={Boolean(drawer.document?.s3_key)}
+        onClose={closeRemovalDialog}
+        onConfirm={excludeDocumentFromProcessing}
+        open={Boolean(drawer.open && drawer.removalDialogOpen)}
+      />
     </div>
   );
 }

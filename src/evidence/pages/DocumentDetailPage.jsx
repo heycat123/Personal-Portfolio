@@ -2,6 +2,8 @@ import { ArrowLeft, ExternalLink, FileText, Languages, Play, Trash2 } from 'luci
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
+import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
+import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
 import ErrorPanel from '../components/ErrorPanel';
 import MetricTile from '../components/MetricTile';
 import PageHeader from '../components/PageHeader';
@@ -12,7 +14,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
-import { chooseDocumentRemovalPayload } from '../utils/documentRemoval';
+import { removalResultDetail } from '../utils/documentRemoval';
 import { formatDateTime } from '../utils/formatters';
 
 function parseLowTextPages(value) {
@@ -118,38 +120,6 @@ function FactorTags({ document, t }) {
   );
 }
 
-function DocumentPreviewPanel({ previewUrl, contentType, fileName, t }) {
-  if (!previewUrl) {
-    return null;
-  }
-  const normalizedType = String(contentType || '').toLowerCase();
-  if (normalizedType.startsWith('image/')) {
-    return (
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-black/30">
-        <img src={previewUrl} alt={fileName || t('Document preview')} className="max-h-[70vh] w-full object-contain" />
-      </div>
-    );
-  }
-  if (normalizedType.includes('pdf') || normalizedType.startsWith('text/')) {
-    return (
-      <iframe
-        title={fileName || t('Document preview')}
-        src={previewUrl}
-        className="h-[72vh] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-800"
-      />
-    );
-  }
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
-      <p>{t('Inline preview is not available for this file type.')}</p>
-      <a href={previewUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800">
-        <ExternalLink size={16} aria-hidden="true" />
-        {t('Open source file')}
-      </a>
-    </div>
-  );
-}
-
 export default function DocumentDetailPage() {
   const { caseId, fileId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -171,6 +141,8 @@ export default function DocumentDetailPage() {
     removalBusy: false,
     removalError: null,
     removalJob: null,
+    removalMessage: null,
+    removalDialogOpen: false,
   });
 
   const loadDocument = useCallback(async () => {
@@ -198,6 +170,8 @@ export default function DocumentDetailPage() {
         removalBusy: false,
         removalError: null,
         removalJob: null,
+        removalMessage: null,
+        removalDialogOpen: false,
       });
       if (document?.s3_key) {
         try {
@@ -276,15 +250,40 @@ export default function DocumentDetailPage() {
     }
   }, [caseId, document?.content_hash, document?.file_id, getAccessToken, preferences.language, recordFingerprint]);
 
-  const excludeDocumentFromProcessing = useCallback(async () => {
+  const openRemovalDialog = useCallback(() => {
     if (!document?.file_id || state.removalBusy) {
       return;
     }
-    const removalPayload = chooseDocumentRemovalPayload(t);
+    setState((current) => ({
+      ...current,
+      removalDialogOpen: true,
+      removalError: null,
+      removalJob: null,
+      removalMessage: null,
+    }));
+  }, [document?.file_id, state.removalBusy]);
+
+  const closeRemovalDialog = useCallback(() => {
+    if (state.removalBusy) {
+      return;
+    }
+    setState((current) => ({ ...current, removalDialogOpen: false }));
+  }, [state.removalBusy]);
+
+  const excludeDocumentFromProcessing = useCallback(async (removalPayload) => {
+    if (!document?.file_id || state.removalBusy) {
+      return;
+    }
     if (!removalPayload) {
       return;
     }
-    setState((current) => ({ ...current, removalBusy: true, removalError: null, removalJob: null }));
+    setState((current) => ({
+      ...current,
+      removalBusy: true,
+      removalError: null,
+      removalJob: null,
+      removalMessage: null,
+    }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.excludeDocument(
@@ -294,13 +293,15 @@ export default function DocumentDetailPage() {
         { token },
       );
       recordFingerprint(result, 'Exclude document from processing');
+      await loadDocument();
       setState((current) => ({
         ...current,
         removalBusy: false,
         removalError: null,
         removalJob: result.data,
+        removalMessage: removalResultDetail(result.data, removalPayload, t),
+        removalDialogOpen: false,
       }));
-      await loadDocument();
     } catch (error) {
       setState((current) => ({ ...current, removalBusy: false, removalError: error }));
     }
@@ -334,7 +335,7 @@ export default function DocumentDetailPage() {
             </button>
             <button
               type="button"
-              onClick={excludeDocumentFromProcessing}
+              onClick={openRemovalDialog}
               disabled={!document || state.removalBusy}
               className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
               title={t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.')}
@@ -381,7 +382,7 @@ export default function DocumentDetailPage() {
         <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="font-semibold">{t(state.removalJob.display_status || 'Removed from workspace')}</div>
           <div className="mt-1 break-words">
-            {state.removalJob.display_message ? t(state.removalJob.display_message) : ''}
+            {state.removalMessage || ''}
           </div>
         </div>
       ) : null}
@@ -409,12 +410,15 @@ export default function DocumentDetailPage() {
             </div>
             {state.previewLoading ? (
               <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>
-            ) : state.previewError ? (
-              <ErrorPanel title={t('Source file preview failed')} error={state.previewError} />
-            ) : state.previewUrl ? (
-              <DocumentPreviewPanel previewUrl={state.previewUrl} contentType={state.previewContentType} fileName={document.original_filename} t={t} />
             ) : (
-              <p className="text-sm text-gray-600 dark:text-gray-400">{t('No source file preview is available for this document yet.')}</p>
+              <DocumentPreviewPanel
+                previewUrl={state.previewUrl}
+                previewError={state.previewError}
+                contentType={state.previewContentType || document.media_type}
+                fileName={document.original_filename}
+                document={document}
+                maxHeightClass="max-h-[70vh]"
+              />
             )}
           </div>
 
@@ -530,6 +534,14 @@ export default function DocumentDetailPage() {
           {t('Loading document.')}
         </div>
       ) : null}
+      <DocumentRemovalDialog
+        busy={state.removalBusy}
+        documentName={document?.original_filename || document?.file_id}
+        hasSecureWorkspaceCopy={Boolean(document?.s3_key)}
+        onClose={closeRemovalDialog}
+        onConfirm={excludeDocumentFromProcessing}
+        open={Boolean(state.removalDialogOpen)}
+      />
     </div>
   );
 }

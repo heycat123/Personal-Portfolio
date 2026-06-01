@@ -1,7 +1,9 @@
-import { Archive, ArrowLeft, Ban, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
+import { Archive, ArrowLeft, Ban, FileText, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
+import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
+import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
 import JobStatusTimeline from '../components/JobStatusTimeline';
 import MetricTile from '../components/MetricTile';
 import PageHeader from '../components/PageHeader';
@@ -13,7 +15,7 @@ import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
-import { chooseDocumentRemovalPayload, removalResultTitle } from '../utils/documentRemoval';
+import { removalResultDetail, removalResultTitle } from '../utils/documentRemoval';
 import { formatDateTime } from '../utils/formatters';
 import {
   isDocumentProcessingRequest,
@@ -103,8 +105,23 @@ export default function JobDetailPage() {
     cleanupLoadingFileId: null,
     cleanupError: null,
     cleanupNotice: null,
+    cleanupDocument: null,
+    cleanupDialogOpen: false,
     job: null,
     fingerprint: null,
+  });
+  const [previewDrawer, setPreviewDrawer] = useState({
+    open: false,
+    loading: false,
+    error: null,
+    document: null,
+    batchDocument: null,
+    fingerprint: null,
+    previewLoading: false,
+    previewError: null,
+    previewUrl: null,
+    previewContentType: null,
+    previewFileName: '',
   });
 
   const loadJob = useCallback(async (options = {}) => {
@@ -177,13 +194,33 @@ export default function JobDetailPage() {
     }
   }, [caseId, getAccessToken, jobId, navigate, recordFingerprint]);
 
-  const excludeProcessingDocument = useCallback(async (document) => {
+  const openRemovalDialog = useCallback((document) => {
     const fileId = document?.file_id || document?.fileId || document?.id;
     if (!fileId || state.cleanupLoadingFileId) {
       return;
     }
+    setState((current) => ({
+      ...current,
+      cleanupDocument: document,
+      cleanupDialogOpen: true,
+      cleanupError: null,
+      cleanupNotice: null,
+    }));
+  }, [state.cleanupLoadingFileId]);
 
-    const removalPayload = chooseDocumentRemovalPayload(t);
+  const closeRemovalDialog = useCallback(() => {
+    if (state.cleanupLoadingFileId) {
+      return;
+    }
+    setState((current) => ({ ...current, cleanupDialogOpen: false }));
+  }, [state.cleanupLoadingFileId]);
+
+  const excludeProcessingDocument = useCallback(async (removalPayload) => {
+    const document = state.cleanupDocument;
+    const fileId = document?.file_id || document?.fileId || document?.id;
+    if (!fileId || state.cleanupLoadingFileId) {
+      return;
+    }
     if (!removalPayload) {
       return;
     }
@@ -211,10 +248,12 @@ export default function JobDetailPage() {
         ...current,
         cleanupLoadingFileId: null,
         cleanupError: null,
+        cleanupDialogOpen: false,
+        cleanupDocument: null,
         cleanupNotice: {
           fileName: jobProcessingDocumentName(document),
           title: removalResultTitle(result.data, t),
-          message: result.data?.display_message,
+          message: removalResultDetail(result.data, removalPayload, t),
         },
       }));
       await loadJob({ quiet: true });
@@ -225,7 +264,113 @@ export default function JobDetailPage() {
         cleanupError: error,
       }));
     }
-  }, [caseId, getAccessToken, jobId, loadJob, recordFingerprint, state.cleanupLoadingFileId, t]);
+  }, [caseId, getAccessToken, jobId, loadJob, recordFingerprint, state.cleanupDocument, state.cleanupLoadingFileId, t]);
+
+  const closeProcessingDocumentDrawer = useCallback(() => {
+    setPreviewDrawer((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        open: false,
+        loading: false,
+        error: null,
+        document: null,
+        batchDocument: null,
+        fingerprint: null,
+        previewLoading: false,
+        previewError: null,
+        previewUrl: null,
+        previewContentType: null,
+        previewFileName: '',
+      };
+    });
+  }, []);
+
+  const openProcessingDocumentDrawer = useCallback(async (document) => {
+    const fileId = document?.file_id || document?.fileId || document?.id;
+    if (!fileId) {
+      return;
+    }
+
+    setPreviewDrawer((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        open: true,
+        loading: true,
+        error: null,
+        document: null,
+        batchDocument: document,
+        fingerprint: null,
+        previewLoading: false,
+        previewError: null,
+        previewUrl: null,
+        previewContentType: null,
+        previewFileName: jobProcessingDocumentName(document),
+      };
+    });
+
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getDocument(caseId, fileId, { token });
+      recordFingerprint(result, 'Job document preview detail');
+      const detailDocument = result.data || {};
+      setPreviewDrawer((current) => ({
+        ...current,
+        loading: false,
+        error: null,
+        document: detailDocument,
+        fingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+        previewLoading: Boolean(detailDocument?.s3_key),
+        previewError: null,
+        previewUrl: null,
+        previewContentType: null,
+        previewFileName: detailDocument?.original_filename || jobProcessingDocumentName(document),
+      }));
+
+      if (detailDocument?.s3_key) {
+        try {
+          const previewResult = await evidenceApi.previewDocument(caseId, fileId, { token });
+          recordFingerprint(previewResult, 'Job document raw preview');
+          const previewUrl = URL.createObjectURL(previewResult.blob);
+          setPreviewDrawer((current) => {
+            const currentFileId = current.document?.file_id || current.batchDocument?.file_id || current.batchDocument?.fileId || current.batchDocument?.id;
+            if (currentFileId !== fileId) {
+              URL.revokeObjectURL(previewUrl);
+              return current;
+            }
+            return {
+              ...current,
+              previewLoading: false,
+              previewError: null,
+              previewUrl,
+              previewContentType: previewResult.contentType,
+              previewFileName: previewResult.fileName || detailDocument?.original_filename || jobProcessingDocumentName(document),
+            };
+          });
+        } catch (previewError) {
+          setPreviewDrawer((current) => {
+            const currentFileId = current.document?.file_id || current.batchDocument?.file_id || current.batchDocument?.fileId || current.batchDocument?.id;
+            return currentFileId === fileId
+              ? { ...current, previewLoading: false, previewError }
+              : current;
+          });
+        }
+      }
+    } catch (error) {
+      setPreviewDrawer((current) => ({
+        ...current,
+        loading: false,
+        previewLoading: false,
+        error,
+      }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -234,6 +379,12 @@ export default function JobDetailPage() {
 
     return () => window.clearTimeout(timerId);
   }, [loadJob]);
+
+  useEffect(() => () => {
+    if (previewDrawer.previewUrl) {
+      URL.revokeObjectURL(previewDrawer.previewUrl);
+    }
+  }, [previewDrawer.previewUrl]);
 
   const job = state.job;
   const progress = job ? jobProgressModel(job) : null;
@@ -269,6 +420,13 @@ export default function JobDetailPage() {
         ? t('Estimated cost')
         : t(progress.costSummary?.message || 'Cost recorded for this job.')
     : t(progress?.costSummary?.message || 'No paid cost recorded for this job.');
+  const drawerBatchDocument = previewDrawer.batchDocument || {};
+  const drawerDocument = previewDrawer.document || {};
+  const drawerDocumentStatus = previewDrawer.batchDocument ? jobProcessingDocumentStatus(previewDrawer.batchDocument) : null;
+  const drawerFileId = drawerDocument.file_id || drawerBatchDocument.file_id || drawerBatchDocument.fileId || drawerBatchDocument.id;
+  const drawerFileName = drawerDocument.original_filename || previewDrawer.previewFileName || jobProcessingDocumentName(drawerBatchDocument);
+  const cleanupFileId = state.cleanupDocument?.file_id || state.cleanupDocument?.fileId || state.cleanupDocument?.id;
+  const cleanupHasSecureWorkspaceCopy = Boolean(state.cleanupDocument?.s3_key || previewDrawer.document?.s3_key || cleanupFileId);
 
   return (
     <div>
@@ -463,17 +621,50 @@ export default function JobDetailPage() {
                   {processingDocuments.map((document, index) => {
                     const documentStatus = jobProcessingDocumentStatus(document);
                     const fileId = document?.file_id || document?.fileId || document?.id;
+                    const canInspect = Boolean(fileId);
                     const cleanupBusy = state.cleanupLoadingFileId === fileId;
                     return (
-                      <div
+                      <article
                         key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}
-                        className="grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.35fr)_minmax(10rem,0.75fr)_minmax(12rem,1fr)_auto]"
+                        aria-label={canInspect ? t('Open document preview for {name}', { name: jobProcessingDocumentName(document) }) : undefined}
+                        className={`grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm transition dark:border-gray-800 dark:bg-[#0c1218] md:grid-cols-[minmax(0,1.35fr)_minmax(10rem,0.75fr)_minmax(12rem,1fr)_auto] ${
+                          canInspect ? 'cursor-pointer hover:border-sky-300 hover:bg-sky-50/60 focus-within:border-sky-400 dark:hover:border-sky-900 dark:hover:bg-sky-950/20' : ''
+                        }`}
+                        onClick={() => {
+                          if (canInspect) {
+                            openProcessingDocumentDrawer(document);
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (!canInspect || (event.key !== 'Enter' && event.key !== ' ')) {
+                            return;
+                          }
+                          event.preventDefault();
+                          openProcessingDocumentDrawer(document);
+                        }}
+                        role={canInspect ? 'button' : undefined}
+                        tabIndex={canInspect ? 0 : undefined}
                       >
                         <div className="min-w-0">
                           <div className="break-words font-semibold text-gray-950 dark:text-white">{jobProcessingDocumentName(document)}</div>
                           <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                             {document?.origin_label || document?.source_provider || t('Source file')}
                           </div>
+                          {canInspect ? (
+                            <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-300">
+                              <FileText size={13} aria-hidden="true" />
+                              {t('Click to inspect')}
+                            </div>
+                          ) : (
+                            <Link
+                              to={`/evidence/cases/${caseId}/documents`}
+                              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-100"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <FileText size={13} aria-hidden="true" />
+                              {t('Open Documents to review')}
+                            </Link>
+                          )}
                         </div>
                         <div>
                           <StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />
@@ -490,7 +681,10 @@ export default function JobDetailPage() {
                         <div className="flex items-start justify-start md:justify-end">
                           <button
                             type="button"
-                            onClick={() => excludeProcessingDocument(document)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openRemovalDialog(document);
+                            }}
                             disabled={!fileId || Boolean(state.cleanupLoadingFileId)}
                             title={fileId ? t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.') : t('Open Documents to review this file.')}
                             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
@@ -499,7 +693,7 @@ export default function JobDetailPage() {
                             {cleanupBusy ? t('Removing') : t('Remove from workspace')}
                           </button>
                         </div>
-                      </div>
+                      </article>
                     );
                   })}
                 </div>
@@ -555,11 +749,142 @@ export default function JobDetailPage() {
         </>
       ) : null}
 
+      {previewDrawer.open ? (
+        <div className="fixed inset-0 z-50 bg-black/50" role="presentation">
+          <div className="absolute inset-y-0 right-0 flex w-full max-w-3xl flex-col overflow-hidden border-l border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-[#0f1720]">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 p-5 dark:border-gray-800">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
+                  {t('Processing batch document')}
+                </div>
+                <h2 className="mt-1 break-words text-xl font-semibold text-gray-950 dark:text-white">
+                  {drawerFileName || t('Selected document')}
+                </h2>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  {drawerDocument.source_provider || drawerBatchDocument.origin_label || drawerBatchDocument.source_provider || t('Source file')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeProcessingDocumentDrawer}
+                className="rounded-md border border-transparent p-2 text-gray-500 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:border-gray-700 dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label={t('Close document preview')}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-5">
+              {previewDrawer.error ? (
+                <ErrorPanel title={t('Document preview failed')} error={previewDrawer.error} />
+              ) : null}
+              {previewDrawer.loading ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+                  {t('Loading document details.')}
+                </div>
+              ) : (
+                <>
+                  <section className="rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Current processing status')}</div>
+                        <div className="mt-1">
+                          {drawerDocumentStatus ? (
+                            <StatusBadge status={drawerDocumentStatus.badgeStatus} label={t(drawerDocumentStatus.label)} />
+                          ) : (
+                            <StatusBadge status="unknown" label={t('Needs review')} />
+                          )}
+                        </div>
+                        {drawerDocumentStatus?.message ? (
+                          <p className="mt-2 text-gray-600 dark:text-gray-400">{t(drawerDocumentStatus.message)}</p>
+                        ) : null}
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source')}</div>
+                        <p className="mt-1 text-gray-900 dark:text-gray-100">
+                          {drawerDocument.source_provider || drawerBatchDocument.origin_label || drawerBatchDocument.source_provider || t('Source file')}
+                        </p>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure workspace copy')}</div>
+                        <p className="mt-1 text-gray-900 dark:text-gray-100">
+                          {drawerDocument.s3_key ? t('Available') : t('Not recorded')}
+                        </p>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
+                        <p className="mt-1 text-gray-900 dark:text-gray-100">
+                          {drawerDocument.query_readiness?.label || drawerDocument.query_readiness?.status || drawerDocumentStatus?.label || t('Needs review')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {drawerFileId ? (
+                        <Link
+                          to={`/evidence/cases/${caseId}/documents/${drawerFileId}`}
+                          className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                        >
+                          <FileText size={16} aria-hidden="true" />
+                          {t('Open document details')}
+                        </Link>
+                      ) : (
+                        <Link
+                          to={`/evidence/cases/${caseId}/documents`}
+                          className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+                        >
+                          <FileText size={16} aria-hidden="true" />
+                          {t('Open Documents to review')}
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => openRemovalDialog(drawerDocument.file_id ? drawerDocument : drawerBatchDocument)}
+                        disabled={!drawerFileId || Boolean(state.cleanupLoadingFileId)}
+                        className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                        {state.cleanupLoadingFileId === drawerFileId ? t('Removing') : t('Remove from workspace')}
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source file preview')}</h3>
+                      {drawerDocument.s3_key ? <StatusBadge status="configured" label={t('Secure workspace copy')} /> : <StatusBadge status="degraded" label={t('No secure copy')} />}
+                    </div>
+                    {previewDrawer.previewLoading ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>
+                    ) : (
+                      <DocumentPreviewPanel
+                        previewUrl={previewDrawer.previewUrl}
+                        previewError={previewDrawer.previewError}
+                        contentType={previewDrawer.previewContentType || drawerDocument.media_type}
+                        fileName={drawerFileName}
+                        document={drawerDocument}
+                      />
+                    )}
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {!job && state.loading ? (
         <div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
           {t('Loading job.')}
         </div>
       ) : null}
+      <DocumentRemovalDialog
+        busy={Boolean(state.cleanupLoadingFileId)}
+        documentName={state.cleanupDocument ? jobProcessingDocumentName(state.cleanupDocument) : drawerFileName}
+        hasSecureWorkspaceCopy={cleanupHasSecureWorkspaceCopy}
+        onClose={closeRemovalDialog}
+        onConfirm={excludeProcessingDocument}
+        open={Boolean(state.cleanupDialogOpen)}
+      />
     </div>
   );
 }
