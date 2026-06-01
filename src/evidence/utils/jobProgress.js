@@ -654,6 +654,10 @@ export function jobProgressModel(job) {
                 ? 'This job needs review before it can continue.'
                 : 'Refresh status or contact support if this does not change.');
 
+  const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
+  const badgeStatus = workflowStatus === 'needs_review' || workflowStatus === 'needs_attention'
+    ? 'pending'
+    : documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status);
   const nextActionLabel = actionText(firstObject(job?.next_action, result.next_action, display.next_action, resolution.next_action))
     || firstString(
       actionText(resolution.action_label),
@@ -689,7 +693,7 @@ export function jobProgressModel(job) {
   return {
     title: jobDisplayTitle(job),
     statusLabel,
-    badgeStatus: documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status),
+    badgeStatus,
     progressPercent,
     progressPercentLabel,
     progressEstimated,
@@ -704,7 +708,7 @@ export function jobProgressModel(job) {
     currentStep,
     progressLabel: currentStep,
     rawStatusLabel: humanizeKey(status),
-    workflowStatus: firstString(job?.workflow_status, result.workflow_status, display.workflow_status),
+    workflowStatus,
     operatorRequired: Boolean(job?.operator_required || result.operator_required || display.operator_required || (isLegacyDocumentProcessingRequest(job) && recorded)),
     canCancel,
     cancelActionLabel,
