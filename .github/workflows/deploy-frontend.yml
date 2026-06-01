@@ -15,6 +15,7 @@ on:
       - "tailwind.config.js"
       - "postcss.config.js"
       - "eslint.config.js"
+      - "index.html"
       - "src/**"
       - "public/**"
       - "amplify/**"
