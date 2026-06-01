@@ -1,6 +1,7 @@
 import { Archive, ArrowLeft, Ban, FileText, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import EmptyState from '../components/EmptyState';
 import ErrorPanel from '../components/ErrorPanel';
 import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
 import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
@@ -96,7 +97,7 @@ export default function JobDetailPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { debugEnabled, isRootAdmin } = useOperatorMode();
+  const { canSeeOperations, debugEnabled, isRootAdmin } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     actionLoading: null,
@@ -400,10 +401,11 @@ export default function JobDetailPage() {
     return () => window.clearInterval(timerId);
   }, [loadJob, shouldLivePoll]);
 
-  const canCancel = Boolean(progress?.canCancel);
-  const canRetry = job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
-  const canArchive = Boolean(job && progress && !progress.canCancel && !job.archived_at);
   const isProcessingRequest = isDocumentProcessingRequest(job);
+  const canViewJobDetail = Boolean(!job || canSeeOperations || isProcessingRequest);
+  const canCancel = Boolean(progress?.canCancel);
+  const canRetry = Boolean(canSeeOperations && job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type));
+  const canArchive = Boolean(canSeeOperations && job && progress && !progress.canCancel && !job.archived_at);
   const processingDocuments = isProcessingRequest
     ? jobProcessingDocuments(job).filter((document) => !['excluded_from_case', 'workspace_copy_deleted'].includes(String(document?.status || '').toLowerCase()))
     : [];
@@ -494,13 +496,36 @@ export default function JobDetailPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadJob} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Job action failed" error={state.actionError} /></div> : null}
 
-      {state.fingerprint?.id ? (
+      {debugEnabled && state.fingerprint?.id ? (
         <div className="mb-5">
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} />
         </div>
       ) : null}
 
-      {job ? (
+      {job && !canViewJobDetail ? (
+        <EmptyState
+          title="Operations record"
+          description="This record is for system operations. Document processing status is available from the processing list."
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link
+                to={`/evidence/cases/${caseId}/jobs#processing-status`}
+                className="rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              >
+                {t('Open processing status')}
+              </Link>
+              <Link
+                to={`/evidence/cases/${caseId}/documents`}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                {t('Open Documents')}
+              </Link>
+            </div>
+          }
+        />
+      ) : null}
+
+      {job && canViewJobDetail ? (
         <>
           {progress ? (
             <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
@@ -708,9 +733,13 @@ export default function JobDetailPage() {
               value={<StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />}
               detail={t('Processing workflow status')}
             />
-            <MetricTile label={t('Priority')} value={job.priority ?? 0} detail={t('Higher priority runs first')} />
             <MetricTile label={t('Created')} value={formatDateTime(job.created_at)} detail={job.created_by_user_id || t('No user recorded')} />
-            <MetricTile label={t('Worker')} value={job.claimed_by_worker_id || t('Not claimed')} detail={job.error_class || t('No error class')} />
+            {canSeeOperations ? (
+              <>
+                <MetricTile label={t('Priority')} value={job.priority ?? 0} detail={t('Higher priority runs first')} />
+                <MetricTile label={t('Worker')} value={job.claimed_by_worker_id || t('Not claimed')} detail={job.error_class || t('No error class')} />
+              </>
+            ) : null}
             {isRootAdmin ? (
               <MetricTile
                 label={t('Cost')}
