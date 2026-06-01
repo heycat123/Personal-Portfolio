@@ -778,6 +778,8 @@ export const UI_TRANSLATIONS = {
     '{count} processing job(s)': '{count} tarefa(s) de processamento',
     'Latest processing job: {title}. {message}': 'Tarefa de processamento mais recente: {title}. {message}',
     'Open latest': 'Abrir mais recente',
+    'Latest activity': 'Atividade recente',
+    'Progress': 'Progresso',
     'These cards show copied files moving through text extraction, search indexing, and source citation preparation.': 'Estes cartoes mostram arquivos copiados passando por extracao de texto, indexacao de pesquisa e preparacao de citacoes de fonte.',
     '{count} copied file(s)': '{count} arquivo(s) copiado(s)',
     '{count} unique file hash(es)': '{count} hash(es) unico(s) de arquivo',
