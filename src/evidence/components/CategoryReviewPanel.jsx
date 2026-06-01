@@ -201,7 +201,14 @@ function categoryReason(category, spanLookup, t) {
 
 function spanLookupReasonMessage(reason, t) {
   const normalized = String(reason || '').toLowerCase();
-  if (normalized.includes('unavailable') || normalized.includes('not_run') || normalized.includes('not run')) {
+  if (
+    normalized.includes('lens_span')
+    || normalized.includes('span_table')
+    || normalized.includes('unavailable')
+    || normalized.includes('not_run')
+    || normalized.includes('not run')
+    || normalized.includes('missing')
+  ) {
     return t('This review lens has not generated quotes or source snippets yet. Categories shown here are organizational suggestions until lens review runs or a person confirms them.');
   }
   if (normalized.includes('version')) {
@@ -211,10 +218,6 @@ function spanLookupReasonMessage(reason, t) {
 }
 
 function exceptionMessage(exception, t) {
-  const backendMessage = exception?.resolution?.user_message || exception?.next_action?.user_message;
-  if (backendMessage) {
-    return t(backendMessage);
-  }
   const normalized = String(exception?.resolution?.issue_state || exception?.exception_type || exception?.type || exception?.code || '').toLowerCase();
   if (normalized.includes('uncategorized')) {
     return t('Some documents are not assigned to a category yet. Review the Documents list before lawyer handoff.');
@@ -230,6 +233,10 @@ function exceptionMessage(exception, t) {
   }
   if (normalized.includes('removed') || normalized.includes('excluded')) {
     return t('Some documents have been removed or excluded from processing or source coverage. Review the Documents list if they should be included.');
+  }
+  const backendMessage = exception?.resolution?.user_message || exception?.next_action?.user_message;
+  if (backendMessage) {
+    return t(backendMessage);
   }
   return exception?.detail || exception?.message || exception?.resolution?.user_message || exception?.reason || t('This item needs review before category review is complete.');
 }
