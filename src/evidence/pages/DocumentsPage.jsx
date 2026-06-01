@@ -1,6 +1,7 @@
 import { Download, ExternalLink, FileText, Info, Search, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import CategoryReviewPanel from '../components/CategoryReviewPanel';
 import DataTable from '../components/DataTable';
 import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
 import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
@@ -20,6 +21,7 @@ import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
+const DEFAULT_CATEGORY_QA_LENS_ID = 'florida_relocation_best_interest';
 const STATUTE_FACTOR_OPTIONS = [
   { value: '7a', label: '61.13001(7)(a) - relationship and involvement' },
   { value: '7b', label: '61.13001(7)(b) - age and developmental needs' },
@@ -255,10 +257,10 @@ function ClassificationOverview({ classificationOptions, issueTagOptions, filter
     <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Evidence classification')}</div>
-          <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{t('Organize documents by label')}</h2>
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Document categories')}</div>
+          <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{t('Organize documents by category')}</h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            {t('Labels help organize your documents. They do not decide whether a document is admissible, legally important, or enough to prove a claim.')}
+            {t('Categories help organize your documents. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
           </p>
         </div>
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
@@ -390,6 +392,13 @@ export default function DocumentsPage() {
     error: null,
     result: null,
   });
+  const [categoryLensId, setCategoryLensId] = useState(DEFAULT_CATEGORY_QA_LENS_ID);
+  const [categoryQa, setCategoryQa] = useState({
+    loading: true,
+    error: null,
+    data: null,
+    fingerprint: null,
+  });
 
   const documentQuery = useMemo(() => ({
     limit: PAGE_SIZE,
@@ -450,6 +459,33 @@ export default function DocumentsPage() {
     }
   }, [caseId, documentQuery, getAccessToken, recordFingerprint]);
 
+  const loadCategoryQa = useCallback(async () => {
+    setCategoryQa((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getCategoryQa(
+        caseId,
+        {
+          lens_id: categoryLensId || DEFAULT_CATEGORY_QA_LENS_ID,
+          include_documents: true,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Category review');
+      setCategoryQa({
+        loading: false,
+        error: null,
+        data: result.data || null,
+        fingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      });
+    } catch (error) {
+      setCategoryQa((current) => ({ ...current, loading: false, error }));
+    }
+  }, [caseId, categoryLensId, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadDocuments();
@@ -457,6 +493,14 @@ export default function DocumentsPage() {
 
     return () => window.clearTimeout(timerId);
   }, [loadDocuments]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      loadCategoryQa();
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [loadCategoryQa]);
 
   useEffect(() => {
     setExpandedDocuments({});
@@ -783,9 +827,9 @@ export default function DocumentsPage() {
     },
     {
       key: 'evidence_type_label',
-      header: t('Evidence Type'),
+      header: t('Category'),
       headerClassName: 'w-[11%]',
-      help: t('What kind of document this is. Labels organize documents and do not decide legal importance.'),
+      help: t('The category used to organize this document. Categories are review aids and do not decide legal importance.'),
       filterOptions: facetOptions(state.facets, 'evidence_type_label'),
       filterPlaceholder: t('Document or communication'),
       render: (document) => document.evidence_classification?.label || document.evidence_type_label || t('Uncategorized'),
@@ -907,6 +951,23 @@ export default function DocumentsPage() {
       }
       return next;
     });
+  };
+
+  const filterCategoryReviewDocuments = (category) => {
+    if (!category) {
+      return;
+    }
+    if (category.kind === 'document_category') {
+      applyColumnFilter('evidence_type_label', category.label || category.code || category.category_id);
+      return;
+    }
+    if (category.code) {
+      applyColumnFilter('legal_factor_code', String(category.code).toLowerCase());
+    }
+  };
+
+  const filterUncategorizedDocuments = () => {
+    applyColumnFilter('evidence_type_label', 'Uncategorized');
   };
 
   return (
@@ -1062,13 +1123,33 @@ export default function DocumentsPage() {
         t={t}
       />
 
+      <CategoryReviewPanel
+        caseId={caseId}
+        data={categoryQa.data}
+        error={categoryQa.error}
+        exportBusy={exportState.busy}
+        lensId={categoryLensId}
+        loading={categoryQa.loading}
+        onExportCurrentView={exportCurrentView}
+        onFilterCategory={filterCategoryReviewDocuments}
+        onFilterUncategorized={filterUncategorizedDocuments}
+        onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
+        onRetry={loadCategoryQa}
+      />
+
+      {showDiagnostics && categoryQa.fingerprint?.id ? (
+        <div className="mb-5">
+          <RequestFingerprint fingerprintId={categoryQa.fingerprint.id} correlationId={categoryQa.fingerprint.correlationId} label={t('Category review fingerprint')} />
+        </div>
+      ) : null}
+
       <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
         <div className="flex items-start gap-3">
           <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
           <div className="space-y-1">
             <h3 className="font-semibold">{t('Issue tags are organization aids, not legal conclusions.')}</h3>
             <p>
-              {t('Evidence classifications and issue tags help group communications, finances, parenting-plan materials, school records, medical records, court filings, and other case materials. They do not decide whether a document is admissible, complete, or ready to file.')}
+              {t('Document categories and issue tags help group communications, finances, parenting-plan materials, school records, medical records, court filings, and other case materials. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
             </p>
             <p className="text-xs text-sky-800 dark:text-sky-200">
               {t('Pending issue tags usually mean the file is not ready for search yet or no issue tag was suggested. It is not a legal review task.')}
@@ -1276,7 +1357,7 @@ export default function DocumentsPage() {
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.origin_label || 'unknown'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Evidence Type')}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Category')}</div>
                     <div className="break-words text-gray-950 dark:text-white">{drawer.document?.evidence_type_label || 'Document'}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
