@@ -744,7 +744,7 @@ export default function DocumentsPage() {
         removalBusy: false,
         removalError: null,
         removalJob: result.data,
-        removalMessage: removalResultDetail(result.data, removalPayload, t),
+        removalMessage: removalResultDetail(result.data, removalPayload, t, document.original_filename || document.file_id),
         removalDialogOpen: false,
       }));
       await loadDocuments();
