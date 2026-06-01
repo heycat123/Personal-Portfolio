@@ -74,11 +74,12 @@ export function buildCaseAttentionItems({
           ? '{count} document row(s) still need text/search processing before they are fully available in Ask Documents.'
           : 'Some documents are still being prepared for search and Q&A.'
       ),
-      impact: 'Ask Documents may not include every file yet. You can keep reviewing uploaded files while processing finishes.',
+      impact: copiedPendingHashes && copiedPendingHashes !== copiedPendingRows
+        ? 'Ask Documents may not include every file yet. Current health also counts the pending source content as {hashCount} unique file hash(es), because duplicate document rows can share one file.'
+        : 'Ask Documents may not include every file yet. You can keep reviewing uploaded files while processing finishes.',
       count: copiedPendingRows,
-      countLabel: copiedPendingHashes && copiedPendingHashes !== copiedPendingRows
-        ? `${copiedPendingHashes} unique file hash(es)`
-        : 'document row(s)',
+      countLabel: 'document row(s)',
+      hashCount: copiedPendingHashes,
       actionLabel: 'Open Documents',
       to: caseId ? `/evidence/cases/${caseId}/documents` : null,
       secondaryActionLabel: 'See processing status',
