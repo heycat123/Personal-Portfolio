@@ -10,10 +10,9 @@ import AnimatedCount from '../components/AnimatedCount';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
-import { useOperatorMode } from '../context/OperatorModeContext';
 import useJobStatusPolling, { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
-import { formatDateTime, truncateMiddle } from '../utils/formatters';
+import { formatDateTime } from '../utils/formatters';
 import {
   isDocumentProcessingRequest,
   jobDisplayTitle,
@@ -24,30 +23,9 @@ import {
 
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
-function formatJobCost(costSummary) {
-  const currency = costSummary?.currency || 'USD';
-  const value = costSummary?.actualUsd ?? costSummary?.estimatedUsd;
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return null;
-  }
-  if (!costSummary?.hasPaidCost) {
-    return null;
-  }
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      minimumFractionDigits: 4,
-      maximumFractionDigits: 6,
-    }).format(Number(value));
-  } catch {
-    return `${currency} ${Number(value).toFixed(4)}`;
-  }
-}
-
 function CompactProgress({ progress, t }) {
   return (
-    <div className="min-w-0 text-xs">
+    <div className="min-w-0 text-xs" title={t(progress.progressText)}>
       <div className="flex items-center justify-between gap-2 font-semibold text-gray-800 dark:text-gray-100">
         <span className="truncate">{t(progress.progressLabel)}</span>
         <span className="shrink-0">{progress.progressPercent}%</span>
@@ -63,13 +41,30 @@ function CompactProgress({ progress, t }) {
   );
 }
 
+function TimeSummary({ job, t }) {
+  const rows = [
+    { label: 'Created', value: job.created_at ? formatDateTime(job.created_at) : t('Unknown') },
+    { label: 'Started', value: job.started_at ? formatDateTime(job.started_at) : t('Not started') },
+    { label: 'Finished', value: job.finished_at ? formatDateTime(job.finished_at) : t(isActiveJob(job) ? 'Still running' : 'Not finished') },
+  ];
+  return (
+    <dl className="grid gap-1 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3 lg:block">
+      {rows.map((row) => (
+        <div key={row.label} className="min-w-0">
+          <dt className="font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-500">{t(row.label)}</dt>
+          <dd className="mt-0.5 text-gray-900 dark:text-gray-100">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export default function JobsPage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { isRootAdmin } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     creatingJobType: null,
@@ -221,137 +216,99 @@ export default function JobsPage() {
   const latestProcessingProgress = latestProcessingJob ? jobProgressModel(latestProcessingJob) : null;
   const activeProcessingJobs = processingJobs.filter((job) => jobProgressModel(job).canCancel || isActiveJob(job)).length;
   const processingDocumentCount = processingJobs.reduce((sum, job) => sum + (jobProcessingRequestedCount(job) || jobProcessingDocuments(job).length || 0), 0);
+  const renderJobSummary = (job) => {
+    const progress = jobProgressModel(job);
+    return (
+      <div className="min-w-0">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <Link
+              to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
+              className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300"
+            >
+              {t(jobDisplayTitle(job))}
+            </Link>
+            <p className="mt-1 line-clamp-2 text-xs text-gray-600 dark:text-gray-400">
+              {t(progress.message)}
+            </p>
+          </div>
+          <div className="shrink-0">
+            <StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />
+          </div>
+        </div>
+        <div className="mt-3 max-w-xl">
+          <CompactProgress progress={progress} t={t} />
+        </div>
+      </div>
+    );
+  };
+
+  const renderJobActions = (job) => {
+    const progress = jobProgressModel(job);
+    const busy = state.actionJobId === job.job_id;
+    const canRetry = ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+    const canArchive = !progress.canCancel && !job.archived_at;
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Link
+          to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
+          className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+        >
+          {t('Open')}
+        </Link>
+        {progress.canCancel ? (
+          <button
+            type="button"
+            onClick={() => cancelJob(job.job_id)}
+            disabled={Boolean(state.actionJobId)}
+            title={t(progress.cancelMessage || 'Cancel job')}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+          >
+            <Ban size={13} aria-hidden="true" />
+            {busy ? t('Cancelling') : t(progress.cancelActionLabel || 'Cancel job')}
+          </button>
+        ) : null}
+        {canRetry ? (
+          <button
+            type="button"
+            onClick={() => retryJob(job.job_id)}
+            disabled={Boolean(state.actionJobId)}
+            title={t('Retry failed or cancelled safe job')}
+            className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+            {busy ? t('Retrying') : t('Retry')}
+          </button>
+        ) : null}
+        {canArchive ? (
+          <button
+            type="button"
+            onClick={() => archiveJob(job.job_id)}
+            disabled={Boolean(state.actionJobId)}
+            title={t('Dismiss this job from the default list. History stays available for support.')}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+          >
+            <Archive size={13} aria-hidden="true" />
+            {busy ? t('Dismissing') : t('Dismiss')}
+          </button>
+        ) : null}
+      </div>
+    );
+  };
+
   const columns = [
     {
-      key: 'job_type',
-      header: t('Type'),
-      headerClassName: 'w-40',
-      render: (job) => (
-        <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
-          {t(jobDisplayTitle(job))}
-        </Link>
-      ),
+      key: 'job',
+      header: t('Job'),
+      headerClassName: 'w-[58%]',
+      render: renderJobSummary,
     },
-    {
-      key: 'status',
-      header: t('Status'),
-      headerClassName: 'w-28',
-      render: (job) => {
-        const progress = jobProgressModel(job);
-        return <StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />;
-      },
-    },
-    {
-      key: 'workflow',
-      header: t('Progress'),
-      headerClassName: 'w-56',
-      render: (job) => {
-        const progress = jobProgressModel(job);
-        return <CompactProgress progress={progress} t={t} />;
-      },
-    },
-    ...(isRootAdmin ? [{
-      key: 'cost',
-      header: t('Cost'),
-      headerClassName: 'w-28',
-      render: (job) => {
-        const progress = jobProgressModel(job);
-        const costText = formatJobCost(progress.costSummary);
-        const costDetail = progress.costSummary?.hasPaidCost
-          ? progress.costSummary?.actualUsd !== null && progress.costSummary?.actualUsd !== undefined
-            ? t('Actual cost')
-            : progress.costSummary?.estimatedUsd !== null && progress.costSummary?.estimatedUsd !== undefined
-              ? t('Estimated cost')
-              : t(progress.costSummary?.message || 'Cost recorded for this job.')
-          : t(progress.costSummary?.message || 'No paid cost recorded for this job.');
-        return (
-          <div className="min-w-0 text-xs text-gray-700 dark:text-gray-300">
-            <div className="truncate font-semibold text-gray-950 dark:text-white">
-              {costText || t('No paid cost recorded')}
-            </div>
-            <div className="truncate text-gray-500 dark:text-gray-400">
-              {costDetail}
-            </div>
-          </div>
-        );
-      },
-    }] : []),
-    { key: 'priority', header: t('Priority'), headerClassName: 'w-20', render: (job) => job.priority ?? 0 },
-    { key: 'created_at', header: t('Created'), headerClassName: 'w-32', render: (job) => formatDateTime(job.created_at) },
-    { key: 'started_at', header: t('Started'), headerClassName: 'w-32', render: (job) => formatDateTime(job.started_at) },
-    { key: 'finished_at', header: t('Finished'), headerClassName: 'w-32', render: (job) => formatDateTime(job.finished_at) },
-    {
-      key: 'claimed_by_worker_id',
-      header: t('Worker'),
-      headerClassName: 'w-36',
-      render: (job) => {
-        const worker = job.claimed_by_worker_id || t('Not claimed');
-        return <span title={worker}>{truncateMiddle(worker, 18)}</span>;
-      },
-    },
-    { key: 'error_class', header: t('Error'), headerClassName: 'w-24', render: (job) => job.error_class || t('None') },
-    {
-      key: 'request_fingerprint_id',
-      header: t('Fingerprint'),
-      headerClassName: 'w-32',
-      render: (job) => truncateMiddle(job.request_fingerprint_id, 24),
-    },
+    { key: 'timeline', header: t('Timeline'), headerClassName: 'w-[24%]', render: (job) => <TimeSummary job={job} t={t} /> },
     {
       key: 'actions',
       header: t('Actions'),
-      headerClassName: 'w-40',
-      render: (job) => {
-        const progress = jobProgressModel(job);
-        const busy = state.actionJobId === job.job_id;
-        const canRetry = ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
-        const canArchive = !progress.canCancel && !job.archived_at;
-        return (
-          <div className="flex flex-wrap gap-2">
-            <Link
-              to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
-              className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
-            >
-              {t('Open details')}
-            </Link>
-            {progress.canCancel ? (
-              <button
-                type="button"
-                onClick={() => cancelJob(job.job_id)}
-                disabled={Boolean(state.actionJobId)}
-                title={t(progress.cancelMessage || 'Cancel job')}
-                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-              >
-                <Ban size={13} aria-hidden="true" />
-                {busy ? t('Cancelling') : t(progress.cancelActionLabel || 'Cancel job')}
-              </button>
-            ) : null}
-            {canRetry ? (
-              <button
-                type="button"
-                onClick={() => retryJob(job.job_id)}
-                disabled={Boolean(state.actionJobId)}
-                title={t('Retry failed or cancelled safe job')}
-                className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
-              >
-                <RotateCcw size={13} aria-hidden="true" />
-                {busy ? t('Retrying') : t('Retry')}
-              </button>
-            ) : null}
-            {canArchive ? (
-              <button
-                type="button"
-                onClick={() => archiveJob(job.job_id)}
-                disabled={Boolean(state.actionJobId)}
-                title={t('Dismiss this job from the default list. History stays available for support.')}
-                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-              >
-                <Archive size={13} aria-hidden="true" />
-                {busy ? t('Dismissing') : t('Dismiss')}
-              </button>
-            ) : null}
-          </div>
-        );
-      },
+      headerClassName: 'w-[18%]',
+      render: renderJobActions,
     },
   ];
 
@@ -475,6 +432,11 @@ export default function JobsPage() {
           const progress = jobProgressModel(job);
           return `${t(progress.statusLabel)} | ${formatDateTime(job.created_at)}`;
         }}
+        mobileMetrics={(job) => [
+          { id: 'progress', header: 'Progress', render: () => <CompactProgress progress={jobProgressModel(job)} t={t} /> },
+          { id: 'timeline', header: 'Timeline', render: () => <TimeSummary job={job} t={t} /> },
+        ]}
+        mobileActions={renderJobActions}
         columns={columns}
       />
     </div>
