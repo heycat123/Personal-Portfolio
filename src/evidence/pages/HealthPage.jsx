@@ -28,6 +28,14 @@ function extractGoogleDrivePendingHashCount(recommendations = []) {
   return Number.isFinite(count) ? count : 0;
 }
 
+function normalizeSourceCoverageText(value) {
+  return String(value || '')
+    .replace(/queue a document processing request/gi, 'start document processing')
+    .replace(/run operator text extraction/gi, 'finish text extraction')
+    .replace(/source alignment audit/gi, 'source coverage check')
+    .replace(/source alignment/gi, 'source coverage');
+}
+
 function StatusActionCard({ title, detail, action, secondaryAction }) {
   const actionClassName = 'inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10';
   const renderAction = (item, key) => {
@@ -289,7 +297,7 @@ export default function HealthPage() {
         documentCount: copiedFilesPendingProcessing || '?',
       });
     }
-    return text;
+    return normalizeSourceCoverageText(text);
   });
   const alignmentGapCount = alignmentRows.filter((row) => !row.skipped && row.ok === false).length;
   const alignmentAvailable = Boolean(sourceAlignment?.available);

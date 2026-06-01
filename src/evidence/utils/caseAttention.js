@@ -25,6 +25,33 @@ function addIssue(items, issue) {
   });
 }
 
+function safeSourceCoverageDetail(item, fallback) {
+  const classId = String(item?.class_id || '').toLowerCase();
+  if (classId === 'extracted_not_graphed') {
+    return 'Some extracted readable documents have not been added to search or relationship-map records yet. Finish text/search processing, then run source coverage again.';
+  }
+  if (classId === 'graphed_not_vectorized') {
+    return 'Some search or relationship-map records still need coverage refresh. Wait for processing to finish, then run source coverage again.';
+  }
+  if (classId === 's3_only') {
+    return 'Some secure workspace copies are outside the selected source set. Review source selection or exclusions before treating source coverage as complete.';
+  }
+  if (classId === 'postgres_only') {
+    return 'Some processed records do not have a matching secure workspace copy. Review Documents for source-copy status.';
+  }
+  if (classId === 'selected_source_missing_from_s3') {
+    return 'Some selected source files do not have a secure workspace copy yet. Review Add Documents or source sync before treating coverage as complete.';
+  }
+  if (classId === 'intentionally_excluded') {
+    return 'Confirm excluded source items are intentional and documented before treating source coverage as complete.';
+  }
+  return String(fallback || 'Some files do not yet match across connected sources and processed records.')
+    .replace(/queue a document processing request/gi, 'start document processing')
+    .replace(/run operator text extraction/gi, 'finish text extraction')
+    .replace(/source alignment audit/gi, 'source coverage check')
+    .replace(/source alignment/gi, 'source coverage');
+}
+
 export function filterAttentionItems(items, page) {
   return (items || []).filter((item) => !page || (item.pages || []).includes(page));
 }
@@ -212,7 +239,7 @@ export function buildCaseAttentionItems({
           domains: ['sources', 'documents', 'search'],
           pages: ['case-home', 'health', 'documents', 'add-documents'],
           title: item.label || 'Source coverage needs review',
-          detail: resolution.user_message || item.action || 'Some files do not yet match across connected sources and processed records.',
+          detail: safeSourceCoverageDetail(item, resolution.user_message || item.action),
           impact: 'This affects app completeness checks, not the legal meaning of the documents.',
           count: numberValue(item.count),
           countLabel: 'items',
