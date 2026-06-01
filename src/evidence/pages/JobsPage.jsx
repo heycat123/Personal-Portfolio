@@ -1,4 +1,4 @@
-import { Ban, Play, RefreshCw, RotateCcw } from 'lucide-react';
+import { Archive, Ban, Play, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -169,6 +169,25 @@ export default function JobsPage() {
     }
   }, [caseId, getAccessToken, loadJobs, recordFingerprint]);
 
+  const archiveJob = useCallback(async (jobId) => {
+    setState((current) => ({ ...current, actionJobId: jobId, actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.archiveJob(caseId, jobId, { token });
+      recordFingerprint(result, 'Dismiss job');
+      setState((current) => ({
+        ...current,
+        jobs: current.jobs.filter((job) => job.job_id !== jobId),
+        total: Math.max(0, current.total - 1),
+      }));
+      await loadJobs({ quiet: true });
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setState((current) => ({ ...current, actionJobId: null }));
+    }
+  }, [caseId, getAccessToken, loadJobs, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadJobs();
@@ -267,6 +286,7 @@ export default function JobsPage() {
         const progress = jobProgressModel(job);
         const busy = state.actionJobId === job.job_id;
         const canRetry = ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+        const canArchive = !progress.canCancel && !job.archived_at;
         return (
           <div className="flex flex-wrap gap-2">
             <Link
@@ -301,6 +321,18 @@ export default function JobsPage() {
               >
                 <RotateCcw size={13} aria-hidden="true" />
                 {busy ? t('Retrying') : t('Retry')}
+              </button>
+            ) : null}
+            {canArchive ? (
+              <button
+                type="button"
+                onClick={() => archiveJob(job.job_id)}
+                disabled={Boolean(state.actionJobId)}
+                title={t('Dismiss this job from the default list. History stays available for support.')}
+                className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+              >
+                <Archive size={13} aria-hidden="true" />
+                {busy ? t('Dismissing') : t('Dismiss')}
               </button>
             ) : null}
           </div>
@@ -429,6 +461,18 @@ export default function JobsPage() {
                         >
                           {t('Review documents')}
                         </Link>
+                        {!progress.canCancel && !job.archived_at ? (
+                          <button
+                            type="button"
+                            onClick={() => archiveJob(job.job_id)}
+                            disabled={Boolean(state.actionJobId)}
+                            title={t('Dismiss this job from the default list. History stays available for support.')}
+                            className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10"
+                          >
+                            <Archive size={15} aria-hidden="true" />
+                            {state.actionJobId === job.job_id ? t('Dismissing') : t('Dismiss')}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                     {isRootAdmin ? (

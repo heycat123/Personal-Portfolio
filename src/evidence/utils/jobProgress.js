@@ -155,6 +155,7 @@ export function jobProcessingDocumentStatus(document) {
     waiting: 'Waiting',
     queued: 'Waiting',
     reading_text: 'Reading text',
+    running_ocr: 'Running OCR',
     writing_search_records: 'Indexing for search',
     processed: 'Ready for search',
     needs_ocr: 'Needs OCR/review',
@@ -169,6 +170,7 @@ export function jobProcessingDocumentStatus(document) {
     waiting: 'pending',
     queued: 'pending',
     reading_text: 'running',
+    running_ocr: 'running',
     writing_search_records: 'running',
     processed: 'succeeded',
     needs_ocr: 'pending',
@@ -191,6 +193,9 @@ export function jobProcessingDocumentStatus(document) {
 function documentProgressFallback(rawStatus) {
   if (rawStatus === 'reading_text') {
     return 35;
+  }
+  if (rawStatus === 'running_ocr') {
+    return 45;
   }
   if (rawStatus === 'writing_search_records') {
     return 75;
@@ -287,7 +292,7 @@ export function jobCostSummary(job) {
     source.estimate_usd,
   );
   const hasRecordedCost = Boolean(source.has_recorded_cost) || actualUsd !== null || estimatedUsd !== null;
-  const paidModelRequested = Boolean(source.paid_model_requested || source.paid || source.uses_paid_model);
+  const paidModelRequested = Boolean(source.paid_model_requested || source.paid_model_called || source.paid || source.uses_paid_model);
   const positiveCost = [actualUsd, estimatedUsd].some((value) => value !== null && Number(value) > 0);
   const hasPaidCost = paidModelRequested || positiveCost;
   const currency = firstString(source.currency, source.currency_code) || 'USD';
