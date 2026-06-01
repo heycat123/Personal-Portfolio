@@ -421,7 +421,7 @@ export default function JobDetailPage() {
           </div>
 
           <section className="mt-6">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Recent events')}</h3>
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Latest activity')}</h3>
             <JobStatusTimeline events={job.events || []} limit={debugEnabled ? 0 : 4} />
           </section>
 
