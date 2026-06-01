@@ -93,6 +93,9 @@ The Evidence app is a legal evidence workbench. It should feel calm, trustworthy
   - amber for warning/review,
   - red for failure or destructive risk,
   - gray for neutral/unknown.
+- Green means the stated app purpose is usable for the named unit and step. For example, secure-copy success is not the same as Ask Documents readiness.
+- Use amber for `Needs review`, `Ready with review needed`, waiting, unsupported-media review, and recoverable partial coverage.
+- Use red for `Failed`, `Needs attention`, blocked dependencies, and support/operator intervention.
 - Avoid using color alone to communicate state. Pair color with text and icons when useful.
 - Cards should stay practical: individual repeated items, contained tools, modals, and drawers. Do not nest cards inside cards.
 
@@ -154,6 +157,7 @@ No readiness tile, health check, warning banner, empty/error state, or badge-led
 
 Every issue state must answer:
 
+- The unit being measured, such as document rows, uploaded files, unique file hashes, pages, secure copies, search-indexed documents, or citation-ready documents.
 - What is happening in plain language.
 - What it affects in the app.
 - What the user, admin, operator, or support team can do next.
@@ -163,15 +167,18 @@ Rules:
 
 - Prefer calm labels such as `Processing documents`, `Search still catching up`, `Connection needs attention`, or `Source check needs review`.
 - Avoid issue labels that imply legal conclusions or panic, such as `evidence failed`, `not court-ready`, `disclosure incomplete`, or `legally insufficient`.
+- Do not mix count units. Label whether a number is document rows, uploaded files, unique file hashes, pages, secure copies, search-indexed documents, or citation-ready documents.
+- Request-recording jobs may say that text/search processing was requested or started; they must not imply extraction, search indexing, citations, graph/vector coverage, or Ask Documents readiness is complete.
 - A status action can be self-service, such as `Reconnect`, `Start processing`, `Review documents`, `Resend invite`, or `Refresh status`.
 - A status action can be operator/support routed, such as `Queue alignment check`, `Open Jobs`, or `Help & Support`, but the destination must explain what the operator/support action resolves.
+- Source alignment must be disabled or deferred while source sync, upload registration, text/search processing, extraction repair, or graph/vector rebuild jobs are actively modifying the same records. The UI should name the active unit and step, then tell the user to run alignment after that work finishes.
 - If the user can safely continue elsewhere, say so.
 - For operations-only details, translate raw infrastructure symptoms into workflow effects before showing them in normal workspace paths.
 
 Examples:
 
 - Pending copied documents: explain that files are saved but still need text extraction and search indexing; link to Documents or Health resolution with `Start processing`. If processing already started, say so directly and point to the current status.
-- Source alignment gaps: explain that connected files and processed records do not fully match yet; provide `Queue alignment check` and `Open Documents`.
+- Source alignment gaps: explain that connected files and processed records do not fully match yet; provide `Queue alignment check` and `Open Documents` only when no active modifying job is changing the same records. If processing is active, provide `Open Jobs` and explain that alignment should run after text/search or sync work finishes.
 - Connector offline: explain that new sync may pause while existing workspace documents remain available; provide `Reconnect` or `Try sync again`.
 - Invite/email uncertainty: explain that the invite is still pending or delivery could not be confirmed; provide `Resend invite` and `Copy invite link`.
 
@@ -182,6 +189,7 @@ Use `MetricTile` for dashboard and health summary numbers.
 Rules:
 
 - Metrics need a short label, a value, and a plain-language detail.
+- Metrics must name the unit. Do not display a mixed count as just `documents` when it may mean uploaded files, document rows, unique file hashes, pages, secure copies, search-indexed documents, or citation-ready documents.
 - Use semantic tone only when it changes the user's interpretation.
 - Large numbers should use locale-aware formatting.
 

@@ -298,7 +298,7 @@ function documentProgressSummary(job) {
   let currentStep = 'Preparing documents';
 
   if (needsAttention) {
-    label = 'Needs review';
+    label = 'Needs attention';
     badgeStatus = 'failed';
     currentStep = 'Review processing details';
   } else if (needsReview) {
@@ -584,7 +584,7 @@ export function jobProgressModel(job) {
     ?? (isDocumentProcessingRequest(job) && recorded ? 0 : fallbackPercent(status));
   const progressEstimated = Boolean(estimatedProgress);
   const progressPercentLabel = estimatedProgress?.progressPercentLabel || `${progressPercent}%`;
-  const statusLabel = userFacingProcessingText(firstString(
+  const displayStatusLabel = userFacingProcessingText(firstString(
     job?.display_status,
     display.display_status,
     display.status_label,
@@ -655,9 +655,14 @@ export function jobProgressModel(job) {
                 : 'Refresh status or contact support if this does not change.');
 
   const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
-  const badgeStatus = workflowStatus === 'needs_review' || workflowStatus === 'needs_attention'
-    ? 'pending'
+  const badgeStatus = workflowStatus === 'needs_attention'
+    ? 'failed'
+    : workflowStatus === 'needs_review'
+      ? 'pending'
     : documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status);
+  const statusLabel = badgeStatus === 'failed' && String(displayStatusLabel).toLowerCase() === 'needs review'
+    ? 'Needs attention'
+    : displayStatusLabel;
   const nextActionLabel = actionText(firstObject(job?.next_action, result.next_action, display.next_action, resolution.next_action))
     || firstString(
       actionText(resolution.action_label),

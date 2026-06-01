@@ -36,6 +36,16 @@ function normalizeSourceCoverageText(value) {
     .replace(/source alignment/gi, 'source coverage');
 }
 
+const ACTIVE_JOB_STATUSES = new Set(['queued', 'running', 'cancelling']);
+const SOURCE_STABILITY_JOB_TYPES = new Set([
+  'document_text_search_processing',
+  'document_upload_register',
+  'document_remove_plan',
+  'document_language_detect',
+  'document_translation_cache',
+  'source_connector_scan',
+]);
+
 function StatusActionCard({ title, detail, action, secondaryAction }) {
   const actionClassName = 'inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10';
   const renderAction = (item, key) => {
@@ -99,9 +109,11 @@ export default function HealthPage() {
     alignmentJob: null,
     alignmentJobError: null,
     alignmentJobRunning: false,
+    alignmentBlocked: null,
     processingRequest: null,
     processingRequestError: null,
     processingRequestRunning: false,
+    jobs: [],
     fingerprints: [],
   });
 
@@ -115,11 +127,12 @@ export default function HealthPage() {
       evidenceApi.getGraphHealth(caseId, { token }),
       evidenceApi.getQueueHealth(caseId, { token }),
       evidenceApi.getSourceAlignmentLatest(caseId, { token }),
+      evidenceApi.getJobs(caseId, { limit: 25, offset: 0 }, { token }),
     ]);
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health', 'Queue health', 'Source alignment'];
+        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health', 'Queue health', 'Source alignment', 'Jobs'];
         recordFingerprint(result.value, labels[index]);
       }
     });
@@ -135,6 +148,7 @@ export default function HealthPage() {
       graphHealth: fulfilledValue(results[3])?.data || null,
       queueHealth: fulfilledValue(results[4])?.data || null,
       sourceAlignment: fulfilledValue(results[5])?.data || null,
+      jobs: fulfilledValue(results[6])?.data?.jobs || [],
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
@@ -198,16 +212,16 @@ export default function HealthPage() {
       }));
     } catch (error) {
       const detail = error?.payload?.detail || error?.payload || null;
-      if (error?.status === 409 && detail?.workflow_status === 'blocked_by_active_processing') {
+      if (error?.status === 409 && (detail?.error === 'source_alignment_blocked_by_active_processing' || detail?.workflow_status === 'blocked_by_active_processing')) {
         setState((current) => ({
           ...current,
           alignmentJobRunning: false,
           alignmentJobError: null,
-          alignmentJob: {
+          alignmentBlocked: {
             data: detail,
             fingerprint: {
-              id: error.requestFingerprintId,
-              correlationId: error.correlationId,
+              id: error?.requestFingerprintId,
+              correlationId: error?.correlationId,
             },
           },
         }));
@@ -318,11 +332,40 @@ export default function HealthPage() {
     && copiedFilesPendingProcessing
     && processingBatchDocumentCount !== copiedFilesPendingProcessing,
   );
-  const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
-  const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
-    ? 'Processing already started. Check Jobs for per-document progress.'
-    : 'Processing started. Check Jobs for per-document progress.');
-  const alignmentBlockedByProcessing = copiedFilesPendingProcessing > 0 || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0);
+  const activeSourceStabilityJobs = state.jobs.filter((job) => (
+    ACTIVE_JOB_STATUSES.has(String(job.status || '').toLowerCase()) &&
+    SOURCE_STABILITY_JOB_TYPES.has(job.job_type)
+  ));
+  const activeSourceStabilityJob = activeSourceStabilityJobs[0] || null;
+  const alignmentBlockedByProcessing = showPropagationResolution || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0) || Boolean(activeSourceStabilityJob);
+  const alignmentWaitMessage = activeSourceStabilityJob
+    ? t('Text/search processing or source sync is active. Run source coverage after that work finishes so the check reads stable records.')
+    : t('Run source coverage after text/search processing finishes so the check reads stable records.');
+  const processingStartTitle = processingRequestData.already_started ? 'Processing already in progress' : 'Processing is being tracked';
+  const processingStartMessage = processingRequestData.already_started
+    ? 'Processing is already in progress. Check Jobs for per-document progress.'
+    : 'Processing is queued. Check Jobs for per-document progress.';
+  const pendingDocumentRowsLabel = copiedFilesPendingProcessing > 0
+    ? t('{count} document row(s)', { count: copiedFilesPendingProcessing })
+    : null;
+  const pendingUniqueHashesLabel = (copiedFileHashesPendingProcessing || driveExtraHashCount) > 0
+    ? t('{count} unique file content item(s)', { count: copiedFileHashesPendingProcessing || driveExtraHashCount })
+    : null;
+  const currentProcessingCountLabel = [pendingDocumentRowsLabel, pendingUniqueHashesLabel].filter(Boolean).join(', ');
+  const currentProcessingCountSentence = currentProcessingCountLabel
+    ? t('Current health check: {counts} still need text/search processing.', { counts: currentProcessingCountLabel })
+    : t('Current health check: no copied document rows are waiting for text/search processing.');
+  const sourceCoverageBadgeStatus = alignmentOk
+    ? 'online'
+    : alignmentBlockedByProcessing ? 'pending' : alignmentAvailable ? 'degraded' : 'unknown';
+  const sourceCoverageBadgeLabel = alignmentOk
+    ? t('Aligned')
+    : alignmentBlockedByProcessing ? t('Waiting') : alignmentAvailable ? t('Needs review') : t('Not checked');
+  const sourceCoverageDetail = alignmentBlockedByProcessing
+    ? t('Run after text/search processing finishes.')
+    : alignmentAvailable
+      ? t('{count} strict gap(s); finished {time}', { count: alignmentGapCount, time: formatDateTime(sourceAlignment.audit_finished_at) })
+      : sourceAlignment?.reason || t('Run source coverage to compare source files with processed records.');
 
   if (!state.loading && database && !database.ok) {
     statusActions.push({
@@ -474,6 +517,29 @@ export default function HealthPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadHealth} /></div> : null}
       {state.smokeError ? <div className="mb-5"><ErrorPanel title="Storage smoke failed" error={state.smokeError} /></div> : null}
       {state.alignmentJobError ? <div className="mb-5"><ErrorPanel title="Source coverage action failed" error={state.alignmentJobError} /></div> : null}
+      {state.alignmentBlocked ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="font-semibold">{t(state.alignmentBlocked.data?.display_status || 'Source check waiting for processing')}</p>
+              <p className="mt-1 leading-6">
+                {t(state.alignmentBlocked.data?.display_message || 'Source coverage check is paused until active document or source processing finishes.')}
+              </p>
+              <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                {alignmentWaitMessage}
+              </p>
+            </div>
+            {state.alignmentBlocked.data?.active_jobs?.[0]?.job_id ? (
+              <Link
+                to={`/evidence/cases/${caseId}/jobs/${state.alignmentBlocked.data.active_jobs[0].job_id}`}
+                className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              >
+                {t('Open active job')}
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <NeedsAttentionPanel
         items={attentionItems}
@@ -561,15 +627,11 @@ export default function HealthPage() {
           label="Source coverage"
           value={
             <StatusBadge
-              status={alignmentOk ? 'online' : alignmentAvailable ? 'degraded' : 'unknown'}
-              label={alignmentOk ? t('Aligned') : alignmentAvailable ? t('Needs review') : t('Not checked')}
+              status={sourceCoverageBadgeStatus}
+              label={sourceCoverageBadgeLabel}
             />
           }
-          detail={
-            alignmentAvailable
-              ? t('{count} strict gap(s); finished {time}', { count: alignmentGapCount, time: formatDateTime(sourceAlignment.audit_finished_at) })
-              : sourceAlignment?.reason || t('Run source coverage to compare source files with processed records.')
-          }
+          detail={sourceCoverageDetail}
           tone={alignmentOk ? 'good' : alignmentAvailable ? 'warn' : 'default'}
         />
       </div>
@@ -618,6 +680,9 @@ export default function HealthPage() {
               <p className="text-xs text-amber-900 dark:text-amber-100">
                 {t('Solution: start text/search processing, then run source coverage after text and search are ready.')}
               </p>
+              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+                {alignmentWaitMessage}
+              </p>
               <p className="text-xs text-amber-900 dark:text-amber-100">
                 {t('You can keep working in other parts of the workspace.')}
               </p>
@@ -655,13 +720,13 @@ export default function HealthPage() {
             </div>
           ) : null}
           {state.processingRequest ? (
-            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
+            <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3 text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/25 dark:text-sky-100">
               <p className="font-semibold">{t(processingStartTitle)}</p>
               <p className="mt-1 text-xs">
                 {t(processingStartMessage)}
               </p>
               <p className="mt-1 text-xs">
-                {t('Current health shows {count} document row(s) still need text/search processing before they are fully available in Ask Documents.', { count: copiedFilesPendingProcessing || driveExtraHashCount })}
+                {currentProcessingCountSentence}
               </p>
               {processingBatchDiffers ? (
                 <p className="mt-1 text-xs">
@@ -671,7 +736,7 @@ export default function HealthPage() {
               {(state.processingRequest.data?.job?.job_id || state.processingRequest.data?.existing_job?.job_id) ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${state.processingRequest.data.job?.job_id || state.processingRequest.data.existing_job?.job_id}`}
-                  className="mt-2 inline-flex text-xs font-semibold text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white"
+                  className="mt-2 inline-flex text-xs font-semibold text-sky-900 hover:text-sky-950 dark:text-sky-100 dark:hover:text-white"
                 >
                   {t('Open processing details')}
                 </Link>
@@ -699,7 +764,10 @@ export default function HealthPage() {
             {alignmentAvailable ? (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="flex flex-wrap items-center gap-3">
-                  <StatusBadge status={alignmentOk ? 'succeeded' : 'degraded'} label={alignmentOk ? t('Source coverage passed') : t('Source coverage has gaps')} />
+                  <StatusBadge
+                    status={alignmentOk ? 'succeeded' : alignmentBlockedByProcessing ? 'pending' : 'degraded'}
+                    label={alignmentOk ? t('Source coverage passed') : alignmentBlockedByProcessing ? t('Source check waiting for processing') : t('Source coverage has gaps')}
+                  />
                   <span className="text-gray-600 dark:text-gray-400">
                     {sourceAlignment.stores?.local_source?.unique_hash_count || 0} local hashes,
                     {' '}
@@ -752,8 +820,8 @@ export default function HealthPage() {
                   header: t('Status'),
                   render: (row) => (
                     <StatusBadge
-                      status={row.skipped ? 'unknown' : row.ok ? 'succeeded' : 'failed'}
-                      label={row.skipped ? t('Skipped') : row.ok ? t('OK') : t('Gap')}
+                      status={row.skipped ? 'unknown' : row.ok ? 'succeeded' : alignmentBlockedByProcessing ? 'pending' : 'failed'}
+                      label={row.skipped ? t('Skipped') : row.ok ? t('OK') : alignmentBlockedByProcessing ? t('Waiting for processing') : t('Gap')}
                     />
                   ),
                 },
