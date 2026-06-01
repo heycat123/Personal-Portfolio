@@ -264,12 +264,12 @@ export default function DashboardPage() {
     && (!canSeeOperations || (missingS3Files === 0 && (!graph.configured || (graph.ok && missingChildEmbeddings === 0 && missingParentEdges === 0))));
   const systemWorking = documentFiles > 0 || indexedRecords > 0 || copiedFilesPendingProcessing > 0;
   const searchReadinessActionLabel = copiedFilesPendingProcessing > 0
-    ? t('See processing steps')
+    ? t('See processing status')
     : canSeeOperations
       ? t('Open operations metrics')
       : t('Open documents');
   const searchReadinessActionTo = copiedFilesPendingProcessing > 0 && canSeeOperations
-    ? `/evidence/cases/${caseId}/health#search-readiness-resolution`
+    ? `/evidence/cases/${caseId}/jobs#processing-status`
     : copiedFilesPendingProcessing > 0
       ? `/evidence/cases/${caseId}/documents`
       : canSeeOperations

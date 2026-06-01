@@ -45,6 +45,10 @@ const SOURCE_STABILITY_JOB_TYPES = new Set([
   'document_translation_cache',
   'source_connector_scan',
 ]);
+const DOCUMENT_PROCESSING_JOB_TYPES = new Set([
+  'document_text_search_processing',
+  'document_processing_request',
+]);
 
 function StatusActionCard({ title, detail, action, secondaryAction }) {
   const actionClassName = 'inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10';
@@ -337,6 +341,14 @@ export default function HealthPage() {
     SOURCE_STABILITY_JOB_TYPES.has(job.job_type)
   ));
   const activeSourceStabilityJob = activeSourceStabilityJobs[0] || null;
+  const documentProcessingJobs = [...state.jobs]
+    .filter((job) => DOCUMENT_PROCESSING_JOB_TYPES.has(job.job_type))
+    .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+  const activeDocumentProcessingJob = documentProcessingJobs.find((job) => ACTIVE_JOB_STATUSES.has(String(job.status || '').toLowerCase()));
+  const latestDocumentProcessingJob = activeDocumentProcessingJob || documentProcessingJobs[0] || null;
+  const processingStatusAction = latestDocumentProcessingJob?.job_id
+    ? { label: t('Open latest processing job'), to: `/evidence/cases/${caseId}/jobs/${latestDocumentProcessingJob.job_id}` }
+    : { label: t('Open Jobs'), to: `/evidence/cases/${caseId}/jobs#processing-status` };
   const alignmentBlockedByProcessing = showPropagationResolution || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0) || Boolean(activeSourceStabilityJob);
   const alignmentWaitMessage = activeSourceStabilityJob
     ? t('Text/search processing or source sync is active. Run source coverage after that work finishes so the check reads stable records.')
@@ -415,9 +427,11 @@ export default function HealthPage() {
         ? t('Some document rows still need text extraction and search indexing before Ask Documents can cover them.')
         : t('Some relationship-map records are missing search coverage. Run source coverage after processing finishes, or ask support to review processing.'),
       action: copiedFilesPendingProcessing > 0
-        ? { label: processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
+        ? processingStatusAction
         : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
-      secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
+      secondaryAction: copiedFilesPendingProcessing > 0 && !latestDocumentProcessingJob
+        ? { label: state.processingRequestRunning ? t('Starting processing') : t('Start processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
+        : { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
   }
 
@@ -427,7 +441,7 @@ export default function HealthPage() {
       title: t('Source check needs review'),
       detail: t('Some files do not yet match across connected sources and processed records. This affects app completeness checks, not the legal meaning of the documents. Run source coverage after reviewing the source list.'),
       action: alignmentBlockedByProcessing
-        ? { label: t('Finish processing first'), to: `/evidence/cases/${caseId}/health#search-readiness-resolution` }
+        ? processingStatusAction
         : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
@@ -439,7 +453,7 @@ export default function HealthPage() {
       title: t('Source check has not run yet'),
       detail: t('The app has not published a current source coverage check for this case. Run one to compare connected files with processed records.'),
       action: alignmentBlockedByProcessing
-        ? { label: t('Finish processing first'), to: `/evidence/cases/${caseId}/health#search-readiness-resolution` }
+        ? processingStatusAction
         : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
       secondaryAction: { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
@@ -688,14 +702,29 @@ export default function HealthPage() {
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
-              <button
-                type="button"
-                onClick={requestPendingDocumentProcessing}
-                disabled={state.processingRequestRunning || processingRequestStarted}
-                className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+              {latestDocumentProcessingJob?.job_id ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/jobs/${latestDocumentProcessingJob.job_id}`}
+                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {t('Open latest processing job')}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={requestPendingDocumentProcessing}
+                  disabled={state.processingRequestRunning || processingRequestStarted}
+                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing')}
+                </button>
+              )}
+              <Link
+                to={`/evidence/cases/${caseId}/jobs#processing-status`}
+                className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
-                {processingRequestStarted ? t(processingStartTitle) : state.processingRequestRunning ? t('Starting processing') : t('Start processing')}
-              </button>
+                {t('Open Jobs')}
+              </Link>
               <button
                 type="button"
                 onClick={queueSourceAlignmentAudit}

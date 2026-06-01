@@ -110,7 +110,7 @@ export function buildCaseAttentionItems({
       actionLabel: 'Open Documents',
       to: caseId ? `/evidence/cases/${caseId}/documents` : null,
       secondaryActionLabel: 'See processing status',
-      secondaryTo: caseId ? `/evidence/cases/${caseId}/health#search-readiness-resolution` : null,
+      secondaryTo: caseId ? `/evidence/cases/${caseId}/jobs#processing-status` : null,
     });
   }
 
