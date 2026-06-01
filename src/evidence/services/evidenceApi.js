@@ -142,7 +142,7 @@ async function requestBlob(path, options = {}) {
   } = options;
   const correlationId = createCorrelationId();
   const headers = {
-    Accept: 'application/zip,application/pdf,image/*,text/plain,application/octet-stream',
+    Accept: 'application/zip,application/pdf,image/*,audio/*,video/*,text/plain,application/vnd.oasis.opendocument.text,application/octet-stream',
     'X-Correlation-ID': correlationId,
   };
 
@@ -172,13 +172,16 @@ async function requestBlob(path, options = {}) {
   }
 
   const requestFingerprintId = response.headers.get('X-Request-Fingerprint-ID') || null;
+  const contentDisposition = response.headers.get('Content-Disposition') || null;
+  const headerFileName = response.headers.get('X-Evidence-Original-Filename') || null;
   const result = {
     blob: response.ok ? await response.blob() : null,
     status: response.status,
     requestFingerprintId,
     correlationId: response.headers.get('X-Correlation-ID') || correlationId,
-    contentType: response.headers.get('Content-Type') || null,
-    fileName: response.headers.get('Content-Disposition') || null,
+    contentType: response.headers.get('X-Evidence-Content-Type') || response.headers.get('Content-Type') || null,
+    fileName: headerFileName || contentDisposition?.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1] || contentDisposition || null,
+    contentDisposition,
   };
 
   if (!response.ok) {
