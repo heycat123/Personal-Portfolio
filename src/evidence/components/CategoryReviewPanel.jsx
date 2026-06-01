@@ -1,4 +1,4 @@
-import { AlertTriangle, ExternalLink, FileText, Filter, Info, Quote } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Info, Quote } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocaleSettings } from '../context/LocaleContext';
@@ -47,7 +47,7 @@ function basisLabel(status) {
   if (normalized === 'lens_spans_available') return 'Source snippets available';
   if (normalized === 'source_metadata_only') return 'Source metadata only';
   if (normalized === 'graph_tag_only') return 'Issue tag only';
-  if (normalized === 'needs_lens_review') return 'Needs quote-level review';
+  if (normalized === 'needs_lens_review') return 'Needs source-snippet review';
   return normalized ? humanizeKey(normalized) : 'Review basis not recorded';
 }
 
@@ -84,6 +84,99 @@ function CountCard({ label, value, tone = 'default' }) {
   );
 }
 
+function categoryKindLabel(kind) {
+  const normalized = String(kind || '').toLowerCase();
+  if (normalized === 'document_category') return 'Category group';
+  if (normalized === 'issue_tag') return 'Issue tag';
+  if (normalized === 'lens_factor') return 'Review lens factor';
+  return 'Category group';
+}
+
+function categoryDisplayTitle(category) {
+  const code = category?.code ? String(category.code).toUpperCase() : '';
+  const rawLabel = category?.label || category?.category_id || 'Unnamed category';
+  const label = code && String(rawLabel).toUpperCase().startsWith(code)
+    ? String(rawLabel).replace(new RegExp(`^${code}\\s*[-:]*\\s*`, 'i'), '')
+    : rawLabel;
+  if (category?.kind === 'document_category') {
+    return `Category: ${label}`;
+  }
+  if (category?.kind === 'issue_tag') {
+    return `${code ? `${code} - ` : ''}Issue tag: ${label}`;
+  }
+  if (category?.kind === 'lens_factor') {
+    return `${code ? `${code} - ` : ''}Review lens: ${label}`;
+  }
+  return code ? `${code} - ${label}` : label;
+}
+
+function reviewNeeds(category, spanLookup, t) {
+  const counts = category?.counts || {};
+  const documentRows = Number(counts.document_rows || 0);
+  const readyForSearch = Number(counts.ready_for_search || 0);
+  const missingSpans = Number(counts.documents_missing_lens_spans || 0);
+  const needsReview = Number(counts.needs_review || 0);
+  const uncategorized = Number(counts.uncategorized || 0);
+  const notTagged = Number(counts.not_tagged || 0);
+  const unavailableSpans = category?.basis_status === 'needs_lens_review'
+    || category?.basis_status === 'graph_tag_only'
+    || category?.basis_status === 'source_metadata_only'
+    || spanLookup?.available === false;
+  const items = [];
+
+  if (missingSpans > 0 || unavailableSpans) {
+    items.push({
+      label: t('Source snippets missing'),
+      detail: missingSpans > 0
+        ? t('{count} document row(s) do not have generated quotes or snippets for this review lens yet.', { count: missingSpans })
+        : t('This review lens has not generated quotes or snippets for this category yet.'),
+      action: t('Treat this as an organizational suggestion until lens review runs or a person confirms the category.'),
+    });
+  }
+
+  if (needsReview > 0) {
+    items.push({
+      label: t('Documents need attention'),
+      detail: t('{count} document row(s) in this group are marked needs review by document processing or source status.', { count: needsReview }),
+      action: t('Show matching documents, then review source copy, extracted text, and category details.'),
+    });
+  }
+
+  if (documentRows > 0 && readyForSearch < documentRows) {
+    items.push({
+      label: t('Search readiness incomplete'),
+      detail: t('{ready} of {total} document row(s) are ready for search and Q&A.', { ready: readyForSearch, total: documentRows }),
+      action: t('Review document processing before relying on Ask Documents for this category.'),
+    });
+  }
+
+  if (uncategorized > 0 || notTagged > 0) {
+    items.push({
+      label: t('Category or issue tag missing'),
+      detail: t('Some documents in this review set are uncategorized or have no suggested issue tag.'),
+      action: t('Review uncategorized documents before handoff.'),
+    });
+  }
+
+  if (String(category?.review_status || '').toLowerCase() === 'suggested') {
+    items.push({
+      label: t('Human confirmation needed'),
+      detail: t('This grouping is suggested by workspace metadata, issue tags, or review-lens output.'),
+      action: t('A user or lawyer should open the source documents before treating the grouping as ready for handoff.'),
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      label: t('Ready for review'),
+      detail: t('No category-specific review blocker was returned for this group.'),
+      action: t('Open representative documents and review source snippets before sharing with a lawyer.'),
+    });
+  }
+
+  return items;
+}
+
 function categoryReason(category, spanLookup, t) {
   if (!category) {
     return '';
@@ -92,16 +185,16 @@ function categoryReason(category, spanLookup, t) {
     return t('This grouping includes source snippets from the selected review lens. Review the cited snippets and open the source documents before relying on a summary.');
   }
   if (category.basis_status === 'graph_tag_only') {
-    return t('This grouping is based on issue tags from document processing. No quote-level lens review has been run yet for this category.');
+    return t('This grouping is based on issue tags from document processing. This lens has not generated source snippets for this category yet.');
   }
   if (category.basis_status === 'source_metadata_only') {
-    return t('This grouping is based on document metadata and classification labels. No quote-level lens review has been run yet for this category.');
+    return t('This grouping is based on document metadata and category labels. This lens has not generated source snippets for this category yet.');
   }
   if (category.basis_status === 'needs_lens_review') {
-    return t('This category needs quote-level lens review before source snippets can explain the grouping.');
+    return t('This category needs source-snippet review before generated quotes can explain the grouping.');
   }
   if (spanLookup?.available === false) {
-    return t('No quote-level lens review has been run yet.');
+    return t('This review lens has not generated source snippets yet.');
   }
   return t('Review the representative documents and source status to understand this category.');
 }
@@ -109,7 +202,7 @@ function categoryReason(category, spanLookup, t) {
 function spanLookupReasonMessage(reason, t) {
   const normalized = String(reason || '').toLowerCase();
   if (normalized.includes('unavailable') || normalized.includes('not_run') || normalized.includes('not run')) {
-    return t('Quote-level lens review has not been run yet, so this category review cannot show source snippets.');
+    return t('This review lens has not generated quotes or source snippets yet. Categories shown here are organizational suggestions until lens review runs or a person confirms them.');
   }
   if (normalized.includes('version')) {
     return t('Some quote-level review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
@@ -130,7 +223,7 @@ function exceptionMessage(exception, t) {
     return t('Some documents do not have extracted text yet. Review text/search processing before using category summaries for handoff.');
   }
   if (normalized.includes('lens_spans_unavailable') || normalized.includes('span')) {
-    return t('Quote-level lens review has not been run yet, so this category review cannot show source snippets.');
+    return t('This review lens has not generated quotes or source snippets yet. Categories shown here are organizational suggestions until lens review runs or a person confirms them.');
   }
   if (normalized.includes('lens_version_mismatch') || normalized.includes('version')) {
     return t('Some quote-level review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
@@ -254,8 +347,8 @@ function RepresentativeDocument({ document, caseId }) {
           spans.slice(0, 3).map((span, index) => <LensSpan key={`${span?.source_text_hash || span?.factor_code || 'span'}-${index}`} span={span} />)
         ) : (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-            <div className="font-semibold">{t('No quote-level lens review has been run yet')}</div>
-            <p className="mt-1">{document?.why_missing || t('This document is represented by category metadata or issue tags, but no source snippet was returned for this review lens.')}</p>
+            <div className="font-semibold">{t('Source snippets not generated yet')}</div>
+            <p className="mt-1">{document?.why_missing || t('This document is represented by category metadata or issue tags, but this review lens has not returned a source snippet for it yet.')}</p>
           </div>
         )}
       </div>
@@ -356,11 +449,32 @@ export default function CategoryReviewPanel({
   const { t } = useLocaleSettings();
   const [activeView, setActiveView] = useState('all');
   const [selectedKey, setSelectedKey] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState({
+    document_category: true,
+    issue_tag: true,
+    lens_factor: true,
+    other: true,
+  });
   const summaries = useMemo(() => (
     Array.isArray(data?.category_summaries) ? data.category_summaries : []
   ), [data]);
   const filteredSummaries = useMemo(() => summaries.filter((category) => categoryMatchesView(category, activeView)), [activeView, summaries]);
   const selectedCategory = filteredSummaries.find((category) => categoryKey(category) === selectedKey) || filteredSummaries[0] || null;
+  const selectedReviewNeeds = useMemo(() => reviewNeeds(selectedCategory, data?.span_lookup || {}, t), [data?.span_lookup, selectedCategory, t]);
+  const groupedSummaries = useMemo(() => {
+    const groups = [
+      { id: 'document_category', label: 'Document categories', items: [] },
+      { id: 'issue_tag', label: 'Issue tags', items: [] },
+      { id: 'lens_factor', label: 'Review lens factors', items: [] },
+      { id: 'other', label: 'Other review groups', items: [] },
+    ];
+    const groupMap = Object.fromEntries(groups.map((group) => [group.id, group]));
+    filteredSummaries.forEach((category) => {
+      const kind = ['document_category', 'issue_tag', 'lens_factor'].includes(category?.kind) ? category.kind : 'other';
+      groupMap[kind].items.push(category);
+    });
+    return groups.filter((group) => group.items.length);
+  }, [filteredSummaries]);
   const guardrail = data?.guardrail || {};
   const displayTerms = guardrail.display_terms || {};
   const configuredLenses = Array.isArray(data?.configured_lenses) ? data.configured_lenses : [];
@@ -368,10 +482,10 @@ export default function CategoryReviewPanel({
   const totals = data?.totals || {};
   const spanLookup = data?.span_lookup || {};
   const tabs = [
-    { id: 'all', label: 'All' },
+    { id: 'all', label: 'All groups' },
     { id: 'needs_review', label: 'Needs review' },
     { id: 'uncategorized', label: 'Uncategorized' },
-    { id: 'by_category', label: 'By category' },
+    { id: 'by_category', label: 'Categories' },
   ];
 
   return (
@@ -443,7 +557,7 @@ export default function CategoryReviewPanel({
 
       {spanLookup.available === false ? (
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-          <div className="font-semibold">{t('No quote-level lens review has been run yet')}</div>
+          <div className="font-semibold">{t('Source snippets not generated yet')}</div>
           <p className="mt-1">{spanLookupReasonMessage(spanLookup.reason, t)}</p>
         </div>
       ) : null}
@@ -466,11 +580,16 @@ export default function CategoryReviewPanel({
           </button>
         ))}
       </div>
+      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        {activeView === 'by_category'
+          ? t('Categories shows document-level category groups, separate from issue tags and review-lens factors.')
+          : t('Use these tabs to narrow the review list, then expand a group to inspect category, issue-tag, or review-lens items.')}
+      </p>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.6fr)]">
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Categories')}</h3>
+            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Review groups')}</h3>
             <span className="text-xs text-gray-500 dark:text-gray-400">{formatCount(filteredSummaries.length)} {t('shown')}</span>
           </div>
           <div className="max-h-[32rem] space-y-2 overflow-auto pr-1">
@@ -478,34 +597,61 @@ export default function CategoryReviewPanel({
               <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
                 {t('Loading category review.')}
               </div>
-            ) : filteredSummaries.length ? filteredSummaries.map((category) => {
-              const counts = category.counts || {};
-              const selected = categoryKey(category) === categoryKey(selectedCategory);
+            ) : groupedSummaries.length ? groupedSummaries.map((group) => {
+              const expanded = expandedGroups[group.id] !== false;
               return (
-                <button
-                  key={categoryKey(category)}
-                  type="button"
-                  onClick={() => setSelectedKey(categoryKey(category))}
-                  className={`w-full rounded-md border p-3 text-left transition ${
-                    selected
-                      ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-500/20 dark:border-sky-800 dark:bg-sky-950/25'
-                      : 'border-gray-200 bg-white hover:border-sky-300 hover:bg-sky-50/60 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-900 dark:hover:bg-sky-950/20'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="break-words text-sm font-semibold text-gray-950 dark:text-white">{category.label || category.code || t('Unnamed category')}</div>
-                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(humanizeKey(category.kind || 'category'))}</div>
+                <section key={group.id} className="rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-[#101820]">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedGroups((current) => ({ ...current, [group.id]: !expanded }))}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-gray-950 hover:bg-gray-50 dark:text-white dark:hover:bg-white/5"
+                  >
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                      <span className="truncate">{t(group.label)}</span>
+                    </span>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-black/30 dark:text-gray-300">{formatCount(group.items.length)}</span>
+                  </button>
+                  {expanded ? (
+                    <div className="space-y-2 border-t border-gray-200 p-2 dark:border-gray-800">
+                      {group.items.map((category) => {
+                        const counts = category.counts || {};
+                        const selected = categoryKey(category) === categoryKey(selectedCategory);
+                        const needs = reviewNeeds(category, spanLookup, t);
+                        const topNeed = needs[0];
+                        return (
+                          <button
+                            key={categoryKey(category)}
+                            type="button"
+                            onClick={() => setSelectedKey(categoryKey(category))}
+                            className={`w-full rounded-md border p-3 text-left transition ${
+                              selected
+                                ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-500/20 dark:border-sky-800 dark:bg-sky-950/25'
+                                : 'border-gray-200 bg-white hover:border-sky-300 hover:bg-sky-50/60 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-900 dark:hover:bg-sky-950/20'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="break-words text-sm font-semibold text-gray-950 dark:text-white">{t(categoryDisplayTitle(category))}</div>
+                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(categoryKindLabel(category.kind))}</div>
+                              </div>
+                              <ReviewStatusBadge status={category.review_status} />
+                            </div>
+                            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                              <span className="font-semibold">{topNeed.label}:</span> {topNeed.detail}
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
+                              <span>{formatCount(counts.document_rows)} {t('document rows')}</span>
+                              <span>{formatCount(counts.unique_file_hashes)} {t('unique files')}</span>
+                              <span>{formatCount(counts.ready_for_search)} {t('ready')}</span>
+                              <span>{formatCount(counts.needs_review)} {t('needs review')}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <ReviewStatusBadge status={category.review_status} />
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-600 dark:text-gray-300">
-                    <span>{formatCount(counts.document_rows)} {t('document rows')}</span>
-                    <span>{formatCount(counts.unique_file_hashes)} {t('unique files')}</span>
-                    <span>{formatCount(counts.ready_for_search)} {t('ready')}</span>
-                    <span>{formatCount(counts.needs_review)} {t('needs review')}</span>
-                  </div>
-                </button>
+                  ) : null}
+                </section>
               );
             }) : (
               <div className="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
@@ -520,8 +666,8 @@ export default function CategoryReviewPanel({
             <>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(humanizeKey(selectedCategory.kind || 'category'))}</div>
-                  <h3 className="mt-1 break-words text-lg font-semibold text-gray-950 dark:text-white">{selectedCategory.label || selectedCategory.code || t('Unnamed category')}</h3>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(categoryKindLabel(selectedCategory.kind))}</div>
+                  <h3 className="mt-1 break-words text-lg font-semibold text-gray-950 dark:text-white">{t(categoryDisplayTitle(selectedCategory))}</h3>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <ReviewStatusBadge status={selectedCategory.review_status} />
                     <StatusBadge status={selectedCategory.basis_status === 'lens_spans_available' ? 'configured' : 'needs_review'} label={basisLabel(selectedCategory.basis_status)} />
@@ -534,22 +680,22 @@ export default function CategoryReviewPanel({
                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                   >
                     <Filter size={15} aria-hidden="true" />
-                    {t('Filter Documents')}
+                    {t('Show matching documents')}
                   </button>
                   <button
                     type="button"
-                    onClick={onExportCurrentView}
+                    onClick={() => onExportCurrentView?.(selectedCategory)}
                     disabled={exportBusy}
-                    title={t('Use Filter Documents first to export this category.')}
+                    title={t('Export documents that match this selected category or issue tag.')}
                     className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                   >
                     <FileText size={15} aria-hidden="true" />
-                    {exportBusy ? t('Exporting') : t('Export current document table')}
+                    {exportBusy ? t('Exporting') : t('Export category review')}
                   </button>
                 </div>
               </div>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {t('Use Filter Documents first if you want the export to match this selected category.')}
+                {t('Show matching documents filters the document table below to this category or issue tag. Export category review uses the selected category filter even if the table is currently showing something else.')}
               </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -557,6 +703,19 @@ export default function CategoryReviewPanel({
                 <CountCard label={t('Unique files')} value={selectedCategory.counts?.unique_file_hashes} />
                 <CountCard label={t('Ready for search')} value={selectedCategory.counts?.ready_for_search} tone="good" />
                 <CountCard label={t('Needs review')} value={selectedCategory.counts?.needs_review} tone="review" />
+              </div>
+
+              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                <div className="font-semibold">{t('What needs review')}</div>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {selectedReviewNeeds.map((item) => (
+                    <div key={`${item.label}-${item.detail}`} className="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-900/60 dark:bg-black/20">
+                      <div className="font-semibold">{item.label}</div>
+                      <p className="mt-1">{item.detail}</p>
+                      <p className="mt-2 text-xs font-semibold">{item.action}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -576,9 +735,9 @@ export default function CategoryReviewPanel({
 
               {Number(selectedCategory.counts?.documents_missing_lens_spans || 0) > 0 ? (
                 <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-                  <div className="font-semibold">{t('No quote-level lens review has been run yet')}</div>
+                  <div className="font-semibold">{t('Source snippets not generated yet')}</div>
                   <p className="mt-1">
-                    {t('{count} document row(s) in this category do not have source snippets for this review lens yet.', { count: selectedCategory.counts.documents_missing_lens_spans })}
+                    {t('{count} document row(s) in this category do not have generated quotes or source snippets for this review lens yet. The category remains an organizational suggestion until lens review runs or a person confirms it.', { count: selectedCategory.counts.documents_missing_lens_spans })}
                   </p>
                 </div>
               ) : null}

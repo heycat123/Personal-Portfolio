@@ -171,6 +171,41 @@ function statusText(status) {
   return String(status || 'pending').replace(/_/g, ' ');
 }
 
+function categoryReviewFilterValues(category) {
+  if (!category) {
+    return {};
+  }
+  if (category.kind === 'document_category') {
+    return {
+      evidence_type_label: category.label || category.code || category.category_id,
+    };
+  }
+  if (category.code) {
+    return {
+      legal_factor_code: String(category.code).toLowerCase(),
+    };
+  }
+  return {};
+}
+
+function categoryReviewExportQuery(category, sort) {
+  const filters = categoryReviewFilterValues(category);
+  return {
+    ...(filters.evidence_type_label ? { evidence_type: filters.evidence_type_label } : {}),
+    ...(filters.legal_factor_code ? { factor_code: filters.legal_factor_code } : {}),
+    sort_by: sort?.key || 'updated_at',
+    sort_dir: sort?.desc ? 'desc' : 'asc',
+  };
+}
+
+function exportToken(value) {
+  return String(value || 'documents')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'documents';
+}
+
 function StorageSyncBadge({ document, t }) {
   const status = document?.source_status?.storage || document?.canonical_storage_status || 'unknown';
   const sourceLabel = document?.source_status?.label;
@@ -513,13 +548,13 @@ export default function DocumentsPage() {
     }
   }, [drawer.previewUrl]);
 
-  const exportCurrentView = useCallback(async () => {
+  const exportDocumentsWithQuery = useCallback(async (query, filenameToken = 'documents') => {
     setExportState({ busy: true, error: null, fingerprint: null });
     try {
       const token = await getAccessToken();
       let guardrails = null;
       try {
-        const guardrailResult = await evidenceApi.getDocumentExportGuardrails(caseId, documentQuery, { token });
+        const guardrailResult = await evidenceApi.getDocumentExportGuardrails(caseId, query, { token });
         recordFingerprint(guardrailResult, 'Document export guardrails');
         guardrails = guardrailResult.data?.export_guardrails || guardrailResult.data || null;
       } catch (guardrailError) {
@@ -532,7 +567,7 @@ export default function DocumentsPage() {
       }
       const runExport = () => evidenceApi.exportDocuments(
         caseId,
-        { ...documentQuery, acknowledge_sensitive_export: true },
+        { ...query, acknowledge_sensitive_export: true },
         { token },
       );
       let result;
@@ -548,10 +583,9 @@ export default function DocumentsPage() {
       }
       recordFingerprint(result, 'Documents export');
       const url = URL.createObjectURL(result.blob);
-      const activeFactor = String(filterValues.legal_factor_code || '').toUpperCase() || 'documents';
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `evidence-export-${activeFactor}.zip`;
+      anchor.download = `evidence-export-${exportToken(filenameToken)}.zip`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -567,7 +601,18 @@ export default function DocumentsPage() {
     } catch (error) {
       setExportState({ busy: false, error, fingerprint: null });
     }
-  }, [caseId, documentQuery, filterValues.legal_factor_code, getAccessToken, recordFingerprint, t]);
+  }, [caseId, getAccessToken, recordFingerprint, t]);
+
+  const exportCurrentView = useCallback(async () => {
+    const activeFactor = String(filterValues.legal_factor_code || filterValues.evidence_type_label || '').toUpperCase() || 'documents';
+    await exportDocumentsWithQuery(documentQuery, activeFactor);
+  }, [documentQuery, exportDocumentsWithQuery, filterValues.evidence_type_label, filterValues.legal_factor_code]);
+
+  const exportCategoryReview = useCallback(async (category) => {
+    const query = categoryReviewExportQuery(category, sort);
+    const name = category?.code || category?.label || category?.category_id || 'category-review';
+    await exportDocumentsWithQuery(query, `category-review-${name}`);
+  }, [exportDocumentsWithQuery, sort]);
 
   const requestPendingDocumentProcessing = useCallback(async () => {
     setProcessingRequest({ busy: true, error: null, result: null });
@@ -957,13 +1002,20 @@ export default function DocumentsPage() {
     if (!category) {
       return;
     }
-    if (category.kind === 'document_category') {
-      applyColumnFilter('evidence_type_label', category.label || category.code || category.category_id);
-      return;
-    }
-    if (category.code) {
-      applyColumnFilter('legal_factor_code', String(category.code).toLowerCase());
-    }
+    const filters = categoryReviewFilterValues(category);
+    setOffset(0);
+    setFilterValues((current) => {
+      const next = { ...current };
+      delete next.evidence_type_label;
+      delete next.legal_factor_code;
+      if (filters.evidence_type_label) {
+        next.evidence_type_label = filters.evidence_type_label;
+      }
+      if (filters.legal_factor_code) {
+        next.legal_factor_code = filters.legal_factor_code;
+      }
+      return next;
+    });
   };
 
   const filterUncategorizedDocuments = () => {
@@ -1130,7 +1182,7 @@ export default function DocumentsPage() {
         exportBusy={exportState.busy}
         lensId={categoryLensId}
         loading={categoryQa.loading}
-        onExportCurrentView={exportCurrentView}
+        onExportCurrentView={exportCategoryReview}
         onFilterCategory={filterCategoryReviewDocuments}
         onFilterUncategorized={filterUncategorizedDocuments}
         onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
