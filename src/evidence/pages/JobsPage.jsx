@@ -381,7 +381,7 @@ export default function JobsPage() {
       </div>
 
       {latestProcessingJob && latestProcessingProgress ? (
-        <section className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <section id="processing-status" className="mb-4 scroll-mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -419,10 +419,10 @@ export default function JobsPage() {
                 {t('Open latest')}
               </Link>
               <Link
-                to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
+                to={`/evidence/cases/${caseId}/documents`}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
-                {t('View processing status')}
+                {t('Review affected documents')}
               </Link>
             </div>
           </div>

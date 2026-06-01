@@ -551,10 +551,10 @@ export default function JobDetailPage() {
                 <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
                   {isProcessingRequest ? (
                     <Link
-                      to={`/evidence/cases/${caseId}/health#search-readiness-resolution`}
+                      to={`/evidence/cases/${caseId}/jobs#processing-status`}
                       className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                     >
-                      {t('View processing status')}
+                      {t('Open Jobs')}
                     </Link>
                   ) : null}
                   <Link
