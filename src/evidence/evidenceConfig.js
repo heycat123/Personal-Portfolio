@@ -9,7 +9,7 @@ export const EVIDENCE_SITE_VERSION =
   import.meta.env.VITE_EVIDENCE_SITE_VERSION || packageJson.version || 'local';
 
 export const EVIDENCE_ENVIRONMENT_LABEL =
-  import.meta.env.VITE_EVIDENCE_ENVIRONMENT || 'local tunnel';
+  import.meta.env.VITE_EVIDENCE_ENVIRONMENT || 'Development';
 
 export const DEFAULT_EVIDENCE_CASE = {
   tenantId: 'forest-personal',

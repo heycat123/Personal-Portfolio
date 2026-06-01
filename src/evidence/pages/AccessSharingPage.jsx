@@ -2,6 +2,7 @@ import { Mail, RefreshCw, Send, ShieldCheck, UserPlus, UserX, XCircle } from 'lu
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
+import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
@@ -9,6 +10,7 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
+import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { formatDateTime } from '../utils/formatters';
 
 const CASE_ROLES = ['owner', 'admin', 'lawyer', 'contributor', 'client', 'viewer'];
@@ -198,6 +200,15 @@ export default function AccessSharingPage() {
   const revokedMemberships = state.memberships.filter((item) => item.status !== 'active');
   const pendingInvitations = state.invitations.filter((item) => item.status === 'pending');
   const deliveryConfigured = Boolean(state.deliveryConfig?.configured);
+  const failedEmailCount = state.emailMessages.filter((message) => ['failed', 'error', 'bounced'].includes(deliveryStatus(message))).length;
+  const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
+    caseId,
+    access: {
+      pendingInvitations: pendingInvitations.length,
+      deliveryConfigured,
+      failedEmails: failedEmailCount,
+    },
+  }), 'access-sharing'), [caseId, deliveryConfigured, failedEmailCount, pendingInvitations.length]);
 
   return (
     <div>
@@ -230,6 +241,14 @@ export default function AccessSharingPage() {
           {t('Family-law records may include private, privileged, child-related, financial, medical, school, or safety-sensitive information. Inviting a lawyer gives workspace access; it does not by itself create an attorney-client relationship.')}
         </p>
       </div>
+
+      <NeedsAttentionPanel
+        items={attentionItems}
+        title="Access attention"
+        description="Access, invitation, and email-delivery items that may need follow-up."
+        emptyTitle="No access attention items right now"
+        emptyDetail="Invitations, delivery, and access records do not show open follow-up items."
+      />
 
       <div className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
