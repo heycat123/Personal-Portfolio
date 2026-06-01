@@ -610,10 +610,8 @@ export default function JobDetailPage() {
               {state.cleanupNotice ? (
                 <div className="mx-4 mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                   <div className="font-semibold">{state.cleanupNotice.title || t('Removed from workspace')}</div>
-                  <div className="mt-1">
-                    {state.cleanupNotice.fileName}
-                    {state.cleanupNotice.message ? ` ${state.cleanupNotice.message}` : ''}
-                  </div>
+                  {state.cleanupNotice.fileName ? <div className="mt-1 font-semibold">{state.cleanupNotice.fileName}</div> : null}
+                  {state.cleanupNotice.message ? <div className="mt-1">{state.cleanupNotice.message}</div> : null}
                 </div>
               ) : null}
               {processingDocuments.length ? (

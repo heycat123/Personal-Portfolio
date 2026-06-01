@@ -299,13 +299,13 @@ export default function DocumentDetailPage() {
         removalBusy: false,
         removalError: null,
         removalJob: result.data,
-        removalMessage: removalResultDetail(result.data, removalPayload, t),
+        removalMessage: removalResultDetail(result.data, removalPayload, t, document.original_filename || document.file_id),
         removalDialogOpen: false,
       }));
     } catch (error) {
       setState((current) => ({ ...current, removalBusy: false, removalError: error }));
     }
-  }, [caseId, document?.file_id, getAccessToken, loadDocument, recordFingerprint, state.removalBusy, t]);
+  }, [caseId, document?.file_id, document?.original_filename, getAccessToken, loadDocument, recordFingerprint, state.removalBusy, t]);
 
   return (
     <div>
