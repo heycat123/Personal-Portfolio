@@ -1,6 +1,6 @@
-import { ArrowLeft, Ban, RefreshCw, RotateCcw } from 'lucide-react';
+import { Archive, ArrowLeft, Ban, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import JobStatusTimeline from '../components/JobStatusTimeline';
 import MetricTile from '../components/MetricTile';
@@ -26,6 +26,7 @@ import {
 } from '../utils/jobProgress';
 
 const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit', 'agentic_quality_test'];
+const LIVE_POLL_STATUSES = new Set(['queued', 'running']);
 
 function JsonBlock({ value }) {
   return (
@@ -88,10 +89,11 @@ function formatJobCost(costSummary) {
 
 export default function JobDetailPage() {
   const { caseId, jobId } = useParams();
+  const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { isRootAdmin } = useOperatorMode();
+  const { debugEnabled, isRootAdmin } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     actionLoading: null,
@@ -101,13 +103,17 @@ export default function JobDetailPage() {
     fingerprint: null,
   });
 
-  const loadJob = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: null }));
+  const loadJob = useCallback(async (options = {}) => {
+    const quiet = Boolean(options?.quiet);
+    if (!quiet) {
+      setState((current) => ({ ...current, loading: true, error: null }));
+    }
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.getJob(caseId, jobId, { token });
       recordFingerprint(result, 'Job detail');
-      setState({
+      setState((current) => ({
+        ...current,
         loading: false,
         error: null,
         job: result.data,
@@ -115,7 +121,7 @@ export default function JobDetailPage() {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
-      });
+      }));
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
@@ -149,6 +155,20 @@ export default function JobDetailPage() {
     }
   }, [caseId, getAccessToken, jobId, loadJob, recordFingerprint]);
 
+  const archiveJob = useCallback(async () => {
+    setState((current) => ({ ...current, actionLoading: 'archive', actionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.archiveJob(caseId, jobId, { token });
+      recordFingerprint(result, 'Dismiss job');
+      navigate(`/evidence/cases/${caseId}/jobs`);
+    } catch (error) {
+      setState((current) => ({ ...current, actionError: error }));
+    } finally {
+      setState((current) => ({ ...current, actionLoading: null }));
+    }
+  }, [caseId, getAccessToken, jobId, navigate, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadJob();
@@ -159,8 +179,21 @@ export default function JobDetailPage() {
 
   const job = state.job;
   const progress = job ? jobProgressModel(job) : null;
+  const shouldLivePoll = Boolean(job && LIVE_POLL_STATUSES.has(job.status));
+
+  useEffect(() => {
+    if (!shouldLivePoll) {
+      return undefined;
+    }
+    const timerId = window.setInterval(() => {
+      void loadJob({ quiet: true });
+    }, 2500);
+    return () => window.clearInterval(timerId);
+  }, [loadJob, shouldLivePoll]);
+
   const canCancel = Boolean(progress?.canCancel);
   const canRetry = job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+  const canArchive = Boolean(job && progress && !progress.canCancel && !job.archived_at);
   const isProcessingRequest = isDocumentProcessingRequest(job);
   const processingDocuments = isProcessingRequest ? jobProcessingDocuments(job) : [];
   const processingDocumentCount = isProcessingRequest ? jobProcessingRequestedCount(job) : 0;
@@ -185,10 +218,10 @@ export default function JobDetailPage() {
           <>
             <button
               type="button"
-              onClick={loadJob}
+              onClick={() => loadJob()}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
-              <RefreshCw size={16} aria-hidden="true" />
+              <RefreshCw size={16} className={shouldLivePoll ? 'animate-spin' : ''} aria-hidden="true" />
               {t('Refresh')}
             </button>
             {canCancel ? (
@@ -212,6 +245,18 @@ export default function JobDetailPage() {
               >
                 <RotateCcw size={16} aria-hidden="true" />
                 {state.actionLoading === 'retry' ? t('Retrying') : t('Retry')}
+              </button>
+            ) : null}
+            {canArchive ? (
+              <button
+                type="button"
+                onClick={archiveJob}
+                disabled={Boolean(state.actionLoading)}
+                title={t('Dismiss this job from the default list. History stays available for support.')}
+                className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                <Archive size={16} aria-hidden="true" />
+                {state.actionLoading === 'archive' ? t('Dismissing') : t('Dismiss')}
               </button>
             ) : null}
             <Link
@@ -245,6 +290,11 @@ export default function JobDetailPage() {
                   </div>
                   <h2 className="text-base font-semibold">{t(progress.title)}</h2>
                   <p className="mt-1">{t(progress.message)}</p>
+                  {shouldLivePoll ? (
+                    <p className="mt-2 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                      {t('Live updates are on. This page refreshes progress every few seconds while processing is active.')}
+                    </p>
+                  ) : null}
                   {isProcessingRequest && !progress.canCancel && progress.progressPercent === 0 ? (
                     <p className="mt-2 font-semibold">
                       {t('This older start record did not create a running processing batch. Start text/search processing from Documents to create a cancellable batch with per-file progress.')}
@@ -372,19 +422,27 @@ export default function JobDetailPage() {
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
             <div>
-              <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Events')}</h3>
-              <JobStatusTimeline events={job.events || []} />
+              <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Recent events')}</h3>
+              <JobStatusTimeline events={job.events || []} limit={debugEnabled ? 0 : 10} />
             </div>
 
             <div className="space-y-5">
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Input')}</h3>
-                <JsonBlock value={job.input_json} />
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Result')}</h3>
-                <JsonBlock value={job.result_json} />
-              </div>
+              {debugEnabled ? (
+                <>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                    <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Input')}</h3>
+                    <JsonBlock value={job.input_json} />
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                    <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Result')}</h3>
+                    <JsonBlock value={job.result_json} />
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+                  {t('Technical input and result details are hidden. Press Ctrl+Alt+F to show diagnostics.')}
+                </div>
+              )}
               {job.error_message_redacted ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
                   {job.error_message_redacted}

@@ -16,7 +16,7 @@ function eventIcon(eventType) {
   return Circle;
 }
 
-export default function JobStatusTimeline({ events }) {
+export default function JobStatusTimeline({ events, limit = 12 }) {
   const { t } = useLocaleSettings();
   if (!events?.length) {
     return (
@@ -26,9 +26,20 @@ export default function JobStatusTimeline({ events }) {
     );
   }
 
+  const visibleEvents = Number.isFinite(Number(limit)) && Number(limit) > 0
+    ? events.slice(-Number(limit))
+    : events;
+  const hiddenCount = Math.max(0, events.length - visibleEvents.length);
+
   return (
-    <ol className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-      {events.map((event, index) => {
+    <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      {hiddenCount ? (
+        <div className="border-b border-gray-200 px-4 py-2 text-xs font-semibold text-gray-500 dark:border-gray-800 dark:text-gray-400">
+          {t('Showing the latest {count} events. Older events stay available in diagnostics.', { count: visibleEvents.length })}
+        </div>
+      ) : null}
+      <ol className="max-h-96 overflow-auto p-4">
+      {visibleEvents.map((event, index) => {
         const Icon = eventIcon(event.event_type);
         return (
           <li key={`${event.event_type}-${event.created_at}-${index}`} className="flex gap-3 pb-4 last:pb-0">
@@ -45,6 +56,7 @@ export default function JobStatusTimeline({ events }) {
           </li>
         );
       })}
-    </ol>
+      </ol>
+    </div>
   );
 }
