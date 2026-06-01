@@ -97,8 +97,11 @@ function requestRecorded(job, status, result) {
 }
 
 export function jobDisplayTitle(job) {
-  if (isDocumentProcessingRequest(job)) {
-    return 'Document processing';
+  if (isDocumentTextSearchProcessing(job)) {
+    return 'Text/search processing';
+  }
+  if (isLegacyDocumentProcessingRequest(job)) {
+    return 'Processing start record';
   }
   return humanizeKey(job?.job_type || 'Job');
 }

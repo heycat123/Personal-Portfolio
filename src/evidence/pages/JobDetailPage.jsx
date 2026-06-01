@@ -420,36 +420,29 @@ export default function JobDetailPage() {
             ) : null}
           </div>
 
-          <div className="mt-6 grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-            <div>
-              <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Recent events')}</h3>
-              <JobStatusTimeline events={job.events || []} limit={debugEnabled ? 0 : 10} />
-            </div>
+          <section className="mt-6">
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Recent events')}</h3>
+            <JobStatusTimeline events={job.events || []} limit={debugEnabled ? 0 : 4} />
+          </section>
 
-            <div className="space-y-5">
-              {debugEnabled ? (
-                <>
-                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                    <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Input')}</h3>
-                    <JsonBlock value={job.input_json} />
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                    <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Result')}</h3>
-                    <JsonBlock value={job.result_json} />
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-                  {t('Technical input and result details are hidden. Press Ctrl+Alt+F to show diagnostics.')}
-                </div>
-              )}
-              {job.error_message_redacted ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
-                  {job.error_message_redacted}
-                </div>
-              ) : null}
+          {debugEnabled ? (
+            <div className="mt-6 grid gap-5 xl:grid-cols-2">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Input')}</h3>
+                <JsonBlock value={job.input_json} />
+              </div>
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+                <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Result')}</h3>
+                <JsonBlock value={job.result_json} />
+              </div>
             </div>
-          </div>
+          ) : null}
+
+          {job.error_message_redacted ? (
+            <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
+              {job.error_message_redacted}
+            </div>
+          ) : null}
         </>
       ) : null}
 
