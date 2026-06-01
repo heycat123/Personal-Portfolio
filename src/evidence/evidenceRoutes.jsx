@@ -305,8 +305,8 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="documents/:fileId" element={<DocumentDetailPage />} />
             <Route path="intake" element={<ContributorRoute><IntakePage /></ContributorRoute>} />
-            <Route path="jobs" element={<OperationsRoute><JobsPage /></OperationsRoute>} />
-            <Route path="jobs/:jobId" element={<OperationsRoute><JobDetailPage /></OperationsRoute>} />
+            <Route path="jobs" element={<JobsPage />} />
+            <Route path="jobs/:jobId" element={<JobDetailPage />} />
             <Route path="query" element={<QueryPage />} />
             <Route path="system-query" element={<OperationsRoute><SystemQueryPage /></OperationsRoute>} />
             <Route path="health" element={<OperationsRoute><HealthPage /></OperationsRoute>} />

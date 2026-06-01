@@ -10,6 +10,7 @@ import AnimatedCount from '../components/AnimatedCount';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import useJobStatusPolling, { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
@@ -70,6 +71,7 @@ export default function JobsPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
     creatingJobType: null,
@@ -219,7 +221,6 @@ export default function JobsPage() {
     return () => window.clearTimeout(timerId);
   }, [loadJobs]);
 
-  const activeJobCount = state.jobs.filter(isActiveJob).length;
   const processingJobs = [...state.jobs]
     .filter(isDocumentProcessingRequest)
     .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
@@ -258,8 +259,8 @@ export default function JobsPage() {
   const renderJobActions = (job) => {
     const progress = jobProgressModel(job);
     const busy = state.actionJobId === job.job_id;
-    const canRetry = ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
-    const canArchive = !progress.canCancel && !job.archived_at;
+    const canRetry = canSeeOperations && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+    const canArchive = canSeeOperations && !progress.canCancel && !job.archived_at;
     return (
       <div className="flex flex-wrap gap-2">
         <Link
@@ -323,12 +324,16 @@ export default function JobsPage() {
       render: renderJobActions,
     },
   ];
+  const displayJobs = canSeeOperations ? state.jobs : processingJobs;
+  const displayActiveJobCount = displayJobs.filter(isActiveJob).length;
 
   return (
     <div>
       <PageHeader
-        title="Jobs"
-        description={t('{count} job records returned for this case.', { count: state.total })}
+        title={canSeeOperations ? 'Jobs' : 'Processing status'}
+        description={canSeeOperations
+          ? t('{count} job records returned for this case.', { count: state.total })
+          : t('Document processing records for this case. Use this page to see what is happening with text extraction, search indexing, and source citations.')}
         actions={
           <>
             <button
@@ -339,7 +344,7 @@ export default function JobsPage() {
               <RefreshCw size={16} aria-hidden="true" />
               {t('Refresh')}
             </button>
-            {SAFE_JOB_TYPES.map((jobType) => (
+            {canSeeOperations ? SAFE_JOB_TYPES.map((jobType) => (
               <button
                 key={jobType}
                 type="button"
@@ -350,7 +355,7 @@ export default function JobsPage() {
                 <Play size={16} aria-hidden="true" />
                 {state.creatingJobType === jobType ? t('Queueing') : t('Queue {jobType}', { jobType })}
               </button>
-            ))}
+            )) : null}
           </>
         }
       />
@@ -361,17 +366,17 @@ export default function JobsPage() {
 
       <div className="mb-4 flex flex-wrap gap-2">
         <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
-          {t('Live updates:')} <AnimatedCount value={activeJobCount || liveJobs.activeCount} /> {t('active')}
+          {t('Live updates:')} <AnimatedCount value={displayActiveJobCount || (canSeeOperations ? liveJobs.activeCount : activeProcessingJobs)} /> {t('active')}
         </span>
         {liveJobs.lastFinishedJob ? (
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
             {t('Last finished: {jobType}', { jobType: liveJobs.lastFinishedJob.job_type })}
           </span>
         ) : null}
-        {state.fingerprint?.id ? (
+        {debugEnabled && state.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" />
         ) : null}
-        {state.createdFingerprint?.id ? (
+        {debugEnabled && state.createdFingerprint?.id ? (
           <RequestFingerprint
             fingerprintId={state.createdFingerprint.id}
             correlationId={state.createdFingerprint.correlationId}
@@ -430,10 +435,10 @@ export default function JobsPage() {
       ) : null}
 
       <DataTable
-        rows={state.jobs}
+        rows={displayJobs}
         rowKey={(job) => job.job_id}
         loading={state.loading}
-        emptyTitle={state.loading ? t('Loading jobs') : t('No jobs returned')}
+        emptyTitle={state.loading ? t('Loading jobs') : t(canSeeOperations ? 'No jobs returned' : 'No processing jobs returned')}
         onRowSelect={(job) => navigate(`/evidence/cases/${caseId}/jobs/${job.job_id}`)}
         mobileTitle={(job) => (
           <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">
