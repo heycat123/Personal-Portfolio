@@ -22,7 +22,7 @@ import {
   jobProgressModel,
 } from '../utils/jobProgress';
 
-const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
+const OPERATOR_QUEUE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
 function CompactProgress({ progress, t }) {
   const percentLabel = progress.progressPercentLabel || `${progress.progressPercent}%`;
@@ -259,7 +259,9 @@ export default function JobsPage() {
   const renderJobActions = (job) => {
     const progress = jobProgressModel(job);
     const busy = state.actionJobId === job.job_id;
-    const canRetry = canSeeOperations && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type);
+    const retryAllowedByRole = progress.retryRequiresOperatorAccess ? canSeeOperations : true;
+    const canRetry = Boolean(progress.canRetry && retryAllowedByRole);
+    const retryUnavailable = Boolean(progress.canRetry && !retryAllowedByRole);
     const canArchive = canSeeOperations && !progress.canCancel && !job.archived_at;
     return (
       <div className="flex flex-wrap gap-2">
@@ -286,11 +288,21 @@ export default function JobsPage() {
             type="button"
             onClick={() => retryJob(job.job_id)}
             disabled={Boolean(state.actionJobId)}
-            title={t('Retry failed or cancelled safe job')}
+            title={t(progress.retryMessage || 'Retry requeues this same job and keeps the previous attempt in activity history.')}
             className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-sky-800 dark:text-sky-200 dark:hover:bg-sky-950/40"
           >
             <RotateCcw size={13} aria-hidden="true" />
-            {busy ? t('Retrying') : t('Retry')}
+            {busy ? t('Retrying') : t(progress.retryActionLabel || 'Retry job')}
+          </button>
+        ) : retryUnavailable ? (
+          <button
+            type="button"
+            disabled
+            title={t('Retry is available for this job, but it requires operator access.')}
+            className="inline-flex cursor-not-allowed items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-500 opacity-60 dark:border-gray-700 dark:text-gray-400"
+          >
+            <RotateCcw size={13} aria-hidden="true" />
+            {t(progress.retryActionLabel || 'Retry job')}
           </button>
         ) : null}
         {canArchive ? (
@@ -344,7 +356,7 @@ export default function JobsPage() {
               <RefreshCw size={16} aria-hidden="true" />
               {t('Refresh')}
             </button>
-            {canSeeOperations ? SAFE_JOB_TYPES.map((jobType) => (
+            {canSeeOperations ? OPERATOR_QUEUE_JOB_TYPES.map((jobType) => (
               <button
                 key={jobType}
                 type="button"

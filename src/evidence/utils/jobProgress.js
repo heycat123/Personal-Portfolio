@@ -685,6 +685,23 @@ export function jobProgressModel(job) {
     ?? result.can_cancel
     ?? (!TERMINAL_SUCCESS.has(status) && !TERMINAL_ATTENTION.has(status) && ACTIVE_STATUSES.has(status)),
   );
+  const retryAction = firstObject(job?.retry_action, display.retry_action, result.retry_action) || {};
+  const canRetry = Boolean(job?.can_retry ?? display.can_retry ?? result.can_retry ?? false);
+  const retryActionLabel = userFacingProcessingText(firstString(
+    job?.retry_action_label,
+    display.retry_action_label,
+    result.retry_action_label,
+    actionText(retryAction),
+    canRetry ? 'Retry job' : null,
+  ));
+  const retryMessage = userFacingProcessingText(firstString(
+    job?.retry_message,
+    display.retry_message,
+    result.retry_message,
+    retryAction.user_message,
+    retryAction.message,
+    canRetry ? 'Retry requeues this same job and keeps the previous attempt in activity history.' : null,
+  ));
   const cancelActionLabel = userFacingProcessingText(firstString(
     job?.cancel_action_label,
     display.cancel_action_label,
@@ -729,6 +746,10 @@ export function jobProgressModel(job) {
       result.cancel_message,
       fallbackCancelMessage,
     )),
+    canRetry,
+    retryActionLabel,
+    retryMessage,
+    retryRequiresOperatorAccess: Boolean(retryAction.requires_operator_access),
     costSummary: jobCostSummary(job),
   };
 }
