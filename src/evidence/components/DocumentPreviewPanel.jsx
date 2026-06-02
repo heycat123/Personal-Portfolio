@@ -1,22 +1,7 @@
 import { ExternalLink } from 'lucide-react';
 import ErrorPanel from './ErrorPanel';
 import { useLocaleSettings } from '../context/LocaleContext';
-
-function fileExtension(fileName) {
-  const value = String(fileName || '').toLowerCase();
-  const index = value.lastIndexOf('.');
-  return index >= 0 ? value.slice(index + 1) : '';
-}
-
-function isAudio(contentType, fileName) {
-  const type = String(contentType || '').toLowerCase();
-  return type.startsWith('audio/') || ['wav', 'mp3', 'm4a', 'aac', 'ogg', 'flac'].includes(fileExtension(fileName));
-}
-
-function isVideo(contentType, fileName) {
-  const type = String(contentType || '').toLowerCase();
-  return type.startsWith('video/') || ['mp4', 'mov', 'webm', 'm4v'].includes(fileExtension(fileName));
-}
+import { fileExtension, isAudioDocument, isVideoDocument } from '../utils/documentMedia';
 
 function isOdt(contentType, fileName) {
   const type = String(contentType || '').toLowerCase();
@@ -98,7 +83,7 @@ export default function DocumentPreviewPanel({
       </div>
     );
   }
-  if (isAudio(contentType, name)) {
+  if (isAudioDocument({ ...document, original_filename: name }, contentType)) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#101820]">
         <audio src={previewUrl} controls className="w-full">
@@ -107,7 +92,7 @@ export default function DocumentPreviewPanel({
       </div>
     );
   }
-  if (isVideo(contentType, name)) {
+  if (isVideoDocument({ ...document, original_filename: name }, contentType)) {
     return (
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-black dark:border-gray-800">
         <video src={previewUrl} controls className="max-h-[58vh] w-full">
