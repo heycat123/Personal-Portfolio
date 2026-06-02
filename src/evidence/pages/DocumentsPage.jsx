@@ -434,6 +434,14 @@ export default function DocumentsPage() {
     data: null,
     fingerprint: null,
   });
+  const [categoryResolve, setCategoryResolve] = useState({
+    loading: true,
+    error: null,
+    data: null,
+    result: null,
+    busyActionId: null,
+    fingerprint: null,
+  });
 
   const documentQuery = useMemo(() => ({
     limit: PAGE_SIZE,
@@ -521,6 +529,33 @@ export default function DocumentsPage() {
     }
   }, [caseId, categoryLensId, getAccessToken, recordFingerprint]);
 
+  const loadCategoryResolvePlan = useCallback(async () => {
+    setCategoryResolve((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getCategoryQaResolvePlan(
+        caseId,
+        {
+          lens_id: categoryLensId || DEFAULT_CATEGORY_QA_LENS_ID,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Category review actions');
+      setCategoryResolve((current) => ({
+        ...current,
+        loading: false,
+        error: null,
+        data: result.data || null,
+        fingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+    } catch (error) {
+      setCategoryResolve((current) => ({ ...current, loading: false, error }));
+    }
+  }, [caseId, categoryLensId, getAccessToken, recordFingerprint]);
+
   useEffect(() => {
     const timerId = window.setTimeout(() => {
       loadDocuments();
@@ -536,6 +571,14 @@ export default function DocumentsPage() {
 
     return () => window.clearTimeout(timerId);
   }, [loadCategoryQa]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      loadCategoryResolvePlan();
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [loadCategoryResolvePlan]);
 
   useEffect(() => {
     setExpandedDocuments({});
@@ -613,6 +656,48 @@ export default function DocumentsPage() {
     const name = category?.code || category?.label || category?.category_id || 'category-review';
     await exportDocumentsWithQuery(query, `category-review-${name}`);
   }, [exportDocumentsWithQuery, sort]);
+
+  const resolveCategoryReviewAction = useCallback(async (action, extraPayload = {}) => {
+    const actionId = action?.action_id || action?.id || action?.status || 'category_review_action';
+    setCategoryResolve((current) => ({
+      ...current,
+      busyActionId: actionId,
+      error: null,
+      result: null,
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.resolveCategoryQaAction(
+        caseId,
+        {
+          action_id: actionId,
+          lens_id: categoryLensId || DEFAULT_CATEGORY_QA_LENS_ID,
+          category: action?.category || action?.category_id || action?.code || null,
+          ...extraPayload,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Category review action');
+      setCategoryResolve((current) => ({
+        ...current,
+        busyActionId: null,
+        error: null,
+        result: result.data || {},
+        fingerprint: {
+          id: result.requestFingerprintId,
+          correlationId: result.correlationId,
+        },
+      }));
+      await Promise.all([loadCategoryQa(), loadCategoryResolvePlan(), loadDocuments()]);
+    } catch (error) {
+      setCategoryResolve((current) => ({
+        ...current,
+        busyActionId: null,
+        error,
+        result: null,
+      }));
+    }
+  }, [caseId, categoryLensId, getAccessToken, loadCategoryQa, loadCategoryResolvePlan, loadDocuments, recordFingerprint]);
 
   const requestPendingDocumentProcessing = useCallback(async () => {
     setProcessingRequest({ busy: true, error: null, result: null });
@@ -1182,11 +1267,18 @@ export default function DocumentsPage() {
         exportBusy={exportState.busy}
         lensId={categoryLensId}
         loading={categoryQa.loading}
+        onLoadResolvePlan={loadCategoryResolvePlan}
         onExportCurrentView={exportCategoryReview}
         onFilterCategory={filterCategoryReviewDocuments}
         onFilterUncategorized={filterUncategorizedDocuments}
         onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
         onRetry={loadCategoryQa}
+        onResolveAction={resolveCategoryReviewAction}
+        resolveActionBusyId={categoryResolve.busyActionId}
+        resolveError={categoryResolve.error}
+        resolveLoading={categoryResolve.loading}
+        resolvePlan={categoryResolve.data}
+        resolveResult={categoryResolve.result}
       />
 
       {showDiagnostics && categoryQa.fingerprint?.id ? (

@@ -381,10 +381,10 @@ function exceptionAction(exception, caseId, onFilterUncategorized, t) {
     };
   }
   if (text.includes('text') || text.includes('processing') || text.includes('extraction')) {
-    return { label: t('Review processing status'), to: `/evidence/cases/${caseId}/documents` };
+    return { label: t('See text/search processing'), to: `/evidence/cases/${caseId}/jobs#processing-status` };
   }
   if (text.includes('span') || text.includes('lens') || text.includes('version')) {
-    return { label: t('Help & Support'), to: `/evidence/cases/${caseId}/support` };
+    return { label: t('Review category actions'), to: '#category-review-actions' };
   }
   if (text.includes('excluded') || text.includes('removed')) {
     return { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` };
@@ -440,6 +440,222 @@ function ExceptionsList({ exceptions, caseId, onFilterUncategorized }) {
   );
 }
 
+function routeForAction(action, caseId) {
+  const route = action?.next_route_hint || action?.route_hint || action?.next_action?.route_hint || action?.resolution?.route_hint;
+  if (!route) {
+    return null;
+  }
+  if (String(route).startsWith('/')) {
+    return route;
+  }
+  if (String(route).startsWith('jobs')) {
+    return `/evidence/cases/${caseId}/${route}`;
+  }
+  if (String(route).startsWith('#')) {
+    return route;
+  }
+  return `/evidence/cases/${caseId}/${route}`;
+}
+
+function actionTitle(action) {
+  return action?.label || action?.title || action?.display_status || humanizeKey(action?.action_id || action?.status || 'Review action');
+}
+
+function actionMessage(action) {
+  return action?.display_message
+    || action?.message
+    || action?.resolution?.user_message
+    || action?.next_action?.user_message
+    || action?.description
+    || 'Review this item before category review is complete.';
+}
+
+function actionCount(action) {
+  return action?.count
+    ?? action?.document_rows
+    ?? action?.affected_document_count
+    ?? action?.affected_count
+    ?? action?.sample_count
+    ?? null;
+}
+
+function actionSampleNames(action) {
+  const samples = action?.samples || action?.affected_samples || action?.sample_documents || action?.documents || [];
+  if (!Array.isArray(samples)) {
+    return [];
+  }
+  return samples
+    .map((sample) => sample?.filename || sample?.original_filename || sample?.file_name || sample?.file_id || sample?.document_id)
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function actionTone(action) {
+  const status = String(action?.status || action?.workflow_status || '').toLowerCase();
+  if (status.includes('blocked') || status.includes('not_available')) {
+    return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100';
+  }
+  if (action?.can_execute) {
+    return 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100';
+  }
+  return 'border-gray-200 bg-white text-gray-800 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-100';
+}
+
+function ResolveActionsPanel({
+  actions,
+  busyActionId,
+  caseId,
+  error,
+  loading,
+  onRefresh,
+  onResolveAction,
+  result,
+}) {
+  const { t } = useLocaleSettings();
+  const [confirmAction, setConfirmAction] = useState(null);
+  const visibleActions = Array.isArray(actions) ? actions : [];
+
+  if (!loading && !error && !visibleActions.length && !result) {
+    return null;
+  }
+
+  const handleActionClick = (action) => {
+    if (action?.requires_confirmation) {
+      setConfirmAction(action);
+      return;
+    }
+    onResolveAction?.(action, {});
+  };
+
+  const confirmAndRun = () => {
+    if (!confirmAction) {
+      return;
+    }
+    onResolveAction?.(confirmAction, { confirm_review: true });
+    setConfirmAction(null);
+  };
+
+  return (
+    <section id="category-review-actions" className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h3 className="font-semibold">{t('Resolve review items')}</h3>
+          <p className="mt-1">{t('Use these actions to move category review forward. Actions that mark items reviewed require your confirmation first.')}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="inline-flex shrink-0 items-center justify-center rounded-md border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-950 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
+        >
+          {loading ? t('Loading') : t('Refresh actions')}
+        </button>
+      </div>
+
+      {error ? (
+        <div className="mt-3">
+          <ErrorPanel title={t('Review actions unavailable')} error={error} onRetry={onRefresh} />
+        </div>
+      ) : null}
+
+      {result ? (
+        <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="font-semibold">{t(result.display_status || result.display_message || 'Category review updated')}</div>
+          {result.display_message && result.display_status ? <p className="mt-1">{t(result.display_message)}</p> : null}
+          {result.next_route_hint ? (
+            <Link to={routeForAction({ next_route_hint: result.next_route_hint }, caseId)} className="mt-2 inline-flex rounded-md border border-emerald-300 bg-white px-3 py-2 text-xs font-semibold text-emerald-950 hover:bg-emerald-100 dark:border-emerald-900/70 dark:bg-[#101820] dark:text-emerald-100 dark:hover:bg-emerald-950/40">
+              {t('Open next step')}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {visibleActions.length ? (
+        <div className="mt-3 grid gap-2 lg:grid-cols-2">
+          {visibleActions.map((action) => {
+            const actionId = action?.action_id || action?.id || action?.status || actionTitle(action);
+            const route = routeForAction(action, caseId);
+            const count = actionCount(action);
+            const sampleNames = actionSampleNames(action);
+            const disabled = Boolean(busyActionId) || (!action?.can_execute && !route);
+            const blocked = !action?.can_execute && !route;
+            const buttonLabel = action?.button_label
+              || action?.next_action?.label
+              || action?.resolution?.action_label
+              || (action?.requires_confirmation ? 'Review and confirm' : action?.can_execute ? 'Start action' : 'Not available yet');
+            return (
+              <article key={actionId} className={`rounded-md border p-3 ${actionTone(action)}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{t(actionTitle(action))}</div>
+                    <p className="mt-1">{t(actionMessage(action))}</p>
+                    {count !== null ? <div className="mt-1 text-xs font-semibold">{formatCount(count)} {t(action?.unit || 'item(s)')}</div> : null}
+                    {sampleNames.length ? (
+                      <div className="mt-2 text-xs opacity-85">
+                        {t('Examples')}: {sampleNames.join(', ')}
+                      </div>
+                    ) : null}
+                    {blocked ? (
+                      <div className="mt-2 text-xs font-semibold">{t('No self-service action is available for this item yet. You can keep reviewing documents while this is being prepared.')}</div>
+                    ) : null}
+                  </div>
+                  {route ? (
+                    <Link to={route} className="inline-flex shrink-0 items-center justify-center rounded-md border border-current/30 bg-white px-3 py-2 text-xs font-semibold hover:bg-black/5 dark:bg-[#101820] dark:hover:bg-white/10">
+                      {t(buttonLabel)}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleActionClick(action)}
+                      disabled={disabled}
+                      className="inline-flex shrink-0 items-center justify-center rounded-md border border-current/30 bg-white px-3 py-2 text-xs font-semibold hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#101820] dark:hover:bg-white/10"
+                    >
+                      {busyActionId === actionId ? t('Working') : t(buttonLabel)}
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : loading ? (
+        <div className="mt-3 rounded-md border border-sky-200 bg-white/80 p-3 dark:border-sky-900/60 dark:bg-black/20">
+          {t('Loading review actions.')}
+        </div>
+      ) : null}
+
+      {confirmAction ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-[#101820]">
+            <h3 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Confirm category review action')}</h3>
+            <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
+              {t(actionMessage(confirmAction))}
+            </p>
+            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+              {t('This marks organizational review work as reviewed. It does not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
+            </p>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+              >
+                {t('Keep reviewing')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmAndRun}
+                className="rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              >
+                {t('Confirm reviewed')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function CategoryReviewPanel({
   caseId,
   data,
@@ -447,11 +663,18 @@ export default function CategoryReviewPanel({
   exportBusy = false,
   loading = false,
   lensId: selectedLensId,
+  onLoadResolvePlan,
   onExportCurrentView,
   onFilterCategory,
   onFilterUncategorized,
   onLensChange,
   onRetry,
+  onResolveAction,
+  resolveActionBusyId,
+  resolveError,
+  resolveLoading = false,
+  resolvePlan,
+  resolveResult,
 }) {
   const { t } = useLocaleSettings();
   const [activeView, setActiveView] = useState('all');
@@ -570,6 +793,17 @@ export default function CategoryReviewPanel({
       ) : null}
 
       <ExceptionsList exceptions={data?.exceptions || []} caseId={caseId} onFilterUncategorized={onFilterUncategorized} />
+
+      <ResolveActionsPanel
+        actions={resolvePlan?.actions || []}
+        busyActionId={resolveActionBusyId}
+        caseId={caseId}
+        error={resolveError}
+        loading={resolveLoading}
+        onRefresh={onLoadResolvePlan}
+        onResolveAction={onResolveAction}
+        result={resolveResult}
+      />
 
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((tab) => (
@@ -778,7 +1012,7 @@ export default function CategoryReviewPanel({
       <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
         <div className="flex items-start gap-2">
           <Info className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
-          <p>{t('Category review is read-only in this version. Use source documents, snippets, and review status for lawyer handoff, then ask support if a category needs to be changed.')}</p>
+          <p>{t('Category review uses source documents, snippets, and review status for lawyer handoff. Some review work can be started here; items without a self-service action will say what is still being prepared.')}</p>
         </div>
       </div>
     </section>
