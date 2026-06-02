@@ -5,7 +5,9 @@ import {
   Cloud,
   FileText,
   LifeBuoy,
+  ListChecks,
   MessageSquare,
+  Play,
   RefreshCw,
   ShieldAlert,
   UploadCloud,
@@ -24,7 +26,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
-import { formatDateTime, sumCounts } from '../utils/formatters';
+import { formatDateTime, humanizeKey, sumCounts } from '../utils/formatters';
 
 function fulfilledValue(result) {
   return result.status === 'fulfilled' ? result.value : null;
@@ -154,6 +156,208 @@ function ReviewCard({ icon, title, detail, to, count, countLabel }) {
   );
 }
 
+function actionId(action) {
+  return action?.action_id || action?.id || action?.type || action?.status || 'readiness_action';
+}
+
+function actionLabel(action) {
+  return action?.label || action?.title || humanizeKey(actionId(action));
+}
+
+function actionMessage(action) {
+  return action?.display_message
+    || action?.message
+    || action?.description
+    || action?.resolution?.user_message
+    || action?.detail
+    || null;
+}
+
+function actionCount(action) {
+  const value = action?.count
+    ?? action?.document_rows
+    ?? action?.affected_count
+    ?? action?.affected_document_count
+    ?? action?.sample_count;
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+}
+
+function actionSamples(action) {
+  const samples = action?.samples
+    || action?.sample_documents
+    || action?.affected_samples
+    || action?.files
+    || [];
+  return Array.isArray(samples) ? samples.slice(0, 4) : [];
+}
+
+function sampleName(sample) {
+  return sample?.filename || sample?.original_filename || sample?.name || sample?.file_id || sample?.document_id || String(sample || '');
+}
+
+function ResolveActionGroup({ title, detail, actions = [], tone = 'info' }) {
+  const toneClasses = {
+    safe: 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100',
+    warn: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100',
+    info: 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100',
+  };
+  const badgeTone = tone === 'safe' ? 'configured' : tone === 'warn' ? 'degraded' : 'running';
+  return (
+    <div className={`rounded-lg border p-3 ${toneClasses[tone] || toneClasses.info}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <p className="mt-1 text-xs leading-5 opacity-90">{detail}</p>
+        </div>
+        <StatusBadge status={badgeTone} label={`${actions.length}`} />
+      </div>
+      {actions.length ? (
+        <div className="mt-3 space-y-2">
+          {actions.map((action) => {
+            const count = actionCount(action);
+            const samples = actionSamples(action);
+            return (
+              <article key={`${actionId(action)}-${actionLabel(action)}`} className="rounded-md border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-[#101820]/70">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="font-semibold">{actionLabel(action)}</div>
+                  {count !== null ? (
+                    <span className="rounded-full border border-black/10 px-2 py-0.5 text-xs font-semibold dark:border-white/10">
+                      <AnimatedCount value={count} /> {action?.unit || action?.count_label || 'item(s)'}
+                    </span>
+                  ) : null}
+                </div>
+                {actionMessage(action) ? <p className="mt-1 text-xs leading-5 opacity-90">{actionMessage(action)}</p> : null}
+                {samples.length ? (
+                  <ul className="mt-2 space-y-1 text-xs opacity-90">
+                    {samples.map((sample, index) => (
+                      <li key={`${sampleName(sample)}-${index}`} className="break-words">
+                        {sampleName(sample)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs opacity-80">No items in this group right now.</p>
+      )}
+    </div>
+  );
+}
+
+function ResolveReadinessPanel({
+  error,
+  loading,
+  onRefresh,
+  onResolveAll,
+  plan,
+  resolving,
+  result,
+}) {
+  const actions = Array.isArray(plan?.actions) ? plan.actions : [];
+  const executable = actions.filter((action) => action?.can_execute === true);
+  const confirmationRequired = actions.filter((action) => action?.requires_confirmation === true);
+  const backendNeeded = actions.filter((action) => action?.status === 'backend_action_needed');
+  const otherActions = actions.filter((action) => (
+    action?.can_execute !== true
+    && action?.requires_confirmation !== true
+    && action?.status !== 'backend_action_needed'
+  ));
+  const hasPlan = Boolean(plan || result);
+  const executed = Array.isArray(result?.executed_actions) ? result.executed_actions : [];
+  const skipped = Array.isArray(result?.skipped_actions) ? result.skipped_actions : [];
+  const canRun = executable.length > 0 && !resolving;
+
+  if (!hasPlan && !loading && !error) {
+    return null;
+  }
+
+  return (
+    <section className="mb-5 rounded-lg border border-amber-200 bg-white p-4 shadow-sm dark:border-amber-900/60 dark:bg-[#101820]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-4xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <ListChecks className="text-amber-700 dark:text-amber-300" size={18} aria-hidden="true" />
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">Resolve readiness items</h2>
+            {loading ? <StatusBadge status="running" label="Checking plan" /> : null}
+          </div>
+          <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
+            Resolve All starts only safe backend work, such as text/search processing. It does not remove files, delete original sources, or make confirmation choices for you.
+          </p>
+          {plan?.display_message || plan?.message ? (
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{plan.display_message || plan.message}</p>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading || resolving}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+          >
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            Refresh plan
+          </button>
+          <button
+            type="button"
+            onClick={onResolveAll}
+            disabled={!canRun}
+            className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+            title={!executable.length ? 'No safe automatic actions are available right now.' : undefined}
+          >
+            <Play size={15} aria-hidden="true" />
+            {resolving ? 'Resolving' : 'Resolve All'}
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="mt-4">
+          <ErrorPanel title="Resolve plan unavailable" error={error} onRetry={onRefresh} />
+        </div>
+      ) : null}
+
+      {result ? (
+        <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100">
+          <div className="font-semibold">{result.display_message || result.message || 'Resolve All started safe work.'}</div>
+          <p className="mt-1 text-xs leading-5">
+            Original source files were preserved. Destructive actions were not included.
+          </p>
+          {executed.length || skipped.length ? (
+            <p className="mt-1 text-xs leading-5">
+              {executed.length ? `${executed.length} safe action(s) started. ` : ''}
+              {skipped.length ? `${skipped.length} action(s) still need review or backend support.` : ''}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 xl:grid-cols-3">
+        <ResolveActionGroup
+          title="Safe to start"
+          detail="Resolve All can start these without deleting files or choosing for you."
+          actions={executable}
+          tone="safe"
+        />
+        <ResolveActionGroup
+          title="Needs your choice"
+          detail="These may involve excluding files or confirming what belongs. Review samples first."
+          actions={confirmationRequired}
+          tone="warn"
+        />
+        <ResolveActionGroup
+          title="Needs backend support"
+          detail="These are known blockers without a self-service backend action yet."
+          actions={[...backendNeeded, ...otherActions]}
+          tone="info"
+        />
+      </div>
+    </section>
+  );
+}
+
 export default function DashboardPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -167,7 +371,37 @@ export default function DashboardPage() {
     connectors: [],
     health: null,
     sourceAlignment: null,
+    resolvePlan: null,
+    resolvePlanError: null,
+    resolvePlanLoading: false,
+    resolveResult: null,
+    resolving: false,
+    resolveActionError: null,
   });
+
+  const loadResolvePlan = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) {
+      setState((current) => ({ ...current, resolvePlanLoading: true, resolvePlanError: null }));
+    }
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getReadinessResolvePlan(caseId, { token });
+      recordFingerprint(result, 'Readiness resolve plan');
+      setState((current) => ({
+        ...current,
+        resolvePlan: result.data,
+        resolvePlanError: null,
+        resolvePlanLoading: false,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        resolvePlan: error.status === 404 ? null : current.resolvePlan,
+        resolvePlanError: error.status === 404 ? null : error,
+        resolvePlanLoading: false,
+      }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
 
   const loadDashboard = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -177,6 +411,7 @@ export default function DashboardPage() {
     const requests = [
       { key: 'summary', label: 'Case summary', promise: evidenceApi.getCaseSummary(caseId, { token }) },
       { key: 'connectors', label: 'Source connectors', promise: evidenceApi.getSourceConnectors(caseId, { token }) },
+      { key: 'resolvePlan', label: 'Readiness resolve plan', promise: evidenceApi.getReadinessResolvePlan(caseId, { token }) },
     ];
     if (canSeeOperations) {
       requests.push({ key: 'health', label: 'Case health', promise: evidenceApi.getCaseHealth(caseId, { token }) });
@@ -195,13 +430,45 @@ export default function DashboardPage() {
 
     setState({
       loading: false,
-      error: results.find((result) => result.status === 'rejected')?.reason || null,
+      error: results.find((result, index) => result.status === 'rejected' && requests[index]?.key !== 'resolvePlan')?.reason || null,
       summary: fulfilledByKey.summary || null,
       connectors: fulfilledByKey.connectors?.providers || [],
       health: fulfilledByKey.health || null,
       sourceAlignment: fulfilledByKey.sourceAlignment || null,
+      resolvePlan: fulfilledByKey.resolvePlan || null,
+      resolvePlanError: results.find((result, index) => requests[index]?.key === 'resolvePlan' && result.status === 'rejected' && result.reason?.status !== 404)?.reason || null,
+      resolvePlanLoading: false,
+      resolveResult: null,
+      resolving: false,
+      resolveActionError: null,
     });
   }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
+
+  const resolveAllReadiness = useCallback(async () => {
+    setState((current) => ({ ...current, resolving: true, resolveActionError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.resolveAllReadiness(
+        caseId,
+        {
+          run_source_alignment_when_safe: true,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Resolve all readiness');
+      setState((current) => ({
+        ...current,
+        resolving: false,
+        resolveResult: result.data,
+        resolvePlan: result.data?.remaining_plan || current.resolvePlan,
+        resolveActionError: null,
+      }));
+      await loadResolvePlan({ quiet: true });
+      void loadDashboard({ quiet: true });
+    } catch (error) {
+      setState((current) => ({ ...current, resolving: false, resolveActionError: error }));
+    }
+  }, [caseId, getAccessToken, loadDashboard, loadResolvePlan, recordFingerprint]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -363,6 +630,21 @@ export default function DashboardPage() {
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
+      {state.resolveActionError ? (
+        <div className="mb-5">
+          <ErrorPanel title="Resolve All failed" error={state.resolveActionError} />
+        </div>
+      ) : null}
+
+      <ResolveReadinessPanel
+        error={state.resolvePlanError}
+        loading={state.resolvePlanLoading}
+        onRefresh={() => loadResolvePlan()}
+        onResolveAll={resolveAllReadiness}
+        plan={state.resolvePlan}
+        resolving={state.resolving}
+        result={state.resolveResult}
+      />
 
       <NeedsAttentionPanel
         items={attentionItems}

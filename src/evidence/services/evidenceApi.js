@@ -253,6 +253,10 @@ export const evidenceApi = {
   updateCase: (caseId, payload, options) =>
     request(casePath(caseId), { ...options, method: 'PATCH', body: payload }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
+  getReadinessResolvePlan: (caseId, options) =>
+    request(casePath(caseId, '/readiness/resolve-plan'), options),
+  resolveAllReadiness: (caseId, payload = {}, options) =>
+    request(casePath(caseId, '/readiness/resolve-all'), { ...options, method: 'POST', body: payload }),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
   getCategoryQa: (caseId, params = {}, options = {}) =>
