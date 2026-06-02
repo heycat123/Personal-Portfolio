@@ -32,6 +32,10 @@ function fulfilledValue(result) {
   return result.status === 'fulfilled' ? result.value : null;
 }
 
+function resolvePlanUnavailable(error) {
+  return [404, 502, 503, 504].includes(Number(error?.status));
+}
+
 function latestConnectorTime(connection) {
   return connection?.last_successful_sync_at
     || connection?.last_synced_at
@@ -394,10 +398,11 @@ export default function DashboardPage() {
         resolvePlanLoading: false,
       }));
     } catch (error) {
+      const unavailable = resolvePlanUnavailable(error);
       setState((current) => ({
         ...current,
-        resolvePlan: error.status === 404 ? null : current.resolvePlan,
-        resolvePlanError: error.status === 404 ? null : error,
+        resolvePlan: unavailable ? null : current.resolvePlan,
+        resolvePlanError: unavailable ? null : error,
         resolvePlanLoading: false,
       }));
     }
@@ -436,7 +441,11 @@ export default function DashboardPage() {
       health: fulfilledByKey.health || null,
       sourceAlignment: fulfilledByKey.sourceAlignment || null,
       resolvePlan: fulfilledByKey.resolvePlan || null,
-      resolvePlanError: results.find((result, index) => requests[index]?.key === 'resolvePlan' && result.status === 'rejected' && result.reason?.status !== 404)?.reason || null,
+      resolvePlanError: results.find((result, index) => (
+        requests[index]?.key === 'resolvePlan'
+        && result.status === 'rejected'
+        && !resolvePlanUnavailable(result.reason)
+      ))?.reason || null,
       resolvePlanLoading: false,
       resolveResult: null,
       resolving: false,
