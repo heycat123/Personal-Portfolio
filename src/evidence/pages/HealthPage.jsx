@@ -1,4 +1,4 @@
-import { Activity, Database, GitCompare, Play, Server } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Database, GitCompare, Play, Server } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -89,6 +89,143 @@ function StatusActionCard({ title, detail, action, secondaryAction }) {
         </div>
       </div>
     </article>
+  );
+}
+
+function routeFromHint(caseId, routeHint) {
+  const hint = String(routeHint || '').trim();
+  if (!hint) {
+    return `/evidence/cases/${caseId}/health`;
+  }
+  if (hint.startsWith('/')) {
+    return hint;
+  }
+  if (hint.startsWith('jobs')) {
+    const suffix = hint.includes('#') ? hint.slice(hint.indexOf('#')) : '';
+    return `/evidence/cases/${caseId}/jobs${suffix}`;
+  }
+  if (hint.startsWith('documents')) {
+    const suffix = hint.slice('documents'.length);
+    return `/evidence/cases/${caseId}/documents${suffix}`;
+  }
+  if (hint.startsWith('health')) {
+    const suffix = hint.includes('#') ? hint.slice(hint.indexOf('#')) : '';
+    return `/evidence/cases/${caseId}/health${suffix}`;
+  }
+  return `/evidence/cases/${caseId}/${hint}`;
+}
+
+function issueToneClasses(bucket) {
+  if (bucket.status === 'resolved') {
+    return 'border-emerald-700/50 bg-emerald-950/20 text-emerald-100';
+  }
+  if (bucket.severity === 'review') {
+    return 'border-amber-800/70 bg-amber-950/20 text-amber-100';
+  }
+  return 'border-sky-800/70 bg-sky-950/20 text-sky-100';
+}
+
+function sampleLabel(sample) {
+  if (!sample || typeof sample !== 'object') {
+    return String(sample || '').trim();
+  }
+  return String(sample.label || sample.original_filename || sample.file_id || sample.content_hash || '').trim();
+}
+
+function PropagationIssueReport({ report, caseId, t }) {
+  if (!report?.buckets?.length) {
+    return null;
+  }
+  const groups = report.buckets.reduce((acc, bucket) => {
+    const group = bucket.group || 'other';
+    acc[group] = acc[group] || [];
+    acc[group].push(bucket);
+    return acc;
+  }, {});
+  const groupLabels = {
+    source_propagation: 'Propagation checks',
+    document_readiness: 'Document readiness',
+    category_review: 'Category review',
+    other: 'Other health items',
+  };
+
+  return (
+    <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-950 dark:text-gray-50">{t('Propagation and category blockers')}</h2>
+          <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">
+            {t('{open} open bucket(s). Sync Drive files can attempt {sync} of them; {manual} need review or a separate cleanup path.', {
+              open: report.summary?.open_bucket_count ?? 0,
+              sync: report.summary?.sync_resolvable_open_bucket_count ?? 0,
+              manual: report.summary?.non_sync_open_bucket_count ?? 0,
+            })}
+          </p>
+        </div>
+        <Link
+          to={`/evidence/cases/${caseId}/jobs#processing-status`}
+          className="inline-flex shrink-0 items-center justify-center rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+        >
+          {t('Open processing jobs')}
+        </Link>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        {Object.entries(groups).map(([group, buckets]) => (
+          <div key={group}>
+            <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {t(groupLabels[group] || group)}
+            </h3>
+            <div className="space-y-3">
+              {buckets.map((bucket) => {
+                const resolved = bucket.status === 'resolved';
+                const samples = (bucket.samples || []).map(sampleLabel).filter(Boolean).slice(0, 3);
+                return (
+                  <article key={bucket.bucket_id} className={`rounded-lg border p-4 ${issueToneClasses(bucket)}`}>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {resolved ? <CheckCircle2 size={16} aria-hidden="true" /> : <AlertTriangle size={16} aria-hidden="true" />}
+                          <h4 className="font-semibold">{t(bucket.label)}</h4>
+                          <StatusBadge
+                            status={resolved ? 'online' : bucket.severity === 'review' ? 'pending' : 'degraded'}
+                            label={resolved ? t('Resolved') : t('Needs action')}
+                          />
+                          <span className="rounded-full border border-current/30 px-2 py-0.5 text-xs font-semibold">
+                            {t('{count} {unit}', { count: bucket.count, unit: bucket.unit })}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 opacity-90">{t(bucket.user_message)}</p>
+                        <p className="mt-2 text-xs leading-5 opacity-80">
+                          {bucket.can_sync_resolve ? t('Sync Drive files can attempt this bucket.') : t('Sync Drive files will not clear this bucket by itself.')}
+                          {' '}
+                          {t(bucket.sync_resolution)}
+                        </p>
+                        {samples.length ? (
+                          <div className="mt-3 text-xs opacity-80">
+                            <span className="font-semibold">{t('Examples')}:</span>
+                            <ul className="mt-1 space-y-1">
+                              {samples.map((sample) => <li key={sample}>{sample}</li>)}
+                            </ul>
+                          </div>
+                        ) : null}
+                        <p className="mt-3 text-xs uppercase tracking-wide opacity-70">{t(bucket.source)}</p>
+                      </div>
+                      <Link
+                        to={routeFromHint(caseId, bucket.route_hint)}
+                        className="inline-flex shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+                      >
+                        {t(bucket.action_label || 'Open')}
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -554,6 +691,12 @@ export default function HealthPage() {
           </div>
         </div>
       ) : null}
+
+      <PropagationIssueReport
+        report={state.caseHealth?.propagation_issue_report}
+        caseId={caseId}
+        t={t}
+      />
 
       <NeedsAttentionPanel
         items={attentionItems}
