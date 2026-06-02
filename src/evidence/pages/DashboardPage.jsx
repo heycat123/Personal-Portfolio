@@ -169,6 +169,10 @@ function actionLabel(action) {
 }
 
 function actionMessage(action) {
+  const text = `${action?.status || ''} ${action?.workflow_status || ''} ${action?.issue_state || ''} ${actionId(action)}`.toLowerCase();
+  if (text.includes('operator_runtime_required') || text.includes('relationship_map')) {
+    return 'Relationship-map update needs graph-processing runtime. This is not self-service yet; safe fixes can still run for other readiness items.';
+  }
   return action?.display_message
     || action?.message
     || action?.description
@@ -288,7 +292,7 @@ function ResolveReadinessPanel({
             {loading ? <StatusBadge status="running" label="Checking plan" /> : null}
           </div>
           <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
-            Resolve All starts only safe backend work, such as text/search processing. It does not remove files, delete original sources, or make confirmation choices for you.
+            Start safe fixes only starts backend work that is available now, such as text/search processing or selected-source cleanup. It does not remove original source files or make confirmation choices for you.
           </p>
           {plan?.display_message || plan?.message ? (
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{plan.display_message || plan.message}</p>
@@ -312,7 +316,7 @@ function ResolveReadinessPanel({
             title={!executable.length ? 'No safe automatic actions are available right now.' : undefined}
           >
             <Play size={15} aria-hidden="true" />
-            {resolving ? 'Resolving' : 'Resolve All'}
+            {resolving ? 'Starting' : 'Start safe fixes'}
           </button>
         </div>
       </div>
@@ -325,7 +329,7 @@ function ResolveReadinessPanel({
 
       {result ? (
         <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-100">
-          <div className="font-semibold">{result.display_message || result.message || 'Resolve All started safe work.'}</div>
+          <div className="font-semibold">{result.display_message || result.message || 'Safe fixes started.'}</div>
           <p className="mt-1 text-xs leading-5">
             Original source files were preserved. Destructive actions were not included.
           </p>
@@ -341,7 +345,7 @@ function ResolveReadinessPanel({
       <div className="mt-4 grid gap-3 xl:grid-cols-3">
         <ResolveActionGroup
           title="Safe to start"
-          detail="Resolve All can start these without deleting files or choosing for you."
+          detail="Start safe fixes can run these without deleting files or choosing for you."
           actions={executable}
           tone="safe"
         />
@@ -352,8 +356,8 @@ function ResolveReadinessPanel({
           tone="warn"
         />
         <ResolveActionGroup
-          title="Needs backend support"
-          detail="These are known blockers without a self-service backend action yet."
+          title="Operator/runtime required"
+          detail="These are known blockers that need operator support or graph-processing runtime before they can clear."
           actions={[...backendNeeded, ...otherActions]}
           tone="info"
         />
@@ -641,7 +645,7 @@ export default function DashboardPage() {
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
       {state.resolveActionError ? (
         <div className="mb-5">
-          <ErrorPanel title="Resolve All failed" error={state.resolveActionError} />
+          <ErrorPanel title="Safe fixes failed" error={state.resolveActionError} />
         </div>
       ) : null}
 

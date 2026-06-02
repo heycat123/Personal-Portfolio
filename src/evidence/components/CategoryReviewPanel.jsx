@@ -462,6 +462,13 @@ function actionTitle(action) {
 }
 
 function actionMessage(action) {
+  const text = `${action?.status || ''} ${action?.workflow_status || ''} ${action?.issue_state || ''} ${action?.action_id || ''}`.toLowerCase();
+  if (text.includes('operator_runtime_required') || text.includes('relationship_map')) {
+    return 'Relationship-map update needs graph-processing runtime. This is not self-service yet; you can keep reviewing documents while operator processing is prepared.';
+  }
+  if (text.includes('lens_review_job_not_available') || text.includes('run_lens_review')) {
+    return 'Category snippets have not been generated yet. Source-snippet review is not self-service yet, so this category remains an organizational suggestion until that review runs or a person confirms it.';
+  }
   return action?.display_message
     || action?.message
     || action?.resolution?.user_message
@@ -492,7 +499,7 @@ function actionSampleNames(action) {
 
 function actionTone(action) {
   const status = String(action?.status || action?.workflow_status || '').toLowerCase();
-  if (status.includes('blocked') || status.includes('not_available')) {
+  if (status.includes('blocked') || status.includes('not_available') || status.includes('operator_runtime_required')) {
     return 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100';
   }
   if (action?.can_execute) {
@@ -573,7 +580,9 @@ function ResolveActionsPanel({
         <div className="mt-3 grid gap-2 lg:grid-cols-2">
           {visibleActions.map((action) => {
             const actionId = action?.action_id || action?.id || action?.status || actionTitle(action);
-            const route = routeForAction(action, caseId);
+            const actionStatus = `${action?.status || ''} ${action?.workflow_status || ''} ${action?.issue_state || ''}`.toLowerCase();
+            const operatorRuntimeRequired = actionStatus.includes('operator_runtime_required') || String(actionId).includes('relationship_map');
+            const route = operatorRuntimeRequired ? null : routeForAction(action, caseId);
             const count = actionCount(action);
             const sampleNames = actionSampleNames(action);
             const disabled = Boolean(busyActionId) || (!action?.can_execute && !route);
