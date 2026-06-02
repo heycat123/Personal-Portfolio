@@ -29,7 +29,6 @@ import {
   jobProgressModel,
 } from '../utils/jobProgress';
 
-const SAFE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit', 'agentic_quality_test'];
 const LIVE_POLL_STATUSES = new Set(['queued', 'running']);
 
 function JsonBlock({ value }) {
@@ -404,7 +403,9 @@ export default function JobDetailPage() {
   const isProcessingRequest = isDocumentProcessingRequest(job);
   const canViewJobDetail = Boolean(!job || canSeeOperations || isProcessingRequest);
   const canCancel = Boolean(progress?.canCancel);
-  const canRetry = Boolean(canSeeOperations && job && ['failed', 'cancelled'].includes(job.status) && SAFE_JOB_TYPES.includes(job.job_type));
+  const retryAllowedByRole = progress?.retryRequiresOperatorAccess ? (canSeeOperations || isRootAdmin) : true;
+  const canRetry = Boolean(progress?.canRetry && retryAllowedByRole);
+  const retryUnavailable = Boolean(progress?.canRetry && !retryAllowedByRole);
   const canArchive = Boolean(canSeeOperations && job && progress && !progress.canCancel && !job.archived_at);
   const processingDocuments = isProcessingRequest
     ? jobProcessingDocuments(job).filter((document) => !['excluded_from_case', 'workspace_copy_deleted'].includes(String(document?.status || '').toLowerCase()))
@@ -464,10 +465,21 @@ export default function JobDetailPage() {
                 type="button"
                 onClick={retryJob}
                 disabled={Boolean(state.actionLoading)}
+                title={progress?.retryMessage ? t(progress.retryMessage) : t('Retry requeues this same job and keeps the previous attempt in activity history.')}
                 className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RotateCcw size={16} aria-hidden="true" />
-                {state.actionLoading === 'retry' ? t('Retrying') : t('Retry')}
+                {state.actionLoading === 'retry' ? t('Retrying') : t(progress?.retryActionLabel || 'Retry job')}
+              </button>
+            ) : retryUnavailable ? (
+              <button
+                type="button"
+                disabled
+                title={t('Retry is available for this job, but it requires operator access.')}
+                className="inline-flex cursor-not-allowed items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-500 opacity-60 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-400"
+              >
+                <RotateCcw size={16} aria-hidden="true" />
+                {t(progress?.retryActionLabel || 'Retry job')}
               </button>
             ) : null}
             {canArchive ? (
@@ -495,6 +507,14 @@ export default function JobDetailPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadJob} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Job action failed" error={state.actionError} /></div> : null}
+      {retryUnavailable ? (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="font-semibold">{t('Retry requires operator access')}</div>
+          <p className="mt-1">
+            {t(progress?.retryMessage || 'Retry requeues this same job and keeps the previous attempt in activity history. Ask an operator to retry this job.')}
+          </p>
+        </div>
+      ) : null}
 
       {debugEnabled && state.fingerprint?.id ? (
         <div className="mb-5">
