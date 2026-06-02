@@ -1,0 +1,68 @@
+name: Docs follow-up on PR approval
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  create-docs-follow-up:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create documentation follow-up issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const label = 'documentation';
+            const title = `Docs follow-up: PR #${pr.number} - ${pr.title}`;
+
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: label,
+                color: '0366d6',
+                description: 'Documentation follow-up needed'
+              });
+            }
+
+            const existing = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} is:issue in:title "Docs follow-up: PR #${pr.number}"`
+            });
+
+            if (existing.data.total_count > 0) {
+              core.info(`Documentation follow-up already exists for PR #${pr.number}.`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body: [
+                `PR approved: ${pr.html_url}`,
+                '',
+                `Review submitted by: @${context.payload.review.user.login}`,
+                '',
+                'Documentation review checklist:',
+                '- [ ] Identify user-facing behavior, setup, API, or workflow changes.',
+                '- [ ] Update README, docs, examples, or changelog as needed.',
+                '- [ ] Link completed documentation work back to the approved PR.'
+              ].join('\n'),
+              labels: [label]
+            });
