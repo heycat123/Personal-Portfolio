@@ -261,6 +261,14 @@ export const evidenceApi = {
     request(casePath(caseId, '/documents'), { ...options, query: params }),
   getCategoryQa: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/category-qa'), { ...options, query: params }),
+  getCategoryQaResolvePlan: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/category-qa/resolve-plan'), { ...options, query: params }),
+  resolveCategoryQaAction: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/category-qa/resolve'), { ...options, method: 'POST', body: payload }),
+  createCategoryQaReviewDecision: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/category-qa/review-decisions'), { ...options, method: 'POST', body: payload }),
+  updateCategoryQaReviewDecision: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/category-qa/review-decisions'), { ...options, method: 'PATCH', body: payload }),
   getDocumentExportGuardrails: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents/export-guardrails'), { ...options, query: params }),
   requestDocumentProcessing: (caseId, payload = {}, options = {}) =>
