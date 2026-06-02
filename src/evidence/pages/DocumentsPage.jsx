@@ -10,6 +10,7 @@ import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
+import TranscriptPanel from '../components/TranscriptPanel';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
@@ -17,6 +18,15 @@ import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { removalResultDetail } from '../utils/documentRemoval';
+import {
+  detectedLanguageLabel,
+  hasTranscript,
+  isAudioDocument,
+  isVideoDocument,
+  mediaKind,
+  mediaKindLabel,
+  transcriptPages,
+} from '../utils/documentMedia';
 import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
@@ -165,6 +175,15 @@ function formatTranslationTargets(targets, t) {
     return accumulator;
   }, {});
   return Object.entries(counts).map(([language, count]) => `${language}: ${count}`).join(', ');
+}
+
+function documentKindLabel(document, contentType = '') {
+  return mediaKindLabel(document || {}, contentType);
+}
+
+function documentTextSectionLabel(document, t) {
+  const kind = mediaKind(document || {});
+  return kind === 'audio' || kind === 'video' ? t('Transcript records') : t('Pages / extracted text');
 }
 
 function statusText(status) {
@@ -962,7 +981,7 @@ export default function DocumentsPage() {
       help: t('The category used to organize this document. Categories are review aids and do not decide legal importance.'),
       filterOptions: facetOptions(state.facets, 'evidence_type_label'),
       filterPlaceholder: t('Document or communication'),
-      render: (document) => document.evidence_classification?.label || document.evidence_type_label || t('Uncategorized'),
+      render: (document) => documentKindLabel(document),
     },
     {
       key: 'legal_factor_code',
@@ -1369,7 +1388,7 @@ export default function DocumentsPage() {
             {document.original_filename || document.file_id}
           </Link>
         )}
-        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${document.evidence_type_label || 'Document'} | ${document.query_readiness?.label || document.canonical_storage_label || 'pending'}`}
+        mobileSubtitle={(document) => `${document.origin_label || 'unknown'} | ${documentKindLabel(document)} | ${document.query_readiness?.label || document.canonical_storage_label || 'pending'}`}
         mobileActions={(document) => (
           <Link to={`/evidence/cases/${caseId}/documents/${document.file_id}`} className="text-gray-400 hover:text-sky-700 dark:hover:text-sky-300" title={t('Open document detail page')}>
             <ExternalLink size={15} aria-hidden="true" />
@@ -1387,22 +1406,33 @@ export default function DocumentsPage() {
           if (detailState?.loading) {
             return <div className="text-sm text-gray-600 dark:text-gray-400">{t('Loading pages / extracted text...')}</div>;
           }
+          const rowDocument = detail || document;
+          const rowIsMedia = isAudioDocument(rowDocument) || isVideoDocument(rowDocument);
           return (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages / extracted text')}</div>
+                  <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{documentTextSectionLabel(rowDocument, t)}</div>
                   <div className="text-sm text-gray-700 dark:text-gray-300">
-                    {pages.length ? t('{size} page(s) with extracted text', { size: pages.length }) : t('No page text is available yet.')}
+                    {pages.length
+                      ? rowIsMedia
+                        ? t('{size} transcript record(s)', { size: pages.length })
+                        : t('{size} page(s) with extracted text', { size: pages.length })
+                      : rowIsMedia
+                        ? t('No transcript text is available yet.')
+                        : t('No page text is available yet.')}
                   </div>
                 </div>
                 <PipelineDots document={detail || document} />
               </div>
+              {rowIsMedia && hasTranscript(rowDocument) ? (
+                <TranscriptPanel document={rowDocument} compact />
+              ) : null}
               {pages.length ? (
                 <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                   {pages.slice(0, 12).map((page) => (
                     <div key={`${page.page_number}-${page.text_source}`} className="rounded-md border border-gray-200 bg-white p-3 text-sm dark:border-gray-800 dark:bg-[#101820]">
-                      <div className="font-semibold text-gray-950 dark:text-white">{t('Page')} {page.page_number}</div>
+                      <div className="font-semibold text-gray-950 dark:text-white">{rowIsMedia ? t('Transcript record') : t('Page')} {page.page_number}</div>
                       <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{page.text_source || t('unknown source')} | {page.page_text_chars ?? 0} {t('characters')}</div>
                       <p className="mt-2 line-clamp-3 text-gray-700 dark:text-gray-300">{page.page_text_preview || t('No preview text.')}</p>
                     </div>
@@ -1493,8 +1523,14 @@ export default function DocumentsPage() {
 
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages')}</div>
-                    <div className="text-gray-950 dark:text-white">{drawer.document?.page_count ?? '0'}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">
+                      {(isAudioDocument(drawer.document) || isVideoDocument(drawer.document)) ? t('Transcript records') : t('Pages')}
+                    </div>
+                    <div className="text-gray-950 dark:text-white">
+                      {(isAudioDocument(drawer.document) || isVideoDocument(drawer.document))
+                        ? transcriptPages(drawer.document).length
+                        : drawer.document?.page_count ?? '0'}
+                    </div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Origin')}</div>
@@ -1502,7 +1538,7 @@ export default function DocumentsPage() {
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Category')}</div>
-                    <div className="break-words text-gray-950 dark:text-white">{drawer.document?.evidence_type_label || 'Document'}</div>
+                    <div className="break-words text-gray-950 dark:text-white">{documentKindLabel(drawer.document, drawer.previewContentType)}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source copy')}</div>
@@ -1515,7 +1551,7 @@ export default function DocumentsPage() {
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Language')}</div>
                     <div className="break-words text-gray-950 dark:text-white">
-                      {formatSummary(drawer.document?.language_summary, 'No language detection yet', t)}
+                      {t(detectedLanguageLabel(drawer.document))}
                     </div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
@@ -1581,6 +1617,16 @@ export default function DocumentsPage() {
                     <FileText size={16} aria-hidden="true" />
                     {t('Open document details')}
                   </Link>
+                  {(isAudioDocument(drawer.document, drawer.previewContentType) || isVideoDocument(drawer.document, drawer.previewContentType)) && hasTranscript(drawer.document) ? (
+                    <button
+                      type="button"
+                      onClick={() => window.document.getElementById('drawer-transcript')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-200 dark:hover:bg-sky-950/40"
+                    >
+                      <FileText size={16} aria-hidden="true" />
+                      {t('View transcript')}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={openRemovalDialog}
@@ -1612,17 +1658,27 @@ export default function DocumentsPage() {
                 )}
               </section>
 
+              {(isAudioDocument(drawer.document, drawer.previewContentType) || isVideoDocument(drawer.document, drawer.previewContentType)) ? (
+                <div className="mt-4">
+                  <TranscriptPanel document={drawer.document} compact id="drawer-transcript" />
+                </div>
+              ) : null}
+
               <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Pages / extracted text')}</h3>
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{t('{size} page(s)', { size: drawer.document?.pages?.length || 0 })}</span>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{documentTextSectionLabel(drawer.document, t)}</h3>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {(isAudioDocument(drawer.document) || isVideoDocument(drawer.document))
+                      ? t('{size} record(s)', { size: drawer.document?.pages?.length || 0 })
+                      : t('{size} page(s)', { size: drawer.document?.pages?.length || 0 })}
+                  </span>
                 </div>
                 <DataTable
                   rows={drawer.document?.pages || []}
                   rowKey={(page) => `${page.page_number}-${page.text_source}`}
                   emptyTitle={drawer.loading ? t('Loading page rows') : t('No page rows returned')}
                   columns={[
-                    { key: 'page_number', header: t('Page'), render: (page) => page.page_number },
+                    { key: 'page_number', header: (isAudioDocument(drawer.document) || isVideoDocument(drawer.document)) ? t('Record') : t('Page'), render: (page) => page.page_number },
                     { key: 'text_source', header: t('Text Source'), render: (page) => page.text_source || 'unknown' },
                     { key: 'page_text_chars', header: t('Characters'), render: (page) => page.page_text_chars ?? 0 },
                     { key: 'language_detected', header: t('Detected Language'), render: (page) => page.language_detected || t('Undetected') },

@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, FileText, Languages, Play, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, Headphones, Languages, Play, Trash2, Video } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -9,12 +9,21 @@ import MetricTile from '../components/MetricTile';
 import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
+import TranscriptPanel from '../components/TranscriptPanel';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { removalResultDetail } from '../utils/documentRemoval';
+import {
+  detectedLanguageLabel,
+  hasTranscript,
+  mediaKind,
+  mediaKindLabel,
+  transcriptPages,
+  transcriptionMethod,
+} from '../utils/documentMedia';
 import { formatDateTime } from '../utils/formatters';
 
 function parseLowTextPages(value) {
@@ -211,6 +220,18 @@ export default function DocumentDetailPage() {
   const document = state.document;
   const lowTextPages = useMemo(() => parseLowTextPages(document?.low_text_pages_json), [document]);
   const showDiagnostics = canSeeOperations || debugEnabled;
+  const documentKind = mediaKind(document || {}, state.previewContentType);
+  const isMediaTranscriptDocument = documentKind === 'audio' || documentKind === 'video';
+  const transcriptAvailable = hasTranscript(document || {});
+  const transcriptRecords = transcriptPages(document || {});
+  const documentTypeLabel = mediaKindLabel(document || {}, state.previewContentType);
+  const documentTypeIcon = documentKind === 'audio' ? Headphones : documentKind === 'video' ? Video : FileText;
+
+  const scrollToTranscript = useCallback(() => {
+    document?.file_id && window.requestAnimationFrame(() => {
+      window.document.getElementById('document-transcript')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [document?.file_id]);
 
   const queueLanguageJob = useCallback(async (jobType) => {
     if (!document?.file_id) {
@@ -311,10 +332,23 @@ export default function DocumentDetailPage() {
     <div>
       <PageHeader
         title={document?.original_filename || 'Document Detail'}
-        description={document ? t('Source file details and extracted text status.') : t('Loading document details.')}
+        description={document
+          ? t('{type} file details, preview, and transcript/search status.', { type: t(documentTypeLabel) })
+          : t('Loading document details.')}
         translateTitle={!document?.original_filename}
         actions={
           <>
+            {isMediaTranscriptDocument ? (
+              <button
+                type="button"
+                onClick={scrollToTranscript}
+                disabled={!transcriptAvailable}
+                className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-200 dark:hover:bg-sky-950/40"
+              >
+                <FileText size={16} aria-hidden="true" />
+                {t('View transcript')}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => queueLanguageJob('document_language_detect')}
@@ -390,15 +424,16 @@ export default function DocumentDetailPage() {
       {document ? (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <MetricTile icon={FileText} label={t('Pages')} value={document.page_count || 0} detail={t('Reported extraction page count')} />
+            <MetricTile icon={documentTypeIcon} label={t('Type')} value={t(documentTypeLabel)} detail={document.media_type || t('unknown media')} />
+            <MetricTile icon={FileText} label={isMediaTranscriptDocument ? t('Transcript records') : t('Pages')} value={isMediaTranscriptDocument ? transcriptRecords.length : (document.page_count || 0)} detail={isMediaTranscriptDocument ? t('Transcript records available for review') : t('Reported extraction page count')} />
             <MetricTile label={t('Status')} value={<StatusBadge status={document.status} />} detail={t('Evidence file status')} />
             <MetricTile label={t('Source')} value={document.source_provider || t('unknown')} detail={document.source_of_truth_mode || t('unknown mode')} />
-            <MetricTile label={t('Extraction')} value={document.extraction_method || t('pending')} detail={document.media_type || t('unknown media')} />
+            <MetricTile label={t('Extraction')} value={isMediaTranscriptDocument ? t('Transcript') : (document.extraction_method || t('pending'))} detail={transcriptionMethod(document) || document.media_type || t('unknown media')} />
             <MetricTile
               icon={Languages}
               label={t('Language Layer')}
               value={document.translation_available ? t('Available') : t('Original')}
-              detail={formatSummary(document.language_summary, 'No language detection yet', t)}
+              detail={t(detectedLanguageLabel(document))}
               tone={document.translation_available ? 'good' : 'info'}
             />
           </div>
@@ -420,7 +455,23 @@ export default function DocumentDetailPage() {
                 maxHeightClass="max-h-[70vh]"
               />
             )}
+            {isMediaTranscriptDocument && transcriptAvailable ? (
+              <button
+                type="button"
+                onClick={scrollToTranscript}
+                className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800"
+              >
+                <FileText size={16} aria-hidden="true" />
+                {t('View transcript')}
+              </button>
+            ) : null}
           </div>
+
+          {isMediaTranscriptDocument ? (
+            <div className="mt-6">
+              <TranscriptPanel document={document} id="document-transcript" />
+            </div>
+          ) : null}
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -483,7 +534,7 @@ export default function DocumentDetailPage() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Detected Languages')}</p>
                   <p className="mt-1 text-gray-900 dark:text-gray-100">
-                    {formatSummary(document.language_summary, 'No language detection yet', t)}
+                    {t(detectedLanguageLabel(document))}
                   </p>
                 </div>
                 <div>
@@ -501,8 +552,10 @@ export default function DocumentDetailPage() {
 
           <div className="mt-6">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Pages / extracted text')}</h3>
-              <span className="text-sm text-gray-600 dark:text-gray-400">{document.pages?.length || 0} {t('page(s)')}</span>
+              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{isMediaTranscriptDocument ? t('Transcript records') : t('Pages / extracted text')}</h3>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {document.pages?.length || 0} {isMediaTranscriptDocument ? t('record(s)') : t('page(s)')}
+              </span>
             </div>
             <DataTable
               rows={document.pages || []}
