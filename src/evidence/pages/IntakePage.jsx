@@ -523,15 +523,15 @@ export default function IntakePage() {
     }
   }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken]);
 
-  const queueDriveScan = useCallback(async () => {
+  const syncDriveFiles = useCallback(async () => {
     if (!activeGoogleConnection?.source_connection_id) {
       return;
     }
 
-    setDriveBrowser((current) => ({ ...current, action: 'scan-drive', error: null, scanJob: null }));
+    setDriveBrowser((current) => ({ ...current, action: 'sync-drive-files', error: null, scanJob: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.syncGoogleDriveSource(
+      const result = await evidenceApi.syncGoogleDriveFiles(
         caseId,
         activeGoogleConnection.source_connection_id,
         {
@@ -544,7 +544,7 @@ export default function IntakePage() {
         },
         { token },
       );
-      addFingerprint(result, 'Queue Google Drive sync');
+      addFingerprint(result, 'Sync Drive files');
       setDriveBrowser((current) => ({
         ...current,
         scanJob: result.data?.job || result.data,
@@ -914,7 +914,7 @@ export default function IntakePage() {
                   </div>
                   <div>
                     <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Google Drive Documents')}</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select the Drive folders or files that should be part of this case, then sync them into the secure workspace for processing.')}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{t('Select the Drive folders or files that should be part of this case, then sync them into the secure workspace and propagate them through text/search, relationship-map, and source-coverage checks.')}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-500">{activeGoogleConnection.external_account_email || activeGoogleConnection.display_name}</p>
                   </div>
                 </div>
@@ -939,12 +939,12 @@ export default function IntakePage() {
                   </button>
                   <button
                     type="button"
-                    onClick={queueDriveScan}
+                    onClick={syncDriveFiles}
                     disabled={Boolean(driveBrowser.action) || !activeWatchItems.length}
                     className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <UploadCloud size={15} aria-hidden="true" />
-                    {driveBrowser.action === 'scan-drive' ? t('Queueing') : t('Sync selected Drive files')}
+                    {driveBrowser.action === 'sync-drive-files' ? t('Queueing') : t('Sync Drive files')}
                   </button>
                   <button
                     type="button"
@@ -965,9 +965,9 @@ export default function IntakePage() {
               ) : null}
               {driveBrowser.scanJob ? (
                 <div className="mb-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
-                  <div className="font-semibold">{t('Google Drive sync queued')}</div>
+                  <div className="font-semibold">{t('Sync Drive files queued')}</div>
                   <div className="mt-1 break-all">{driveBrowser.scanJob.job_id}</div>
-                  <div className="mt-2 text-xs">{t('Evidence AI will copy selected Drive files, including supported Google Docs exports, into the secure workspace and queue new files for processing.')}</div>
+                  <div className="mt-2 text-xs">{t('Evidence AI will scan selected Drive files, copy new or changed files into the secure workspace, run text/OCR/transcript processing, update search records, update the relationship map, and check source coverage. If nothing changed, the job will stop after confirming the source is up to date.')}</div>
                 </div>
               ) : null}
               {driveReview.error ? (
