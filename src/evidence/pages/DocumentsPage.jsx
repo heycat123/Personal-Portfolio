@@ -1,6 +1,6 @@
 import { Download, ExternalLink, FileText, Info, Search, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
 import DataTable from '../components/DataTable';
 import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
@@ -155,6 +155,48 @@ function readStoredDocumentsTableState(caseId) {
   } catch {
     return {};
   }
+}
+
+function readUrlDocumentsTableState(searchParams) {
+  const next = {};
+  const filterValues = {};
+  const query = String(searchParams.get('q') || '').trim();
+  const fileName = String(searchParams.get('file_name') || searchParams.get('original_filename') || '').trim();
+  const fileIds = String(searchParams.get('file_ids') || '').trim();
+  const origin = String(searchParams.get('origin') || '').trim();
+  const evidenceType = String(searchParams.get('evidence_type') || '').trim();
+  const storageStatus = String(searchParams.get('storage_status') || '').trim();
+  const factorCode = String(searchParams.get('factor_code') || '').trim();
+  const pipelineStatus = String(searchParams.get('pipeline_status') || '').trim();
+  if (query) {
+    next.appliedQuery = query;
+  }
+  if (fileName) {
+    filterValues.original_filename = fileName;
+  }
+  if (fileIds) {
+    filterValues.file_ids = fileIds;
+  }
+  if (origin) {
+    filterValues.origin_label = origin;
+  }
+  if (evidenceType) {
+    filterValues.evidence_type_label = evidenceType;
+  }
+  if (storageStatus) {
+    filterValues.canonical_storage_label = storageStatus;
+  }
+  if (factorCode) {
+    filterValues.legal_factor_code = factorCode;
+  }
+  if (pipelineStatus) {
+    filterValues.pipeline_status = pipelineStatus;
+  }
+  if (Object.keys(filterValues).length) {
+    next.filterValues = filterValues;
+    next.offset = 0;
+  }
+  return next;
 }
 
 function formatSummary(summary, fallback, t) {
@@ -396,7 +438,11 @@ function exportGuardrailMessage(guardrails, t) {
 
 export default function DocumentsPage() {
   const { caseId } = useParams();
-  const initialTableState = readStoredDocumentsTableState(caseId);
+  const [searchParams] = useSearchParams();
+  const initialTableState = {
+    ...readStoredDocumentsTableState(caseId),
+    ...readUrlDocumentsTableState(searchParams),
+  };
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
@@ -475,6 +521,7 @@ export default function DocumentsPage() {
     require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
     require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
     require_graph: selectedPipelineDomains(filterValues.pipeline_status).includes('graph'),
+    file_ids: filterValues.file_ids,
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
   }), [appliedQuery, filterValues, offset, sort]);
@@ -1024,6 +1071,10 @@ export default function DocumentsPage() {
       .filter(([, value]) => String(value || '').trim())
       .map(([key, value]) => {
         const column = documentColumns.find((candidate) => candidate.key === key);
+        if (key === 'file_ids') {
+          const count = String(value || '').split(',').filter(Boolean).length;
+          return { id: key, label: t('Affected documents: {count}', { count }) };
+        }
         if (key === 'pipeline_status') {
           const labels = selectedPipelineDomains(value)
             .map((domain) => (column?.filterOptions || []).find((option) => option.value === domain)?.label || domain)

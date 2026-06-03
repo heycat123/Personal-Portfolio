@@ -132,6 +132,37 @@ function sampleLabel(sample) {
   return String(sample.label || sample.original_filename || sample.file_id || sample.content_hash || '').trim();
 }
 
+function sampleFileId(sample) {
+  if (!sample || typeof sample !== 'object') {
+    return '';
+  }
+  return String(sample.file_id || sample.upload_id || sample.document_id || '').trim();
+}
+
+function documentIssueRoute(caseId, bucket) {
+  const samples = Array.isArray(bucket?.samples) ? bucket.samples : [];
+  const fileIds = samples.map(sampleFileId).filter(Boolean);
+  if (fileIds.length) {
+    const params = new URLSearchParams();
+    params.set('file_ids', fileIds.join(','));
+    params.set('attention', bucket.bucket_id || 'review');
+    params.set('from', 'health');
+    return `/evidence/cases/${caseId}/documents?${params.toString()}#document-attention`;
+  }
+  if (bucket?.group !== 'document_readiness') {
+    return routeFromHint(caseId, bucket?.route_hint);
+  }
+  const labels = samples.map(sampleLabel).filter(Boolean);
+  if (labels.length) {
+    const params = new URLSearchParams();
+    params.set('q', labels[0]);
+    params.set('attention', bucket.bucket_id || 'review');
+    params.set('from', 'health');
+    return `/evidence/cases/${caseId}/documents?${params.toString()}#document-attention`;
+  }
+  return routeFromHint(caseId, bucket?.route_hint);
+}
+
 function PropagationIssueReport({ report, caseId, t }) {
   if (!report?.buckets?.length) {
     return null;
@@ -179,7 +210,14 @@ function PropagationIssueReport({ report, caseId, t }) {
             <div className="space-y-3">
               {buckets.map((bucket) => {
                 const resolved = bucket.status === 'resolved';
-                const samples = (bucket.samples || []).map(sampleLabel).filter(Boolean).slice(0, 3);
+                const sampleItems = (bucket.samples || [])
+                  .map((sample) => ({
+                    label: sampleLabel(sample),
+                    fileId: sampleFileId(sample),
+                  }))
+                  .filter((sample) => sample.label)
+                  .slice(0, 3);
+                const actionRoute = documentIssueRoute(caseId, bucket);
                 return (
                   <article key={bucket.bucket_id} className={`rounded-lg border p-4 ${issueToneClasses(bucket)}`}>
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -201,18 +239,29 @@ function PropagationIssueReport({ report, caseId, t }) {
                           {' '}
                           {t(bucket.sync_resolution)}
                         </p>
-                        {samples.length ? (
+                        {sampleItems.length ? (
                           <div className="mt-3 text-xs opacity-80">
                             <span className="font-semibold">{t('Examples')}:</span>
                             <ul className="mt-1 space-y-1">
-                              {samples.map((sample) => <li key={sample}>{sample}</li>)}
+                              {sampleItems.map((sample) => (
+                                <li key={`${sample.fileId || sample.label}`}>
+                                  {sample.fileId ? (
+                                    <Link
+                                      to={`/evidence/cases/${caseId}/documents/${sample.fileId}`}
+                                      className="font-semibold underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                                    >
+                                      {sample.label}
+                                    </Link>
+                                  ) : sample.label}
+                                </li>
+                              ))}
                             </ul>
                           </div>
                         ) : null}
                         <p className="mt-3 text-xs uppercase tracking-wide opacity-70">{t(bucket.source)}</p>
                       </div>
                       <Link
-                        to={routeFromHint(caseId, bucket.route_hint)}
+                        to={actionRoute}
                         className="inline-flex shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                       >
                         {t(bucket.action_label || 'Open')}
@@ -263,33 +312,30 @@ export default function HealthPage() {
     const token = await getAccessToken();
     const results = await Promise.allSettled([
       evidenceApi.getCaseHealth(caseId, { token }),
-      evidenceApi.getStorageHealth(caseId, { token }),
       evidenceApi.getRawParity(caseId, { token }),
-      evidenceApi.getGraphHealth(caseId, { token }),
-      evidenceApi.getQueueHealth(caseId, { token }),
-      evidenceApi.getSourceAlignmentLatest(caseId, { token }),
       evidenceApi.getJobs(caseId, { limit: 25, offset: 0 }, { token }),
     ]);
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case health', 'Storage health', 'Raw parity', 'Graph health', 'Queue health', 'Source alignment', 'Jobs'];
+        const labels = ['Case health', 'Raw parity', 'Jobs'];
         recordFingerprint(result.value, labels[index]);
       }
     });
 
     const firstError = results.find((result) => result.status === 'rejected')?.reason || null;
+    const caseHealth = fulfilledValue(results[0])?.data || null;
     setState((current) => ({
       ...current,
       loading: false,
       error: firstError,
-      caseHealth: fulfilledValue(results[0])?.data || null,
-      storageHealth: fulfilledValue(results[1])?.data || null,
-      rawParity: fulfilledValue(results[2])?.data || null,
-      graphHealth: fulfilledValue(results[3])?.data || null,
-      queueHealth: fulfilledValue(results[4])?.data || null,
-      sourceAlignment: fulfilledValue(results[5])?.data || null,
-      jobs: fulfilledValue(results[6])?.data?.jobs || [],
+      caseHealth,
+      storageHealth: caseHealth?.storage || null,
+      rawParity: fulfilledValue(results[1])?.data || null,
+      graphHealth: caseHealth?.graph || null,
+      queueHealth: caseHealth?.queue || null,
+      sourceAlignment: caseHealth?.source_alignment || null,
+      jobs: fulfilledValue(results[2])?.data?.jobs || [],
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
