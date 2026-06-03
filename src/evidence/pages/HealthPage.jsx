@@ -164,8 +164,11 @@ function documentIssueRoute(caseId, bucket) {
 }
 
 function propagationActionButtonLabel(bucket) {
+  if (bucket?.action_label) {
+    return bucket.action_label;
+  }
   if (bucket?.bucket_id === 'neo4j_stale_file_hashes') {
-    return 'Review cleanup plan';
+    return 'Clean stale graph hashes';
   }
   if (bucket?.group === 'document_readiness' && bucket?.status !== 'resolved') {
     return 'Review affected documents';
@@ -177,7 +180,7 @@ function findActionJob(action) {
   if (!action || typeof action !== 'object') {
     return null;
   }
-  return action.job || action.detail?.job || action.detail?.existing_job || null;
+  return action.job || action.existing_job || action.active_job || action.active_jobs?.[0] || action.detail?.job || action.detail?.existing_job || action.detail?.active_jobs?.[0] || null;
 }
 
 function PropagationIssueReport({ actionState, onBucketAction, report, caseId, t }) {
@@ -259,6 +262,11 @@ function PropagationIssueReport({ actionState, onBucketAction, report, caseId, t
                           {' '}
                           {t(bucket.sync_resolution)}
                         </p>
+                        {bucket.action_semantics?.user_message ? (
+                          <p className="mt-2 text-xs leading-5 opacity-80">
+                            {t(bucket.action_semantics.user_message)}
+                          </p>
+                        ) : null}
                         {sampleItems.length ? (
                           <div className="mt-3 text-xs opacity-80">
                             <span className="font-semibold">{t('Examples')}:</span>
@@ -505,26 +513,38 @@ export default function HealthPage() {
   const queuePropagationSourceCoverage = useCallback(async (bucket) => {
     const token = await getAccessToken();
     try {
+      const payload = bucket?.action_payload?.job_type ? bucket.action_payload : {
+        job_type: 'source_alignment_audit',
+        input_json: {
+          requested_from: 'health_propagation_tile',
+          bucket_id: bucket?.bucket_id,
+          mode: 'read_only',
+          cloud_neo4j: true,
+          scan_google_drive_api: true,
+        },
+        priority: 0,
+      };
       const result = await evidenceApi.createJob(
         caseId,
-        {
-          job_type: 'source_alignment_audit',
-          input_json: {
-            requested_from: 'health_propagation_tile',
-            bucket_id: bucket?.bucket_id,
-            mode: 'read_only',
-            cloud_neo4j: true,
-            scan_google_drive_api: true,
-          },
-          priority: 0,
-        },
+        payload,
         { token },
       );
       recordFingerprint(result, `${bucket?.label || 'Source coverage'} action`);
+      const job = result.data?.job || result.data?.existing_job || result.data;
+      const message = bucket?.action_semantics?.user_message
+        || result.data?.display_message
+        || 'Evidence AI queued a source coverage check. Open the job to watch whether this bucket clears or still needs review.';
       return {
         title: 'Source coverage check queued',
-        message: 'Evidence AI queued a source coverage check. Open the job to watch whether this bucket clears or still needs review.',
-        action: { job: result.data?.job || result.data },
+        message,
+        action: { job },
+        jobResponse: {
+          data: result.data,
+          fingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        },
       };
     } catch (error) {
       const detail = error?.payload?.detail || error?.payload || null;
@@ -533,6 +553,49 @@ export default function HealthPage() {
           title: 'Source coverage is waiting',
           message: detail?.display_message || 'Source coverage should run after active document or relationship-map processing finishes.',
           action: { detail: { job: detail?.active_jobs?.[0] } },
+        };
+      }
+      throw error;
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
+  const queueHealthBucketJob = useCallback(async (bucket) => {
+    const payload = bucket?.action_payload;
+    if (!payload?.job_type) {
+      return null;
+    }
+
+    const token = await getAccessToken();
+    try {
+      const result = await evidenceApi.createJob(caseId, payload, { token });
+      recordFingerprint(result, `${bucket?.label || payload.job_type} action`);
+      const job = result.data?.job || result.data?.existing_job || result.data;
+      const message = result.data?.display_message
+        || bucket?.action_semantics?.user_message
+        || bucket?.sync_resolution
+        || 'Evidence AI queued the requested health action. Open the job to watch progress.';
+      return {
+        title: result.data?.already_started ? 'Action already running' : 'Action started',
+        message,
+        action: { job },
+        jobResponse: {
+          data: result.data,
+          fingerprint: {
+            id: result.requestFingerprintId,
+            correlationId: result.correlationId,
+          },
+        },
+      };
+    } catch (error) {
+      const detail = error?.payload?.detail || error?.payload || null;
+      if (error?.status === 409 && detail) {
+        return {
+          title: detail.display_status || 'Action is waiting',
+          message: detail.display_message || detail.user_message || 'Evidence AI found an active job or prerequisite that must finish first.',
+          action: {
+            detail,
+            job: detail.job || detail.existing_job || detail.active_jobs?.[0],
+          },
         };
       }
       throw error;
@@ -577,27 +640,10 @@ export default function HealthPage() {
 
   const handlePropagationBucketAction = useCallback(async (bucket, actionRoute) => {
     const bucketId = bucket?.bucket_id || 'unknown';
-    if (bucketId === 'neo4j_stale_file_hashes') {
-      setState((current) => ({
-        ...current,
-        propagationAction: {
-          bucketId,
-          running: false,
-          error: null,
-          result: {
-            title: 'Graph cleanup plan',
-            message: 'These are graph-only file-hash references in Neo4j that are not in the current extracted document set. Sync Drive files and relationship-map rebuild add missing coverage, but they do not prune stale graph-only references yet. Review the samples and run source coverage after a graph cleanup job exists.',
-            to: actionRoute,
-            linkLabel: 'Open source coverage details',
-          },
-        },
-      }));
-      return;
-    }
 
     const samples = Array.isArray(bucket?.samples) ? bucket.samples : [];
     const hasAffectedDocuments = samples.some((sample) => sampleFileId(sample));
-    if (bucket?.group === 'document_readiness' && bucket?.status !== 'resolved' && hasAffectedDocuments) {
+    if (!bucket?.action_payload?.job_type && bucket?.group === 'document_readiness' && bucket?.status !== 'resolved' && hasAffectedDocuments) {
       navigate(actionRoute);
       return;
     }
@@ -612,11 +658,19 @@ export default function HealthPage() {
     }));
 
     try {
-      const result = bucketId === 'evidence_ledger_extraction_alignment'
-        ? await queuePropagationSourceCoverage(bucket)
-        : await resolvePropagationBucket(bucket);
+      let result = null;
+      if (bucket?.action_payload?.job_type) {
+        result = bucket.action_payload.job_type === 'source_alignment_audit'
+          ? await queuePropagationSourceCoverage(bucket)
+          : await queueHealthBucketJob(bucket);
+      } else if (bucketId === 'evidence_ledger_extraction_alignment') {
+        result = await queuePropagationSourceCoverage(bucket);
+      } else {
+        result = await resolvePropagationBucket(bucket);
+      }
       setState((current) => ({
         ...current,
+        alignmentJob: result?.jobResponse || current.alignmentJob,
         propagationAction: { bucketId, running: false, error: null, result },
       }));
       void loadHealth();
@@ -626,7 +680,7 @@ export default function HealthPage() {
         propagationAction: { bucketId, running: false, error, result: null },
       }));
     }
-  }, [loadHealth, navigate, queuePropagationSourceCoverage, resolvePropagationBucket]);
+  }, [loadHealth, navigate, queueHealthBucketJob, queuePropagationSourceCoverage, resolvePropagationBucket]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
