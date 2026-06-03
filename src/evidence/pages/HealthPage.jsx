@@ -1,6 +1,6 @@
 import { Activity, AlertTriangle, CheckCircle2, Database, GitCompare, Play, Server } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
 import MetricTile from '../components/MetricTile';
@@ -163,7 +163,24 @@ function documentIssueRoute(caseId, bucket) {
   return routeFromHint(caseId, bucket?.route_hint);
 }
 
-function PropagationIssueReport({ report, caseId, t }) {
+function propagationActionButtonLabel(bucket) {
+  if (bucket?.bucket_id === 'neo4j_stale_file_hashes') {
+    return 'Review cleanup plan';
+  }
+  if (bucket?.group === 'document_readiness' && bucket?.status !== 'resolved') {
+    return 'Review affected documents';
+  }
+  return bucket?.action_label || 'Open';
+}
+
+function findActionJob(action) {
+  if (!action || typeof action !== 'object') {
+    return null;
+  }
+  return action.job || action.detail?.job || action.detail?.existing_job || null;
+}
+
+function PropagationIssueReport({ actionState, onBucketAction, report, caseId, t }) {
   if (!report?.buckets?.length) {
     return null;
   }
@@ -218,6 +235,9 @@ function PropagationIssueReport({ report, caseId, t }) {
                   .filter((sample) => sample.label)
                   .slice(0, 3);
                 const actionRoute = documentIssueRoute(caseId, bucket);
+                const activeAction = actionState?.bucketId === bucket.bucket_id ? actionState : null;
+                const actionJob = findActionJob(activeAction?.result?.action);
+                const actionDisabled = Boolean(activeAction?.running);
                 return (
                   <article key={bucket.bucket_id} className={`rounded-lg border p-4 ${issueToneClasses(bucket)}`}>
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -260,13 +280,44 @@ function PropagationIssueReport({ report, caseId, t }) {
                         ) : null}
                         <p className="mt-3 text-xs uppercase tracking-wide opacity-70">{t(bucket.source)}</p>
                       </div>
-                      <Link
-                        to={actionRoute}
+                      <button
+                        type="button"
+                        onClick={() => onBucketAction(bucket, actionRoute)}
+                        disabled={actionDisabled}
                         className="inline-flex shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
                       >
-                        {t(bucket.action_label || 'Open')}
-                      </Link>
+                        {actionDisabled ? t('Working') : t(propagationActionButtonLabel(bucket))}
+                      </button>
                     </div>
+                    {activeAction?.error ? (
+                      <div className="mt-3">
+                        <ErrorPanel title={t('Health action failed')} error={activeAction.error} />
+                      </div>
+                    ) : null}
+                    {activeAction?.result ? (
+                      <div className="mt-3 rounded-md border border-current/20 bg-black/10 p-3 text-sm">
+                        <p className="font-semibold">{t(activeAction.result.title)}</p>
+                        <p className="mt-1 leading-6 opacity-90">{t(activeAction.result.message)}</p>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
+                          {actionJob?.job_id ? (
+                            <Link
+                              to={`/evidence/cases/${caseId}/jobs/${actionJob.job_id}`}
+                              className="underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                            >
+                              {t('Open job')}
+                            </Link>
+                          ) : null}
+                          {activeAction.result.to ? (
+                            <Link
+                              to={activeAction.result.to}
+                              className="underline decoration-current/40 underline-offset-2 hover:decoration-current"
+                            >
+                              {t(activeAction.result.linkLabel || 'Open details')}
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}
@@ -281,6 +332,7 @@ function PropagationIssueReport({ report, caseId, t }) {
 export default function HealthPage() {
   const { caseId } = useParams();
   const { hash } = useLocation();
+  const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
@@ -303,6 +355,7 @@ export default function HealthPage() {
     processingRequest: null,
     processingRequestError: null,
     processingRequestRunning: false,
+    propagationAction: null,
     jobs: [],
     fingerprints: [],
   });
@@ -448,6 +501,120 @@ export default function HealthPage() {
       setState((current) => ({ ...current, processingRequestRunning: false, processingRequestError: error }));
     }
   }, [caseId, getAccessToken, recordFingerprint]);
+
+  const queuePropagationSourceCoverage = useCallback(async (bucket) => {
+    const token = await getAccessToken();
+    const result = await evidenceApi.createJob(
+      caseId,
+      {
+        job_type: 'source_alignment_audit',
+        input_json: {
+          requested_from: 'health_propagation_tile',
+          bucket_id: bucket?.bucket_id,
+          mode: 'read_only',
+          cloud_neo4j: true,
+          scan_google_drive_api: true,
+        },
+        priority: 0,
+      },
+      { token },
+    );
+    recordFingerprint(result, `${bucket?.label || 'Source coverage'} action`);
+    return {
+      title: 'Source coverage check queued',
+      message: 'Evidence AI queued a source coverage check. Open the job to watch whether this bucket clears or still needs review.',
+      action: { job: result.data?.job || result.data },
+    };
+  }, [caseId, getAccessToken, recordFingerprint]);
+
+  const resolvePropagationBucket = useCallback(async (bucket) => {
+    const token = await getAccessToken();
+    const textSearchBucketIds = new Set([
+      'google_drive_binary_not_extracted',
+      'image_ocr_needed',
+      'pdf_ocr_needed',
+      'spreadsheet_extraction_needed',
+    ]);
+    const payload = {
+      cleanup_google_drive_selection: false,
+      start_text_search_processing: textSearchBucketIds.has(bucket?.bucket_id),
+      update_relationship_map: bucket?.bucket_id === 'relationship_map_chunks_missing',
+      run_source_alignment_when_safe: false,
+    };
+    const result = await evidenceApi.resolveAllReadiness(caseId, payload, { token });
+    recordFingerprint(result, `${bucket?.label || 'Readiness'} action`);
+    const actions = [
+      ...(Array.isArray(result.data?.executed_actions) ? result.data.executed_actions : []),
+      ...(Array.isArray(result.data?.skipped_actions) ? result.data.skipped_actions : []),
+    ];
+    const action = actions.find((item) => {
+      const actionId = String(item?.action_id || '');
+      if (bucket?.bucket_id === 'relationship_map_chunks_missing') {
+        return actionId === 'request_relationship_map_rebuild';
+      }
+      return actionId === 'start_text_search_processing';
+    }) || actions[0] || null;
+    const job = findActionJob(action);
+    const status = String(action?.status || '').replaceAll('_', ' ');
+    return {
+      title: job?.job_id ? 'Action started' : 'Action checked',
+      message: action?.display_message || action?.detail?.display_message || result.data?.display_message || (status ? `Status: ${status}.` : 'Evidence AI checked this action.'),
+      action,
+    };
+  }, [caseId, getAccessToken, recordFingerprint]);
+
+  const handlePropagationBucketAction = useCallback(async (bucket, actionRoute) => {
+    const bucketId = bucket?.bucket_id || 'unknown';
+    if (bucketId === 'neo4j_stale_file_hashes') {
+      setState((current) => ({
+        ...current,
+        propagationAction: {
+          bucketId,
+          running: false,
+          error: null,
+          result: {
+            title: 'Graph cleanup plan',
+            message: 'These are graph-only file-hash references in Neo4j that are not in the current extracted document set. Sync Drive files and relationship-map rebuild add missing coverage, but they do not prune stale graph-only references yet. Review the samples and run source coverage after a graph cleanup job exists.',
+            to: actionRoute,
+            linkLabel: 'Open source coverage details',
+          },
+        },
+      }));
+      return;
+    }
+
+    const samples = Array.isArray(bucket?.samples) ? bucket.samples : [];
+    const hasAffectedDocuments = samples.some((sample) => sampleFileId(sample));
+    if (bucket?.group === 'document_readiness' && bucket?.status !== 'resolved' && hasAffectedDocuments) {
+      navigate(actionRoute);
+      return;
+    }
+    if (bucketId === 'missing_stable_file_hash') {
+      navigate(actionRoute);
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      propagationAction: { bucketId, running: true, error: null, result: null },
+    }));
+
+    try {
+      const result = bucketId === 'evidence_ledger_extraction_alignment'
+        ? await queuePropagationSourceCoverage(bucket)
+        : await resolvePropagationBucket(bucket);
+      setState((current) => ({
+        ...current,
+        propagationAction: { bucketId, running: false, error: null, result },
+      }));
+      void loadHealth();
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        propagationAction: { bucketId, running: false, error, result: null },
+      }));
+    }
+  }, [loadHealth, navigate, queuePropagationSourceCoverage, resolvePropagationBucket]);
 
   useEffect(() => {
     const timerId = window.setTimeout(() => {
@@ -739,6 +906,8 @@ export default function HealthPage() {
       ) : null}
 
       <PropagationIssueReport
+        actionState={state.propagationAction}
+        onBucketAction={handlePropagationBucketAction}
         report={state.caseHealth?.propagation_issue_report}
         caseId={caseId}
         t={t}
