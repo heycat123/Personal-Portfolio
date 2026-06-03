@@ -1140,15 +1140,14 @@ export default function DocumentsPage() {
   }), 'documents'), [caseId, inventorySummary, state.documentProcessingReadiness, state.documentsPanelStatus]);
 
   useEffect(() => {
-    const shouldPollForProcessing = processingRequest.busy || (s3OnlyFiles > 0 && !exactAffectedDocumentFilterActive);
-    if (!shouldPollForProcessing) {
+    if (!processingRequest.busy) {
       return undefined;
     }
     const timerId = window.setInterval(() => {
       void loadDocuments();
     }, 5000);
     return () => window.clearInterval(timerId);
-  }, [exactAffectedDocumentFilterActive, loadDocuments, processingRequest.busy, s3OnlyFiles]);
+  }, [loadDocuments, processingRequest.busy]);
 
   const applyColumnFilter = (columnId, value) => {
     setOffset(0);
