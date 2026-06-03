@@ -504,27 +504,39 @@ export default function HealthPage() {
 
   const queuePropagationSourceCoverage = useCallback(async (bucket) => {
     const token = await getAccessToken();
-    const result = await evidenceApi.createJob(
-      caseId,
-      {
-        job_type: 'source_alignment_audit',
-        input_json: {
-          requested_from: 'health_propagation_tile',
-          bucket_id: bucket?.bucket_id,
-          mode: 'read_only',
-          cloud_neo4j: true,
-          scan_google_drive_api: true,
+    try {
+      const result = await evidenceApi.createJob(
+        caseId,
+        {
+          job_type: 'source_alignment_audit',
+          input_json: {
+            requested_from: 'health_propagation_tile',
+            bucket_id: bucket?.bucket_id,
+            mode: 'read_only',
+            cloud_neo4j: true,
+            scan_google_drive_api: true,
+          },
+          priority: 0,
         },
-        priority: 0,
-      },
-      { token },
-    );
-    recordFingerprint(result, `${bucket?.label || 'Source coverage'} action`);
-    return {
-      title: 'Source coverage check queued',
-      message: 'Evidence AI queued a source coverage check. Open the job to watch whether this bucket clears or still needs review.',
-      action: { job: result.data?.job || result.data },
-    };
+        { token },
+      );
+      recordFingerprint(result, `${bucket?.label || 'Source coverage'} action`);
+      return {
+        title: 'Source coverage check queued',
+        message: 'Evidence AI queued a source coverage check. Open the job to watch whether this bucket clears or still needs review.',
+        action: { job: result.data?.job || result.data },
+      };
+    } catch (error) {
+      const detail = error?.payload?.detail || error?.payload || null;
+      if (error?.status === 409 && (detail?.error === 'source_alignment_blocked_by_active_processing' || detail?.workflow_status === 'blocked_by_active_processing')) {
+        return {
+          title: 'Source coverage is waiting',
+          message: detail?.display_message || 'Source coverage should run after active document or relationship-map processing finishes.',
+          action: { detail: { job: detail?.active_jobs?.[0] } },
+        };
+      }
+      throw error;
+    }
   }, [caseId, getAccessToken, recordFingerprint]);
 
   const resolvePropagationBucket = useCallback(async (bucket) => {
