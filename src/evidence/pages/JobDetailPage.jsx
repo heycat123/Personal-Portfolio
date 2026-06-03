@@ -90,6 +90,14 @@ function formatJobCost(costSummary) {
   }
 }
 
+function isSourceAlignmentNeedsReview(job, progress) {
+  const jobType = String(job?.job_type || job?.type || '').toLowerCase();
+  const workflowStatus = String(job?.workflow_status || job?.display?.workflow_status || progress?.workflowStatus || '').toLowerCase();
+  const statusLabel = String(progress?.statusLabel || job?.display_status || job?.status || '').toLowerCase();
+  return jobType === 'source_alignment_audit'
+    && (workflowStatus.includes('needs_review') || statusLabel.includes('needs review'));
+}
+
 export default function JobDetailPage() {
   const { caseId, jobId } = useParams();
   const navigate = useNavigate();
@@ -401,6 +409,7 @@ export default function JobDetailPage() {
   }, [loadJob, shouldLivePoll]);
 
   const isProcessingRequest = isDocumentProcessingRequest(job);
+  const sourceAlignmentNeedsReview = isSourceAlignmentNeedsReview(job, progress);
   const canViewJobDetail = Boolean(!job || canSeeOperations || isProcessingRequest);
   const canCancel = Boolean(progress?.canCancel);
   const retryAllowedByRole = progress?.retryRequiresOperatorAccess ? (canSeeOperations || isRootAdmin) : true;
@@ -602,16 +611,46 @@ export default function JobDetailPage() {
                       {t('Open Jobs')}
                     </Link>
                   ) : null}
+                  {sourceAlignmentNeedsReview ? (
+                    <Link
+                      to={`/evidence/cases/${caseId}/health#propagation-blockers`}
+                      className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                    >
+                      {t('Review source coverage')}
+                    </Link>
+                  ) : null}
                   <Link
-                    to={isProcessingRequest ? `/evidence/cases/${caseId}/documents` : `/evidence/cases/${caseId}/jobs`}
+                    to={isProcessingRequest ? `/evidence/cases/${caseId}/documents` : sourceAlignmentNeedsReview ? `/evidence/cases/${caseId}/health#propagation-blockers` : `/evidence/cases/${caseId}/jobs`}
                     className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                   >
-                    {t(isProcessingRequest ? 'Review documents' : 'Open jobs')}
+                    {t(isProcessingRequest ? 'Review documents' : sourceAlignmentNeedsReview ? 'Open Health blockers' : 'Open jobs')}
                   </Link>
                 </div>
               </div>
               <div className="mt-4">
                 <Stepper steps={progress.steps.map((step) => ({ ...step, label: t(step.label) }))} />
+              </div>
+            </section>
+          ) : null}
+
+          {sourceAlignmentNeedsReview ? (
+            <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-base font-semibold">{t('What needs review?')}</h2>
+                  <p className="mt-1">
+                    {t('The source coverage check finished, but it found propagation buckets that still need review, cleanup, or another processing step. Open Health blockers to see the exact buckets and affected examples.')}
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {t('This is an app completeness check. It does not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
+                  </p>
+                </div>
+                <Link
+                  to={`/evidence/cases/${caseId}/health#propagation-blockers`}
+                  className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {t('Review source coverage')}
+                </Link>
               </div>
             </section>
           ) : null}
