@@ -525,6 +525,7 @@ export default function DocumentsPage() {
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
   }), [appliedQuery, filterValues, offset, sort]);
+  const exactAffectedDocumentFilterActive = Boolean(String(filterValues.file_ids || '').trim());
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -631,20 +632,28 @@ export default function DocumentsPage() {
   }, [loadDocuments]);
 
   useEffect(() => {
+    if (exactAffectedDocumentFilterActive) {
+      setCategoryQa((current) => ({ ...current, loading: false, error: null, data: null }));
+      return undefined;
+    }
     const timerId = window.setTimeout(() => {
       loadCategoryQa();
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [loadCategoryQa]);
+  }, [exactAffectedDocumentFilterActive, loadCategoryQa]);
 
   useEffect(() => {
+    if (exactAffectedDocumentFilterActive) {
+      setCategoryResolve((current) => ({ ...current, loading: false, error: null, data: null }));
+      return undefined;
+    }
     const timerId = window.setTimeout(() => {
       loadCategoryResolvePlan();
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [loadCategoryResolvePlan]);
+  }, [exactAffectedDocumentFilterActive, loadCategoryResolvePlan]);
 
   useEffect(() => {
     setExpandedDocuments({});
@@ -1131,14 +1140,15 @@ export default function DocumentsPage() {
   }), 'documents'), [caseId, inventorySummary, state.documentProcessingReadiness, state.documentsPanelStatus]);
 
   useEffect(() => {
-    if (!s3OnlyFiles && !processingRequest.busy) {
+    const shouldPollForProcessing = processingRequest.busy || (s3OnlyFiles > 0 && !exactAffectedDocumentFilterActive);
+    if (!shouldPollForProcessing) {
       return undefined;
     }
     const timerId = window.setInterval(() => {
       void loadDocuments();
     }, 5000);
     return () => window.clearInterval(timerId);
-  }, [loadDocuments, processingRequest.busy, s3OnlyFiles]);
+  }, [exactAffectedDocumentFilterActive, loadDocuments, processingRequest.busy, s3OnlyFiles]);
 
   const applyColumnFilter = (columnId, value) => {
     setOffset(0);
@@ -1330,26 +1340,35 @@ export default function DocumentsPage() {
         t={t}
       />
 
-      <CategoryReviewPanel
-        caseId={caseId}
-        data={categoryQa.data}
-        error={categoryQa.error}
-        exportBusy={exportState.busy}
-        lensId={categoryLensId}
-        loading={categoryQa.loading}
-        onLoadResolvePlan={loadCategoryResolvePlan}
-        onExportCurrentView={exportCategoryReview}
-        onFilterCategory={filterCategoryReviewDocuments}
-        onFilterUncategorized={filterUncategorizedDocuments}
-        onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
-        onRetry={loadCategoryQa}
-        onResolveAction={resolveCategoryReviewAction}
-        resolveActionBusyId={categoryResolve.busyActionId}
-        resolveError={categoryResolve.error}
-        resolveLoading={categoryResolve.loading}
-        resolvePlan={categoryResolve.data}
-        resolveResult={categoryResolve.result}
-      />
+      {exactAffectedDocumentFilterActive ? (
+        <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+          <h3 className="font-semibold">{t('Reviewing affected documents')}</h3>
+          <p className="mt-1">
+            {t('This view is limited to documents linked from a health item. Category Review is paused here so the selected documents can load without running the full category handoff report in the background.')}
+          </p>
+        </section>
+      ) : (
+        <CategoryReviewPanel
+          caseId={caseId}
+          data={categoryQa.data}
+          error={categoryQa.error}
+          exportBusy={exportState.busy}
+          lensId={categoryLensId}
+          loading={categoryQa.loading}
+          onLoadResolvePlan={loadCategoryResolvePlan}
+          onExportCurrentView={exportCategoryReview}
+          onFilterCategory={filterCategoryReviewDocuments}
+          onFilterUncategorized={filterUncategorizedDocuments}
+          onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
+          onRetry={loadCategoryQa}
+          onResolveAction={resolveCategoryReviewAction}
+          resolveActionBusyId={categoryResolve.busyActionId}
+          resolveError={categoryResolve.error}
+          resolveLoading={categoryResolve.loading}
+          resolvePlan={categoryResolve.data}
+          resolveResult={categoryResolve.result}
+        />
+      )}
 
       {showDiagnostics && categoryQa.fingerprint?.id ? (
         <div className="mb-5">
