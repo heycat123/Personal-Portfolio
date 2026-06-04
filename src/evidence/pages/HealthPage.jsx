@@ -368,11 +368,14 @@ export default function HealthPage() {
     fingerprints: [],
   });
 
-  const loadHealth = useCallback(async () => {
+  const loadHealth = useCallback(async ({ refresh = false } = {}) => {
     setState((current) => ({ ...current, loading: true, error: null }));
     const token = await getAccessToken();
     const results = await Promise.allSettled([
-      evidenceApi.getCaseHealth(caseId, { token }),
+      evidenceApi.getCaseHealth(caseId, {
+        token,
+        query: refresh ? { refresh: true } : undefined,
+      }),
       evidenceApi.getRawParity(caseId, { token }),
       evidenceApi.getJobs(caseId, { limit: 25, offset: 0 }, { token }),
     ]);
@@ -673,7 +676,7 @@ export default function HealthPage() {
         alignmentJob: result?.jobResponse || current.alignmentJob,
         propagationAction: { bucketId, running: false, error: null, result },
       }));
-      void loadHealth();
+      void loadHealth({ refresh: true });
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -800,7 +803,7 @@ export default function HealthPage() {
       key: 'database',
       title: t('Database check needs support review'),
       detail: t('Case information may be slow or unavailable while the database check is unhealthy. Try a refresh; if it stays unhealthy, contact support so an operator can review the service.'),
-      action: { label: t('Refresh'), onClick: loadHealth },
+      action: { label: t('Refresh'), onClick: () => loadHealth({ refresh: true }) },
       secondaryAction: { label: t('Help & Support'), to: `/evidence/cases/${caseId}/support` },
     });
   }
@@ -831,7 +834,7 @@ export default function HealthPage() {
       title: t('Background processing needs attention'),
       detail: t('Jobs such as sync, processing, and alignment may wait until the queue is healthy. Open Jobs to see queued work, or refresh after the service recovers.'),
       action: { label: t('Open Jobs'), to: `/evidence/cases/${caseId}/jobs` },
-      secondaryAction: { label: t('Refresh'), onClick: loadHealth },
+      secondaryAction: { label: t('Refresh'), onClick: () => loadHealth({ refresh: true }) },
     });
   }
 
@@ -916,7 +919,7 @@ export default function HealthPage() {
           <>
             <button
               type="button"
-              onClick={loadHealth}
+              onClick={() => loadHealth({ refresh: true })}
               className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
               {t('Refresh')}
