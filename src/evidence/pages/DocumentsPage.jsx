@@ -439,6 +439,7 @@ function exportGuardrailMessage(guardrails, t) {
 export default function DocumentsPage() {
   const { caseId } = useParams();
   const [searchParams] = useSearchParams();
+  const attentionContext = String(searchParams.get('attention') || '').trim();
   const initialTableState = {
     ...readStoredDocumentsTableState(caseId),
     ...readUrlDocumentsTableState(searchParams),
@@ -526,6 +527,7 @@ export default function DocumentsPage() {
     sort_dir: sort?.desc ? 'desc' : 'asc',
   }), [appliedQuery, filterValues, offset, sort]);
   const exactAffectedDocumentFilterActive = Boolean(String(filterValues.file_ids || '').trim());
+  const attentionFilterActive = exactAffectedDocumentFilterActive || Boolean(attentionContext);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1339,12 +1341,22 @@ export default function DocumentsPage() {
         t={t}
       />
 
-      {exactAffectedDocumentFilterActive ? (
+      {attentionFilterActive ? (
         <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
           <h3 className="font-semibold">{t('Reviewing affected documents')}</h3>
           <p className="mt-1">
             {t('This view is limited to documents linked from a health item. Category Review is paused here so the selected documents can load without running the full category handoff report in the background.')}
           </p>
+          {attentionContext === 'secure-copy-review' ? (
+            <p className="mt-1">
+              {t('Resolve this item by confirming the secure workspace copy, syncing the source again, or removing the row from workspace review if it should not remain in this case.')}
+            </p>
+          ) : null}
+          {state.total === 0 && !state.loading ? (
+            <p className="mt-1 font-semibold">
+              {t('No affected document rows are currently visible for this health item. Refresh Health; if the tile remains open, use the source or support action shown on that tile.')}
+            </p>
+          ) : null}
         </section>
       ) : (
         <CategoryReviewPanel

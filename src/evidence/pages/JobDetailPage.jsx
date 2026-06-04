@@ -616,7 +616,7 @@ export default function JobDetailPage() {
                       to={`/evidence/cases/${caseId}/health#propagation-blockers`}
                       className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                     >
-                      {t('Review source coverage')}
+                      {t('Open Health blockers')}
                     </Link>
                   ) : null}
                   <Link
@@ -639,7 +639,10 @@ export default function JobDetailPage() {
                 <div>
                   <h2 className="text-base font-semibold">{t('What needs review?')}</h2>
                   <p className="mt-1">
-                    {t('The source coverage check finished, but it found propagation buckets that still need review, cleanup, or another processing step. Open Health blockers to see the exact buckets and affected examples.')}
+                    {t('The source coverage check finished, but it found propagation buckets that still need review, cleanup, or another processing step. Open Health blockers to see each bucket, the count, examples, and the action that clears it.')}
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {t('If no buckets are open, refresh Health and this job. This source coverage check may be historical.')}
                   </p>
                   <p className="mt-1 text-xs">
                     {t('This is an app completeness check. It does not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
@@ -649,7 +652,7 @@ export default function JobDetailPage() {
                   to={`/evidence/cases/${caseId}/health#propagation-blockers`}
                   className="inline-flex shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                 >
-                  {t('Review source coverage')}
+                  {t('Open Health blockers')}
                 </Link>
               </div>
             </section>
