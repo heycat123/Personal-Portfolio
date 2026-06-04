@@ -29,7 +29,23 @@ function reviewBadgeStatus(status) {
   if (normalized.includes('confirmed')) {
     return { label: humanizeKey(normalized), className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300' };
   }
-  return { label: normalized === 'needs_review' ? 'Needs review' : humanizeKey(normalized), className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300' };
+  if (normalized === 'needs_lawyer_review') {
+    return { label: 'Saved for lawyer review', className: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300' };
+  }
+  if (normalized === 'not_applicable' || normalized === 'excluded_from_review') {
+    return { label: humanizeKey(normalized), className: 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-300' };
+  }
+  return { label: normalized === 'needs_review' ? 'Needs action' : humanizeKey(normalized), className: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300' };
+}
+
+function isTerminalReviewStatus(status) {
+  return [
+    'confirmed_by_user',
+    'confirmed_by_lawyer',
+    'not_applicable',
+    'excluded_from_review',
+    'needs_lawyer_review',
+  ].includes(String(status || '').toLowerCase());
 }
 
 function ReviewStatusBadge({ status }) {
@@ -47,20 +63,35 @@ function basisLabel(status) {
   if (normalized === 'lens_spans_available') return 'Source snippets available';
   if (normalized === 'source_metadata_only') return 'Source metadata only';
   if (normalized === 'graph_tag_only') return 'Issue tag only';
-  if (normalized === 'needs_lens_review') return 'Needs source-snippet review';
+  if (normalized === 'needs_lens_review') return 'Source snippets can be added later';
   return normalized ? humanizeKey(normalized) : 'Review basis not recorded';
+}
+
+function categoryNeedsAction(category) {
+  const counts = category?.counts || {};
+  const documentRows = Number(counts.document_rows || 0);
+  const readyForSearch = Number(counts.ready_for_search || 0);
+  const uncategorized = Number(counts.uncategorized || 0);
+  return uncategorized > 0 || (documentRows > 0 && readyForSearch < documentRows);
+}
+
+function categoryEffectiveReviewStatus(category) {
+  if (categoryNeedsAction(category)) {
+    return 'needs_review';
+  }
+  return category?.review_decision?.review_status || 'suggested';
 }
 
 function categoryMatchesView(category, view) {
   if (view === 'all') return true;
-  const counts = category?.counts || {};
   if (view === 'needs_review') {
-    return category?.review_status === 'needs_review'
-      || category?.basis_status === 'needs_lens_review'
-      || Number(counts.needs_review || 0) > 0
-      || Number(counts.documents_missing_lens_spans || 0) > 0;
+    if (isTerminalReviewStatus(category?.review_status)) {
+      return false;
+    }
+    return categoryNeedsAction(category);
   }
   if (view === 'uncategorized') {
+    const counts = category?.counts || {};
     const label = `${category?.category_id || ''} ${category?.code || ''} ${category?.label || ''}`.toLowerCase();
     return label.includes('uncategorized') || Number(counts.uncategorized || 0) > 0 || Number(counts.not_tagged || 0) > 0;
   }
@@ -111,6 +142,21 @@ function categoryDisplayTitle(category) {
 }
 
 function reviewNeeds(category, spanLookup, t) {
+  const reviewStatus = String(category?.review_status || '').toLowerCase();
+  if (reviewStatus === 'needs_lawyer_review') {
+    return [{
+      label: t('Saved for lawyer review'),
+      detail: t('This group is organized for handoff and marked for lawyer review. Source examples can be added later.'),
+      action: t('Share the category review with your lawyer, then record any changes they request.'),
+    }];
+  }
+  if (isTerminalReviewStatus(reviewStatus)) {
+    return [{
+      label: t('Reviewed'),
+      detail: t('This group has a recorded review decision for organization.'),
+      action: t('Open representative documents if you want to inspect the source material again.'),
+    }];
+  }
   const counts = category?.counts || {};
   const documentRows = Number(counts.document_rows || 0);
   const readyForSearch = Number(counts.ready_for_search || 0);
@@ -126,19 +172,19 @@ function reviewNeeds(category, spanLookup, t) {
 
   if (missingSpans > 0 || unavailableSpans) {
     items.push({
-      label: t('Source snippets missing'),
+      label: t('Source snippets can be added later'),
       detail: missingSpans > 0
-        ? t('{count} document row(s) do not have generated quotes or snippets for this review lens yet.', { count: missingSpans })
-        : t('This review lens has not generated quotes or snippets for this category yet.'),
-      action: t('Treat this as an organizational suggestion until lens review runs or a person confirms the category.'),
+        ? t('{count} document row(s) are organized here, but generated source snippets have not been added for this review lens yet.', { count: missingSpans })
+        : t('Generated source snippets have not been added for this category yet.'),
+      action: t('You can still use this as an organizational grouping. Add source snippets later if the handoff needs cited examples.'),
     });
   }
 
   if (needsReview > 0) {
     items.push({
-      label: t('Documents need attention'),
-      detail: t('{count} document row(s) in this group are marked needs review by document processing or source status.', { count: needsReview }),
-      action: t('Show matching documents, then review source copy, extracted text, and category details.'),
+      label: t('Documents include review notes'),
+      detail: t('{count} document row(s) in this group have document-level review notes, such as sensitive information or source-history notes.', { count: needsReview }),
+      action: t('This does not mean the category is wrong. Open matching documents when you want to inspect those notes.'),
     });
   }
 
@@ -158,7 +204,7 @@ function reviewNeeds(category, spanLookup, t) {
     });
   }
 
-  if (String(category?.review_status || '').toLowerCase() === 'suggested') {
+  if (String(categoryEffectiveReviewStatus(category)).toLowerCase() === 'suggested') {
     items.push({
       label: t('Human confirmation needed'),
       detail: t('This grouping is suggested by workspace metadata, issue tags, or review-lens output.'),
@@ -185,16 +231,16 @@ function categoryReason(category, spanLookup, t) {
     return t('This grouping includes source snippets from the selected review lens. Review the cited snippets and open the source documents before relying on a summary.');
   }
   if (category.basis_status === 'graph_tag_only') {
-    return t('This grouping is based on issue tags from document processing. This lens has not generated source snippets for this category yet.');
+    return t('This grouping is based on issue tags from document processing. Source snippets can be added later if the handoff needs cited examples.');
   }
   if (category.basis_status === 'source_metadata_only') {
-    return t('This grouping is based on document metadata and category labels. This lens has not generated source snippets for this category yet.');
+    return t('This grouping is based on document metadata and category labels. Source snippets can be added later if the handoff needs cited examples.');
   }
   if (category.basis_status === 'needs_lens_review') {
-    return t('This category needs source-snippet review before generated quotes can explain the grouping.');
+    return t('This category is available as an organizational suggestion. Source snippets can be added later.');
   }
   if (spanLookup?.available === false) {
-    return t('This review lens has not generated source snippets yet.');
+    return t('Source snippets can be added later.');
   }
   return t('Review the representative documents and source status to understand this category.');
 }
@@ -209,10 +255,10 @@ function spanLookupReasonMessage(reason, t) {
     || normalized.includes('not run')
     || normalized.includes('missing')
   ) {
-    return t('This review lens has not generated quotes or source snippets yet. Categories shown here are organizational suggestions until lens review runs or a person confirms them.');
+    return t('Source snippets can be added later. Categories shown here are organizational suggestions until a person confirms them.');
   }
   if (normalized.includes('version')) {
-    return t('Some quote-level review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
+    return t('Some source-snippet review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
   }
   return reason || t('Category summaries may be based on metadata or issue tags until source snippets are available.');
 }
@@ -226,19 +272,32 @@ function exceptionMessage(exception, t) {
     return t('Some documents do not have extracted text yet. Review text/search processing before using category summaries for handoff.');
   }
   if (normalized.includes('lens_spans_unavailable') || normalized.includes('span')) {
-    return t('This review lens has not generated quotes or source snippets yet. Categories shown here are organizational suggestions until lens review runs or a person confirms them.');
+    return t('Source snippets can be added later. Categories shown here are organizational suggestions until a person confirms them.');
   }
   if (normalized.includes('lens_version_mismatch') || normalized.includes('version')) {
-    return t('Some quote-level review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
+    return t('Some source-snippet review data was produced with a different review lens version. Ask support to refresh the review lens before handoff.');
   }
   if (normalized.includes('removed') || normalized.includes('excluded')) {
-    return t('Some documents have been removed or excluded from processing or source coverage. Review the Documents list if they should be included.');
+    return t('Removal and exclusion history is recorded for audit. It does not block current category organization unless you want those files included again.');
   }
   const backendMessage = exception?.resolution?.user_message || exception?.next_action?.user_message;
   if (backendMessage) {
     return t(backendMessage);
   }
-  return exception?.detail || exception?.message || exception?.resolution?.user_message || exception?.reason || t('This item needs review before category review is complete.');
+  return exception?.detail || exception?.message || exception?.resolution?.user_message || exception?.reason || t('This item needs a next action before category review is complete.');
+}
+
+function isRemovalHistoryItem(item) {
+  const text = `${item?.action_id || ''} ${item?.resolution?.issue_state || ''} ${item?.exception_type || ''} ${item?.type || ''} ${item?.code || ''} ${item?.label || ''}`.toLowerCase();
+  return text.includes('removed_or_excluded') || text.includes('removed') || text.includes('excluded');
+}
+
+function isSourceSnippetFutureItem(item) {
+  const text = `${item?.action_id || ''} ${item?.blocking_reason || ''} ${item?.resolution?.issue_state || ''} ${item?.exception_type || ''} ${item?.type || ''} ${item?.code || ''} ${item?.label || ''}`.toLowerCase();
+  return text.includes('lens_spans_unavailable')
+    || text.includes('lens_review_job_not_available')
+    || text.includes('run_lens_review')
+    || text.includes('category_qa_lens_review_missing');
 }
 
 function docName(document) {
@@ -282,7 +341,7 @@ function LensSpan({ span }) {
         {span?.factor_citation ? <span className="text-xs opacity-80">{span.factor_citation}</span> : null}
         {span?.page_number ? <span className="text-xs opacity-80">{t('Page')} {span.page_number}</span> : null}
       </div>
-      {snippet ? <p className="leading-6">{snippet}</p> : <p>{t('No snippet text returned for this lens span.')}</p>}
+      {snippet ? <p className="leading-6">{snippet}</p> : <p>{t('No source snippet text was returned for this item.')}</p>}
       {(span?.why_material || span?.limitations) ? (
         <dl className="mt-3 grid gap-2 md:grid-cols-2">
           {span.why_material ? (
@@ -354,7 +413,7 @@ function RepresentativeDocument({ document, caseId }) {
           spans.slice(0, 3).map((span, index) => <LensSpan key={`${span?.source_text_hash || span?.factor_code || 'span'}-${index}`} span={span} />)
         ) : (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-            <div className="font-semibold">{t('Source snippets not generated yet')}</div>
+            <div className="font-semibold">{t('Source snippets can be added later')}</div>
             <p className="mt-1">{document?.why_missing || t('This document is represented by category metadata or issue tags, but this review lens has not returned a source snippet for it yet.')}</p>
           </div>
         )}
@@ -394,7 +453,10 @@ function exceptionAction(exception, caseId, onFilterUncategorized, t) {
 
 function ExceptionsList({ exceptions, caseId, onFilterUncategorized }) {
   const { t } = useLocaleSettings();
-  if (!Array.isArray(exceptions) || !exceptions.length) {
+  const visibleExceptions = Array.isArray(exceptions)
+    ? exceptions.filter((exception) => !isRemovalHistoryItem(exception) && !isSourceSnippetFutureItem(exception))
+    : [];
+  if (!visibleExceptions.length) {
     return null;
   }
   return (
@@ -402,19 +464,19 @@ function ExceptionsList({ exceptions, caseId, onFilterUncategorized }) {
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
         <div>
-          <h3 className="font-semibold">{t('Items to review before handoff')}</h3>
-          <p className="mt-1">{t('These items need a quick review before the category summary is ready to share for workspace organization.')}</p>
+          <h3 className="font-semibold">{t('Items needing action before handoff')}</h3>
+          <p className="mt-1">{t('These items need a concrete processing or review action before the category summary is ready to share for workspace organization.')}</p>
         </div>
       </div>
       <div className="mt-3 grid gap-2 lg:grid-cols-2">
-        {exceptions.map((exception, index) => {
+        {visibleExceptions.map((exception, index) => {
           const action = exceptionAction(exception, caseId, onFilterUncategorized, t);
           const count = exception.count ?? exception.document_rows ?? exception.unique_file_hashes ?? exception.total ?? null;
           return (
             <article key={`${exception?.exception_type || exception?.type || exception?.code || 'exception'}-${index}`} className="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-900/60 dark:bg-black/20">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <div className="font-semibold">{exception.label || exception.title || humanizeKey(exception.exception_type || exception.type || exception.code || exception.category || 'Needs review')}</div>
+                  <div className="font-semibold">{exception.label || exception.title || humanizeKey(exception.exception_type || exception.type || exception.code || exception.category || 'Needs action')}</div>
                   <p className="mt-1 text-amber-900 dark:text-amber-100">{exceptionMessage(exception, t)}</p>
                   {count !== null ? <div className="mt-1 text-xs font-semibold">{formatCount(count)} {t('item(s)')}</div> : null}
                 </div>
@@ -467,7 +529,7 @@ function actionMessage(action) {
     return 'Relationship-map update needs graph-processing runtime. This is not self-service yet; you can keep reviewing documents while operator processing is prepared.';
   }
   if (text.includes('lens_review_job_not_available') || text.includes('run_lens_review')) {
-    return 'Category snippets have not been generated yet. Source-snippet review is not self-service yet, so this category remains an organizational suggestion until that review runs or a person confirms it.';
+    return 'Source snippets can be added later. This category remains an organizational suggestion until a person confirms it.';
   }
   return action?.display_message
     || action?.message
@@ -520,7 +582,9 @@ function ResolveActionsPanel({
 }) {
   const { t } = useLocaleSettings();
   const [confirmAction, setConfirmAction] = useState(null);
-  const visibleActions = Array.isArray(actions) ? actions : [];
+  const visibleActions = Array.isArray(actions)
+    ? actions.filter((action) => !isRemovalHistoryItem(action) && !isSourceSnippetFutureItem(action))
+    : [];
 
   if (!loading && !error && !visibleActions.length && !result) {
     return null;
@@ -546,8 +610,8 @@ function ResolveActionsPanel({
     <section id="category-review-actions" className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-100">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 className="font-semibold">{t('Resolve review items')}</h3>
-          <p className="mt-1">{t('Use these actions to move category review forward. Actions that mark items reviewed require your confirmation first.')}</p>
+          <h3 className="font-semibold">{t('Category actions')}</h3>
+          <p className="mt-1">{t('Use these actions when there is real processing or human confirmation to record. Suggested groups can stay suggested until you or your lawyer confirms them.')}</p>
         </div>
         <button
           type="button"
@@ -722,7 +786,7 @@ export default function CategoryReviewPanel({
   const spanLookup = data?.span_lookup || {};
   const tabs = [
     { id: 'all', label: 'All groups' },
-    { id: 'needs_review', label: 'Needs review' },
+    { id: 'needs_review', label: 'Needs action' },
     { id: 'uncategorized', label: 'Uncategorized' },
     { id: 'by_category', label: 'Categories' },
   ];
@@ -784,7 +848,7 @@ export default function CategoryReviewPanel({
         <CountCard label={t('Document rows')} value={totals.total_visible_document_rows ?? totals.document_rows_considered} />
         <CountCard label={t('Rows considered')} value={totals.document_rows_considered} />
         <CountCard label={t('Unique files')} value={totals.unique_file_hashes_considered} />
-        <CountCard label={t('Lens span rows')} value={totals.lens_span_rows} tone={Number(totals.lens_span_rows || 0) > 0 ? 'good' : 'review'} />
+        <CountCard label={t('Source snippets')} value={totals.lens_span_rows} tone={Number(totals.lens_span_rows || 0) > 0 ? 'good' : 'default'} />
         <CountCard label={t('Max rows')} value={totals.max_document_rows} />
       </div>
 
@@ -796,7 +860,7 @@ export default function CategoryReviewPanel({
 
       {spanLookup.available === false ? (
         <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-          <div className="font-semibold">{t('Source snippets not generated yet')}</div>
+          <div className="font-semibold">{t('Source snippets can be added later')}</div>
           <p className="mt-1">{spanLookupReasonMessage(spanLookup.reason, t)}</p>
         </div>
       ) : null}
@@ -885,7 +949,7 @@ export default function CategoryReviewPanel({
                                 <div className="break-words text-sm font-semibold text-gray-950 dark:text-white">{t(categoryDisplayTitle(category))}</div>
                                 <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(categoryKindLabel(category.kind))}</div>
                               </div>
-                              <ReviewStatusBadge status={category.review_status} />
+                              <ReviewStatusBadge status={categoryEffectiveReviewStatus(category)} />
                             </div>
                             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
                               <span className="font-semibold">{topNeed.label}:</span> {topNeed.detail}
@@ -894,7 +958,7 @@ export default function CategoryReviewPanel({
                               <span>{formatCount(counts.document_rows)} {t('document rows')}</span>
                               <span>{formatCount(counts.unique_file_hashes)} {t('unique files')}</span>
                               <span>{formatCount(counts.ready_for_search)} {t('ready')}</span>
-                              <span>{formatCount(counts.needs_review)} {t('needs review')}</span>
+                              <span>{formatCount(counts.needs_review)} {t('review notes')}</span>
                             </div>
                           </button>
                         );
@@ -919,8 +983,8 @@ export default function CategoryReviewPanel({
                   <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(categoryKindLabel(selectedCategory.kind))}</div>
                   <h3 className="mt-1 break-words text-lg font-semibold text-gray-950 dark:text-white">{t(categoryDisplayTitle(selectedCategory))}</h3>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <ReviewStatusBadge status={selectedCategory.review_status} />
-                    <StatusBadge status={selectedCategory.basis_status === 'lens_spans_available' ? 'configured' : 'needs_review'} label={basisLabel(selectedCategory.basis_status)} />
+                    <ReviewStatusBadge status={categoryEffectiveReviewStatus(selectedCategory)} />
+                    <StatusBadge status={selectedCategory.basis_status === 'lens_spans_available' ? 'configured' : 'checking'} label={basisLabel(selectedCategory.basis_status)} />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -952,11 +1016,11 @@ export default function CategoryReviewPanel({
                 <CountCard label={t('Document rows')} value={selectedCategory.counts?.document_rows} />
                 <CountCard label={t('Unique files')} value={selectedCategory.counts?.unique_file_hashes} />
                 <CountCard label={t('Ready for search')} value={selectedCategory.counts?.ready_for_search} tone="good" />
-                <CountCard label={t('Needs review')} value={selectedCategory.counts?.needs_review} tone="review" />
+                <CountCard label={t('Review notes')} value={selectedCategory.counts?.needs_review} tone="default" />
               </div>
 
               <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-                <div className="font-semibold">{t('What needs review')}</div>
+                <div className="font-semibold">{t('What to know')}</div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {selectedReviewNeeds.map((item) => (
                     <div key={`${item.label}-${item.detail}`} className="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-900/60 dark:bg-black/20">
@@ -983,11 +1047,11 @@ export default function CategoryReviewPanel({
                 </div>
               </div>
 
-              {Number(selectedCategory.counts?.documents_missing_lens_spans || 0) > 0 ? (
+              {Number(selectedCategory.counts?.documents_missing_lens_spans || 0) > 0 && !isTerminalReviewStatus(selectedCategory.review_status) ? (
                 <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-                  <div className="font-semibold">{t('Source snippets not generated yet')}</div>
+                  <div className="font-semibold">{t('Source snippets can be added later')}</div>
                   <p className="mt-1">
-                    {t('{count} document row(s) in this category do not have generated quotes or source snippets for this review lens yet. The category remains an organizational suggestion until lens review runs or a person confirms it.', { count: selectedCategory.counts.documents_missing_lens_spans })}
+                    {t('{count} document row(s) in this category do not have generated source snippets for this review lens yet. The category remains an organizational suggestion until a person confirms it.', { count: selectedCategory.counts.documents_missing_lens_spans })}
                   </p>
                 </div>
               ) : null}
