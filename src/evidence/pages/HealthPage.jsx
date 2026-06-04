@@ -974,13 +974,15 @@ export default function HealthPage() {
         </div>
       ) : null}
 
-      <PropagationIssueReport
-        actionState={state.propagationAction}
-        onBucketAction={handlePropagationBucketAction}
-        report={state.caseHealth?.propagation_issue_report}
-        caseId={caseId}
-        t={t}
-      />
+      <div id="propagation-blockers">
+        <PropagationIssueReport
+          actionState={state.propagationAction}
+          onBucketAction={handlePropagationBucketAction}
+          report={state.caseHealth?.propagation_issue_report}
+          caseId={caseId}
+          t={t}
+        />
+      </div>
 
       <NeedsAttentionPanel
         items={attentionItems}
@@ -1219,20 +1221,30 @@ export default function HealthPage() {
             <h3 id="source-coverage" className="mb-3 scroll-mt-4 text-base font-semibold text-gray-950 dark:text-white">{t('Source coverage')}</h3>
             {alignmentAvailable ? (
               <div className="mb-3 rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-                <div className="flex flex-wrap items-center gap-3">
-                  <StatusBadge
-                    status={alignmentOk ? 'succeeded' : alignmentBlockedByProcessing ? 'pending' : 'degraded'}
-                    label={alignmentOk ? t('Source coverage passed') : alignmentBlockedByProcessing ? t('Source check waiting for processing') : t('Source coverage has gaps')}
-                  />
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {sourceAlignment.stores?.local_source?.unique_hash_count || 0} local hashes,
-                    {' '}
-                    {sourceAlignment.stores?.sqlite?.document_extractions || 0} SQLite hashes,
-                    {' '}
-                    {sourceAlignment.stores?.google_drive_api?.unique_hash_count || 0} Drive hashes,
-                    {' '}
-                    {sourceAlignment.stores?.neo4j?.chunk_hashes || 0} graph chunk hashes
-                  </span>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <StatusBadge
+                      status={alignmentOk ? 'succeeded' : alignmentBlockedByProcessing ? 'pending' : 'degraded'}
+                      label={alignmentOk ? t('Source coverage passed') : alignmentBlockedByProcessing ? t('Source check waiting for processing') : t('Source coverage has gaps')}
+                    />
+                    <span className="text-gray-600 dark:text-gray-400">
+                      {sourceAlignment.stores?.local_source?.unique_hash_count || 0} local hashes,
+                      {' '}
+                      {sourceAlignment.stores?.sqlite?.document_extractions || 0} SQLite hashes,
+                      {' '}
+                      {sourceAlignment.stores?.google_drive_api?.unique_hash_count || 0} Drive hashes,
+                      {' '}
+                      {sourceAlignment.stores?.neo4j?.chunk_hashes || 0} graph chunk hashes
+                    </span>
+                  </div>
+                  {!alignmentOk ? (
+                    <Link
+                      to={`/evidence/cases/${caseId}/health#propagation-blockers`}
+                      className="inline-flex shrink-0 items-center justify-center rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-950 hover:bg-sky-50 dark:border-sky-900/70 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
+                    >
+                      {t('Open Health blockers')}
+                    </Link>
+                  ) : null}
                 </div>
                 {alignmentRecommendations.length ? (
                   <ul className="mt-3 list-disc space-y-1 pl-5 text-gray-700 dark:text-gray-300">

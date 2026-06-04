@@ -122,11 +122,11 @@ export function buildCaseAttentionItems({
       pages: ['case-home', 'health', 'documents', 'add-documents'],
       title: 'Secure copy review needed',
       detail: '{count} processed document(s) still need secure workspace copy review.',
-      impact: 'Previews, export, and source completeness checks may stay incomplete until secure copies are confirmed.',
+      impact: 'Open the filtered document list to review the exact row. Previews, export, and source completeness checks may stay incomplete until the secure copy is confirmed or the row is removed from review.',
       count: missingSecureCopies,
       countLabel: 'files',
       actionLabel: 'Open Documents',
-      to: caseId ? `/evidence/cases/${caseId}/documents` : null,
+      to: caseId ? `/evidence/cases/${caseId}/documents?storage_status=${encodeURIComponent('Needs source copy review')}&attention=secure-copy-review&from=health#document-attention` : null,
     });
   }
 
@@ -232,6 +232,10 @@ export function buildCaseAttentionItems({
     const actionableClasses = reconciliationClasses.filter((item) => item && !item.ok && numberValue(item.count) > 0);
     if (actionableClasses.length) {
       actionableClasses.forEach((item) => {
+        const classId = String(item.class_id || '').toLowerCase();
+        if (classId === 'intentionally_excluded') {
+          return;
+        }
         const resolution = item.resolution || {};
         addIssue(items, {
           id: `source-${item.class_id || item.label}`,
