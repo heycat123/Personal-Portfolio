@@ -436,6 +436,9 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
   }
   const page = drawer.document?.pages?.find((item) => Number(item.page_number) === Number(drawer.page));
   const communication = drawer.communication;
+  const citationPreview = typeof drawer.citation === 'object'
+    ? drawer.citation?.page_text_preview || drawer.citation?.message_text_preview || ''
+    : '';
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
       <aside className="h-full w-screen max-w-full overflow-y-auto overflow-x-hidden border-l border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-[#0b1117] sm:w-[92vw] sm:max-w-xl sm:p-5">
@@ -512,10 +515,10 @@ function CitationDrawer({ drawer, caseId, onClose, t }) {
               </Link>
             </div>
 
-            <Panel title={`${t('Page')} ${drawer.page || ''}`}>
-              {page?.page_text_preview ? (
+            <Panel title={page?.page_number || drawer.page ? `${t('Page')} ${drawer.page || page?.page_number || ''}` : t('Source excerpt')}>
+              {page?.page_text_preview || citationPreview ? (
                 <pre className="max-h-[520px] whitespace-pre-wrap rounded-md bg-gray-950 p-3 text-xs leading-5 text-gray-100">
-                  {page.page_text_preview}
+                  {page?.page_text_preview || citationPreview}
                 </pre>
               ) : (
                 <p className="text-sm text-gray-600 dark:text-gray-400">{t('No page text preview returned.')}</p>
