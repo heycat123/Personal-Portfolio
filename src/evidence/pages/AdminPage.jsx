@@ -1,4 +1,4 @@
-import { Info, KeyRound, Mail, RefreshCw, ShieldCheck, Trash2, UserPlus, UserX, X } from 'lucide-react';
+import { Info, KeyRound, Mail, RefreshCw, ShieldCheck, Sparkles, Trash2, UserPlus, UserX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -15,6 +15,11 @@ import { formatDateTime } from '../utils/formatters';
 const GLOBAL_ROLES = ['root_admin', 'admin', 'member'];
 const CASE_ROLES = ['owner', 'admin', 'lawyer', 'contributor', 'client', 'viewer'];
 const USER_STATUSES = ['active', 'revoked', 'deleted'];
+const ADVANCED_ANALYSIS_FEATURE_KEY = 'advanced_analysis';
+
+function userFeature(user, featureKey) {
+  return (user?.feature_flags || []).find((feature) => feature.feature_key === featureKey) || null;
+}
 
 export default function AdminPage() {
   const { caseId } = useParams();
@@ -253,6 +258,33 @@ export default function AdminPage() {
     }
   }
 
+  async function updateUserFeature(userId, featureKey, enabled) {
+    setState((current) => ({ ...current, saving: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateAdminUserFeature(
+        userId,
+        featureKey,
+        {
+          enabled,
+          note: enabled
+            ? 'Advanced Analysis enabled from Admin account configurations.'
+            : 'Advanced Analysis disabled from Admin account configurations.',
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Update account feature');
+      await loadAdmin();
+      if (state.selectedUser?.user_id === userId) {
+        await openUserDrawer(result.data?.user || state.selectedUser);
+      }
+    } catch (error) {
+      setState((current) => ({ ...current, saving: false, error }));
+    } finally {
+      setState((current) => ({ ...current, saving: false }));
+    }
+  }
+
   async function deleteUser(userId) {
     const confirmed = window.confirm('Delete this user? This marks the user deleted and revokes active case memberships.');
     if (!confirmed) {
@@ -420,6 +452,18 @@ export default function AdminPage() {
       render: (user) => <StatusBadge status={user.membership_status || 'none'} />,
     },
     {
+      key: 'features',
+      header: t('Features'),
+      sortable: false,
+      filterable: false,
+      render: (user) => {
+        const advancedAnalysis = userFeature(user, ADVANCED_ANALYSIS_FEATURE_KEY);
+        return advancedAnalysis?.enabled
+          ? <StatusBadge status="succeeded" label={t('Advanced Query')} />
+          : <span className="text-xs text-gray-500 dark:text-gray-400">{t('Standard')}</span>;
+      },
+    },
+    {
       key: 'action',
       header: t('Action'),
       sortable: false,
@@ -443,6 +487,7 @@ export default function AdminPage() {
   ];
   const deliveryConfigured = Boolean(state.deliveryConfig?.configured);
   const deliveryLabel = deliveryConfigured ? t('Email delivery configured') : t('Manual invite fallback');
+  const selectedAdvancedAnalysis = userFeature(state.selectedUser, ADVANCED_ANALYSIS_FEATURE_KEY);
 
   return (
     <div>
@@ -805,6 +850,17 @@ export default function AdminPage() {
                 </h2>
                 <p className="mt-1 break-all text-sm text-gray-600 dark:text-gray-400">{state.selectedUser.email}</p>
                 <p className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-500">{state.selectedUser.user_id}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <StatusBadge
+                    status={selectedAdvancedAnalysis?.enabled ? 'succeeded' : 'pending'}
+                    label={selectedAdvancedAnalysis?.enabled ? t('Advanced Query enabled') : t('Advanced Query off')}
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {selectedAdvancedAnalysis?.enabled
+                      ? t('Advanced query routes are available for this account.')
+                      : t('Advanced query routes are not enabled for this account.')}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -856,6 +912,58 @@ export default function AdminPage() {
                   <Trash2 size={16} aria-hidden="true" />
                   {t('Delete user')}
                 </button>
+              </section>
+
+              <section className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={16} className="text-sky-600 dark:text-sky-300" aria-hidden="true" />
+                      <h3 className="text-base font-semibold text-gray-950 dark:text-white">
+                        {t('Account configurations')}
+                      </h3>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      {t('Enable paid or advanced query modules for this account.')}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    status={selectedAdvancedAnalysis?.enabled ? 'succeeded' : 'pending'}
+                    label={selectedAdvancedAnalysis?.enabled ? t('Advanced Query enabled') : t('Advanced Query off')}
+                  />
+                </div>
+
+                <div className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-950 dark:text-white">
+                        {t('Advanced Query')}
+                      </div>
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {t('Adds gap review, source comparison, tone review, drafting support, and rule/document comparison for Ask Documents.')}
+                      </p>
+                      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        {t('This organizes and compares source-backed materials. It does not provide legal advice or decide whether a claim is ready for court or filing.')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateUserFeature(
+                        state.selectedUser.user_id,
+                        ADVANCED_ANALYSIS_FEATURE_KEY,
+                        !selectedAdvancedAnalysis?.enabled,
+                      )}
+                      disabled={state.saving}
+                      className={`inline-flex shrink-0 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+                        selectedAdvancedAnalysis?.enabled
+                          ? 'border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800'
+                          : 'border-gray-300 text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      {selectedAdvancedAnalysis?.enabled ? t('Turn off') : t('Turn on')}
+                    </button>
+                  </div>
+                </div>
               </section>
 
               <section className="mt-4 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
