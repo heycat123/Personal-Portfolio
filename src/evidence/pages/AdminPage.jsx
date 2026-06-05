@@ -459,7 +459,7 @@ export default function AdminPage() {
       render: (user) => {
         const advancedAnalysis = userFeature(user, ADVANCED_ANALYSIS_FEATURE_KEY);
         return advancedAnalysis?.enabled
-          ? <StatusBadge status="succeeded" label={t('Advanced Analysis')} />
+          ? <StatusBadge status="succeeded" label={t('Advanced Query')} />
           : <span className="text-xs text-gray-500 dark:text-gray-400">{t('Standard')}</span>;
       },
     },
@@ -850,6 +850,17 @@ export default function AdminPage() {
                 </h2>
                 <p className="mt-1 break-all text-sm text-gray-600 dark:text-gray-400">{state.selectedUser.email}</p>
                 <p className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-500">{state.selectedUser.user_id}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <StatusBadge
+                    status={selectedAdvancedAnalysis?.enabled ? 'succeeded' : 'pending'}
+                    label={selectedAdvancedAnalysis?.enabled ? t('Advanced Query enabled') : t('Advanced Query off')}
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {selectedAdvancedAnalysis?.enabled
+                      ? t('Advanced query routes are available for this account.')
+                      : t('Advanced query routes are not enabled for this account.')}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -913,12 +924,12 @@ export default function AdminPage() {
                       </h3>
                     </div>
                     <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                      {t('Enable paid or advanced modules for this account.')}
+                      {t('Enable paid or advanced query modules for this account.')}
                     </p>
                   </div>
                   <StatusBadge
                     status={selectedAdvancedAnalysis?.enabled ? 'succeeded' : 'pending'}
-                    label={selectedAdvancedAnalysis?.enabled ? t('Enabled') : t('Off')}
+                    label={selectedAdvancedAnalysis?.enabled ? t('Advanced Query enabled') : t('Advanced Query off')}
                   />
                 </div>
 
@@ -926,7 +937,7 @@ export default function AdminPage() {
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-gray-950 dark:text-white">
-                        {t('Advanced Analysis')}
+                        {t('Advanced Query')}
                       </div>
                       <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                         {t('Adds gap review, source comparison, tone review, drafting support, and rule/document comparison for Ask Documents.')}
