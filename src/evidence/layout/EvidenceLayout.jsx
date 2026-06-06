@@ -46,7 +46,7 @@ export default function EvidenceLayout({ darkTheme, setDarkTheme }) {
               onOpenMenu={() => setMobileMenuOpen(true)}
             />
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+          <div className={`min-h-0 flex-1 overflow-x-hidden overscroll-contain ${isAskDocumentsRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
             <div className={`${isAskDocumentsRoute ? 'h-full max-w-none px-0 py-0' : 'mx-auto max-w-7xl px-3 py-4 sm:px-4 lg:px-6 lg:py-6'} w-full min-w-0`}>
               <Outlet context={{ openMobileMenu: () => setMobileMenuOpen(true) }} />
             </div>

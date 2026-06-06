@@ -1523,7 +1523,7 @@ export default function QueryPage() {
 
   return (
     <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden">
-      <div className="fixed left-3 right-3 top-3 z-40 flex items-center justify-between gap-2 lg:hidden">
+      <div className="fixed left-3 right-3 top-3 z-[70] flex items-center justify-between gap-2 lg:hidden">
         <button
           type="button"
           onClick={handleOpenMobileNavigation}
@@ -1556,8 +1556,8 @@ export default function QueryPage() {
         </button>
       </div>
 
-      <div className={`grid h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden lg:h-full ${historyCollapsed ? 'xl:grid-cols-1' : 'xl:grid-cols-[320px_minmax(0,1fr)]'}`}>
-        <div className={`${historyCollapsed ? 'hidden' : 'hidden min-h-0 border-r border-[var(--lakai-border-soft)] bg-[var(--lakai-bg)] p-3 xl:block'}`}>
+      <div className="flex h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden lg:h-full">
+        <div className={`${historyCollapsed ? 'hidden' : 'hidden w-80 shrink-0 min-h-0 border-r border-[var(--lakai-border-soft)] bg-[var(--lakai-bg)] p-3 xl:block'}`}>
           <ConversationList
             conversations={conversationState.conversations}
             activeConversationId={activeConversationId}
@@ -1571,7 +1571,7 @@ export default function QueryPage() {
           />
         </div>
 
-        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--lakai-surface-muted)]">
+        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden bg-[var(--lakai-surface-muted)]">
         <div className="shrink-0 border-b border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-3 shadow-sm sm:px-4 lg:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
