@@ -25,7 +25,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
-import PageHeader from '../components/PageHeader';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
@@ -666,6 +665,37 @@ function conversationStorageKey(caseId) {
   return `evidence.query.activeConversation.${caseId || 'default'}`;
 }
 
+const DEFAULT_CHAT_SETTINGS = {
+  showReadiness: true,
+  showStarters: true,
+  showCitations: true,
+  showSuggestions: false,
+};
+
+function chatSettingsStorageKey(caseId) {
+  return `evidence.query.chatSettings.${caseId || 'default'}`;
+}
+
+function chatHistoryCollapsedStorageKey(caseId) {
+  return `evidence.query.historyCollapsed.${caseId || 'default'}`;
+}
+
+function readStoredChatSettings(caseId) {
+  if (typeof window === 'undefined') {
+    return DEFAULT_CHAT_SETTINGS;
+  }
+  try {
+    const raw = window.localStorage.getItem(chatSettingsStorageKey(caseId));
+    if (!raw) {
+      return DEFAULT_CHAT_SETTINGS;
+    }
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_CHAT_SETTINGS, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
+  } catch {
+    return DEFAULT_CHAT_SETTINGS;
+  }
+}
+
 function formatConversationTime(value) {
   if (!value) {
     return '';
@@ -971,24 +1001,24 @@ function ToggleRow({ title, description, checked, onChange, disabled = false }) 
   );
 }
 
-function AskSettingsDrawer({ open, onClose, settings, onChange, t }) {
+function ChatSettingsDrawer({ open, onClose, settings, onChange, t }) {
   if (!open) {
     return null;
   }
   const update = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
-      <button type="button" className="absolute inset-0" onClick={onClose} aria-label={t('Close Ask settings')} />
+      <button type="button" className="absolute inset-0" onClick={onClose} aria-label={t('Close Chat settings')} />
       <aside className="relative h-full w-screen max-w-full overflow-y-auto border-l border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-5 shadow-xl sm:w-[26rem]">
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">
               <SlidersHorizontal size={15} aria-hidden="true" />
-              {t('Ask settings')}
+              {t('Chat settings')}
             </div>
             <h2 className="mt-2 font-serif text-2xl font-semibold text-[var(--lakai-primary-strong)]">{t('Chat preferences')}</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--lakai-text-muted)]">
-              {t('Choose how this Ask Documents page helps you review sources. These settings do not change case documents.')}
+              {t('Choose how this chat workspace helps you review sources. These settings are saved on this device and do not change case documents.')}
             </p>
           </div>
           <button
@@ -1030,22 +1060,15 @@ function AskSettingsDrawer({ open, onClose, settings, onChange, t }) {
         </div>
 
         <div className="mt-5 rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] p-4">
-          <label className="block text-sm font-semibold text-[var(--lakai-text)]" htmlFor="ask-default-visibility">
-            {t('Default visibility')}
-          </label>
-          <select
-            id="ask-default-visibility"
-            value={settings.defaultVisibility}
-            onChange={(event) => update('defaultVisibility', event.target.value)}
-            className="mt-2 min-h-11 w-full rounded-lg border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-focus)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lakai-focus)_25%,transparent)]"
-          >
-            <option value="only_me">{t('Only me')}</option>
-            <option value="case_access">{t('People with case access')}</option>
-          </select>
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--lakai-text)]">
+            <LockKeyhole size={16} aria-hidden="true" />
+            {t('Chat sharing')}
+          </div>
           <p className="mt-2 text-xs leading-5 text-[var(--lakai-text-muted)]">
-            {settings.defaultVisibility === 'case_access'
-              ? t('People with access to this case will be able to see this chat and its sources when sharing is supported.')
-              : t('New chats should start private unless you choose to share them.')}
+            {t('Chats start private. Sharing should be chosen per chat so one conversation can stay private while another can be shared.')}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-[var(--lakai-text-muted)]">
+            {t('Per-chat sharing controls need a backend visibility update endpoint before this UI can safely change who sees a saved chat.')}
           </p>
         </div>
 
@@ -1097,13 +1120,13 @@ export default function QueryPage() {
     conversations: [],
   });
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
-  const [askSettingsOpen, setAskSettingsOpen] = useState(false);
-  const [askSettings, setAskSettings] = useState({
-    showReadiness: true,
-    showStarters: true,
-    showCitations: true,
-    showSuggestions: false,
-    defaultVisibility: 'only_me',
+  const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+  const [chatSettings, setChatSettings] = useState(() => readStoredChatSettings(caseId));
+  const [historyCollapsed, setHistoryCollapsed] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.localStorage.getItem(chatHistoryCollapsedStorageKey(caseId)) === 'true';
   });
   const [copiedAnswer, setCopiedAnswer] = useState(false);
   const [readinessState, setReadinessState] = useState({
@@ -1121,6 +1144,27 @@ export default function QueryPage() {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setChatSettings(readStoredChatSettings(caseId));
+    if (typeof window !== 'undefined') {
+      setHistoryCollapsed(window.localStorage.getItem(chatHistoryCollapsedStorageKey(caseId)) === 'true');
+    }
+  }, [caseId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(chatSettingsStorageKey(caseId), JSON.stringify(chatSettings));
+  }, [caseId, chatSettings]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(chatHistoryCollapsedStorageKey(caseId), historyCollapsed ? 'true' : 'false');
+  }, [caseId, historyCollapsed]);
 
   const loadQueryReadiness = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -1469,7 +1513,7 @@ export default function QueryPage() {
   }, [askProcessingPending, loadQueryReadiness]);
 
   return (
-    <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden lg:h-auto lg:overflow-x-hidden">
+    <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden">
       <div className="fixed left-3 right-3 top-3 z-30 flex items-center justify-between gap-2 lg:hidden">
         <button
           type="button"
@@ -1494,71 +1538,17 @@ export default function QueryPage() {
         </button>
         <button
           type="button"
-          onClick={() => setAskSettingsOpen(true)}
+          onClick={() => setChatSettingsOpen(true)}
           className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
-          aria-label={t('Ask settings')}
-          title={t('Ask settings')}
+          aria-label={t('Chat settings')}
+          title={t('Chat settings')}
         >
           <SlidersHorizontal size={18} aria-hidden="true" />
         </button>
       </div>
 
-      <div className="hidden lg:block">
-        <PageHeader
-          title="Ask Documents"
-          description="Ask source-based questions and review citations from this case workspace."
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge
-                status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
-                label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
-              />
-              <button
-                type="button"
-                onClick={() => setAskSettingsOpen(true)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
-              >
-                <SlidersHorizontal size={16} aria-hidden="true" />
-                {t('Ask settings')}
-              </button>
-            </div>
-          }
-        />
-      </div>
-
-      <section className="mb-5 hidden rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] p-4 text-sm leading-6 text-[var(--lakai-text)] lg:block">
-        <div className="flex items-start gap-3">
-          <Info className="mt-0.5 shrink-0 text-[var(--lakai-primary-strong)]" size={18} aria-hidden="true" />
-          <p>
-            {t('Answers are based on your available sources and may need review. Lak.ai does not provide legal advice or decide whether materials are admissible or ready for court use.')}
-          </p>
-        </div>
-      </section>
-
-      {state.error ? (
-        <div className="mb-5">
-          <ErrorPanel title="Query failed" error={state.error} />
-        </div>
-      ) : null}
-      {readinessState.error ? (
-        <div className="mb-5">
-          <ErrorPanel title="Ask Documents readiness failed" error={readinessState.error} onRetry={loadQueryReadiness} />
-        </div>
-      ) : null}
-
-      {askSettings.showReadiness ? (
-        <NeedsAttentionPanel
-          items={askAttentionItems}
-          title="Ask Documents attention"
-          description="Search and citation readiness items that may affect source-based answers."
-          emptyTitle="Ask Documents is not showing readiness blockers"
-          emptyDetail="Review source citations and keep working in other parts of the workspace."
-          limit={3}
-        />
-      ) : null}
-
-      <div className="grid h-full min-h-0 w-full min-w-0 max-w-full gap-4 overflow-hidden lg:h-[calc(100dvh_-_240px)] lg:min-h-[420px] xl:grid-cols-[300px_minmax(0,1fr)]">
-        <div className="hidden min-h-0 xl:block">
+      <div className={`grid h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden lg:h-full ${historyCollapsed ? 'xl:grid-cols-[0_minmax(0,1fr)]' : 'xl:grid-cols-[320px_minmax(0,1fr)]'}`}>
+        <div className={`${historyCollapsed ? 'hidden' : 'hidden min-h-0 border-r border-[var(--lakai-border-soft)] bg-[var(--lakai-bg)] p-3 xl:block'}`}>
           <ConversationList
             conversations={conversationState.conversations}
             activeConversationId={activeConversationId}
@@ -1568,12 +1558,84 @@ export default function QueryPage() {
             onSelectConversation={loadConversation}
             onRefresh={refreshConversations}
             t={t}
-            showStarters={askSettings.showStarters}
+            showStarters={chatSettings.showStarters}
           />
         </div>
 
-        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] shadow-[var(--lakai-shadow-panel)] lg:rounded-2xl lg:border">
-        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-3 pt-16 sm:p-4 lg:pt-4">
+        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-[var(--lakai-surface-muted)]">
+        <div className="shrink-0 border-b border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-3 shadow-sm sm:px-4 lg:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryCollapsed((current) => !current)}
+                  className="hidden min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)] xl:inline-flex"
+                  aria-label={historyCollapsed ? t('Show chat history') : t('Hide chat history')}
+                  title={historyCollapsed ? t('Show chat history') : t('Hide chat history')}
+                >
+                  <History size={16} aria-hidden="true" />
+                  {historyCollapsed ? t('Show history') : t('Hide history')}
+                </button>
+                <h1 className="font-serif text-xl font-semibold text-[var(--lakai-primary-strong)] sm:text-2xl">{t('Ask Documents')}</h1>
+                <StatusBadge
+                  status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
+                  label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
+                />
+              </div>
+              <p className="mt-1 max-w-3xl text-sm text-[var(--lakai-text-muted)]">
+                {t('Ask source-based questions and review citations from this case workspace.')}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConversationMenuOpen(true)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)] xl:hidden"
+              >
+                <History size={16} aria-hidden="true" />
+                {t('History')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChatSettingsOpen(true)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
+              >
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                {t('Chat settings')}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-3 pt-20 sm:p-4 lg:px-6 lg:pt-4">
+          <section className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] p-4 text-sm leading-6 text-[var(--lakai-text)]">
+            <div className="flex items-start gap-3">
+              <Info className="mt-0.5 shrink-0 text-[var(--lakai-primary-strong)]" size={18} aria-hidden="true" />
+              <p>
+                {t('Answers are based on your available sources and may need review. Lak.ai does not provide legal advice or decide whether materials are admissible or ready for court use.')}
+              </p>
+            </div>
+          </section>
+
+          {state.error ? (
+            <ErrorPanel title="Query failed" error={state.error} />
+          ) : null}
+          {readinessState.error ? (
+            <ErrorPanel title="Ask Documents readiness failed" error={readinessState.error} onRetry={loadQueryReadiness} />
+          ) : null}
+
+          {chatSettings.showReadiness ? (
+            <NeedsAttentionPanel
+              items={askAttentionItems}
+              title="Ask Documents attention"
+              description="Search and citation readiness items that may affect source-based answers."
+              emptyTitle="Ask Documents is not showing readiness blockers"
+              emptyDetail="Review source citations and keep working in other parts of the workspace."
+              limit={3}
+            />
+          ) : null}
+
           {hasMessages ? (
             messages.map((message) => (
               <QueryMessage
@@ -1586,7 +1648,7 @@ export default function QueryPage() {
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
                 showDiagnostics={showDiagnostics}
-                showCitations={askSettings.showCitations}
+                showCitations={chatSettings.showCitations}
                 t={t}
               />
             ))
@@ -1639,7 +1701,7 @@ export default function QueryPage() {
             <span>{t('Answer language: {language} | Timezone: {timeZone}', { language: preferences.language, timeZone: preferences.timeZone })}</span>
             <span className="inline-flex items-center gap-1">
               <LockKeyhole size={12} aria-hidden="true" />
-              {askSettings.defaultVisibility === 'case_access' ? t('People with case access') : t('Only me')}
+              {t('Only me')}
             </span>
             {state.fingerprint?.id ? (
               <RequestFingerprint
@@ -1701,7 +1763,7 @@ export default function QueryPage() {
               }}
               onRefresh={refreshConversations}
               t={t}
-              showStarters={askSettings.showStarters}
+              showStarters={chatSettings.showStarters}
               className="h-full"
               onClose={() => setConversationMenuOpen(false)}
             />
@@ -1715,11 +1777,11 @@ export default function QueryPage() {
         onOpenCitation={openCitation}
         t={t}
       />
-      <AskSettingsDrawer
-        open={askSettingsOpen}
-        onClose={() => setAskSettingsOpen(false)}
-        settings={askSettings}
-        onChange={setAskSettings}
+      <ChatSettingsDrawer
+        open={chatSettingsOpen}
+        onClose={() => setChatSettingsOpen(false)}
+        settings={chatSettings}
+        onChange={setChatSettings}
         t={t}
       />
       <CitationDrawer drawer={drawer} caseId={caseId} onClose={() => setDrawer((current) => ({ ...current, open: false }))} t={t} />
