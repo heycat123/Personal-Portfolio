@@ -121,7 +121,7 @@ jobs:
             IMAGE_NAME="${IMAGE_NAME}" \
             IMAGE_TAG="${GITHUB_SHA}" \
             CONTAINER_NAME="${CONTAINER_NAME}" \
-            'bash -s' <<'REMOTE_SCRIPT'
+            'flock -w 900 /tmp/forestlee-production-deploy.lock bash -s' <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           RELEASE_DIR="$HOME/frontend-releases"
