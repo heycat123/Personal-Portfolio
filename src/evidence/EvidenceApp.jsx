@@ -4,6 +4,7 @@ import { CaseProvider } from './context/CaseContext';
 import { LocaleProvider } from './context/LocaleContext';
 import { OperatorModeProvider } from './context/OperatorModeContext';
 import EvidenceRoutes from './evidenceRoutes';
+import './lakaiTheme.css';
 
 export default function EvidenceApp({ darkTheme, setDarkTheme }) {
   return (

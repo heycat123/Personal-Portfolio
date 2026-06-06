@@ -1,0 +1,78 @@
+.lakai-evidence {
+  --lakai-bg: #fbf9f4;
+  --lakai-surface: #ffffff;
+  --lakai-surface-muted: #f5f3ee;
+  --lakai-surface-raised: #f0eee9;
+  --lakai-border: #d8cfbd;
+  --lakai-border-soft: #e8dcc4;
+  --lakai-text: #1b1c19;
+  --lakai-text-muted: #5f625d;
+  --lakai-primary: #1b365d;
+  --lakai-primary-strong: #002046;
+  --lakai-primary-text: #ffffff;
+  --lakai-accent: #c5a377;
+  --lakai-accent-soft: #f4ead8;
+  --lakai-focus: #465f88;
+  --lakai-ready: #0f7a4f;
+  --lakai-ready-soft: #e6f4ed;
+  --lakai-review: #9a6500;
+  --lakai-review-soft: #fff4d8;
+  --lakai-blocked: #a63d2f;
+  --lakai-blocked-soft: #fde9e5;
+  --lakai-neutral: #64748b;
+  --lakai-neutral-soft: #eef2f6;
+  --lakai-radius-sm: 0.5rem;
+  --lakai-radius-md: 0.75rem;
+  --lakai-radius-lg: 1rem;
+  --lakai-shadow-soft: 0 18px 45px rgb(27 54 93 / 8%);
+  --lakai-shadow-panel: 0 10px 30px rgb(27 54 93 / 7%);
+  background: var(--lakai-bg);
+  color: var(--lakai-text);
+}
+
+.dark .lakai-evidence {
+  --lakai-bg: #111827;
+  --lakai-surface: #172033;
+  --lakai-surface-muted: #1d273b;
+  --lakai-surface-raised: #24304a;
+  --lakai-border: #38445e;
+  --lakai-border-soft: #2d374f;
+  --lakai-text: #f8f5ed;
+  --lakai-text-muted: #c8c2b6;
+  --lakai-primary: #aec7f7;
+  --lakai-primary-strong: #d6e3ff;
+  --lakai-primary-text: #13213a;
+  --lakai-accent: #e5c192;
+  --lakai-accent-soft: #3a2d1d;
+  --lakai-focus: #aec7f7;
+  --lakai-ready: #7ad7a4;
+  --lakai-ready-soft: #173628;
+  --lakai-review: #e5c192;
+  --lakai-review-soft: #3a2d1d;
+  --lakai-blocked: #f0a49a;
+  --lakai-blocked-soft: #3d201e;
+  --lakai-neutral: #a9b4c7;
+  --lakai-neutral-soft: #24304a;
+}
+
+.lakai-card {
+  border: 1px solid var(--lakai-border-soft);
+  border-radius: var(--lakai-radius-lg);
+  background: var(--lakai-surface);
+  box-shadow: var(--lakai-shadow-panel);
+}
+
+.lakai-button-primary {
+  border-radius: var(--lakai-radius-md);
+  background: var(--lakai-primary);
+  color: var(--lakai-primary-text);
+}
+
+.lakai-button-primary:hover {
+  background: var(--lakai-primary-strong);
+}
+
+.lakai-focus-ring:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--lakai-focus) 35%, transparent);
+  outline-offset: 2px;
+}
