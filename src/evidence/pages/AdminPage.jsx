@@ -367,6 +367,23 @@ export default function AdminPage() {
     }
   }
 
+  function prepareInvitationForUser(user) {
+    setInviteForm((current) => ({
+      ...current,
+      email: user.email || '',
+      role: 'contributor',
+    }));
+    setState((current) => ({
+      ...current,
+      invitationResult: {
+        display_message: `Invitation form filled for ${user.display_name || user.email || 'this user'}. Review the role and create the invitation to generate a link.`,
+      },
+    }));
+    window.setTimeout(() => {
+      window.document.getElementById('admin-invite-case-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }
+
   const membershipByUser = useMemo(
     () => new Map(state.memberships.map((item) => [item.user_id, item])),
     [state.memberships],
@@ -466,17 +483,22 @@ export default function AdminPage() {
       header: t('Case Role'),
       sortable: true,
       filterOptions: CASE_ROLES.map((role) => ({ value: role, label: role })),
-      render: (user) => (
-        <select
-          value={user.case_role || 'viewer'}
-          onClick={(event) => event.stopPropagation()}
-          onChange={(event) => updateRole(user.user_id, event.target.value)}
-          disabled={state.saving}
-          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
-        >
-          {CASE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
-        </select>
-      ),
+      render: (user) => {
+        if (!user.membership || user.membership_status === 'none') {
+          return <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t('No case access')}</span>;
+        }
+        return (
+          <select
+            value={user.case_role || 'viewer'}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => updateRole(user.user_id, event.target.value)}
+            disabled={state.saving}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-950 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100"
+          >
+            {CASE_ROLES.map((role) => <option key={role} value={role}>{role}</option>)}
+          </select>
+        );
+      },
     },
     {
       key: 'status',
@@ -509,21 +531,39 @@ export default function AdminPage() {
       header: t('Action'),
       sortable: false,
       filterable: false,
-      render: (user) => (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            revokeAccess(user.user_id);
-          }}
-          disabled={state.saving || !user.membership || user.membership.status === 'revoked' || user.membership.can_revoke === false}
-          title={user.membership?.revoke_disabled_reason || ''}
-          className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
-        >
-          <UserX size={13} aria-hidden="true" />
-          {t('Revoke')}
-        </button>
-      ),
+      render: (user) => {
+        if (!user.membership || user.membership_status === 'none') {
+          return (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                prepareInvitationForUser(user);
+              }}
+              disabled={state.saving || !user.email}
+              className="inline-flex items-center gap-1 rounded-md border border-sky-300 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-900/70 dark:text-sky-100 dark:hover:bg-sky-950/30"
+            >
+              <UserPlus size={13} aria-hidden="true" />
+              {t('Invite to case')}
+            </button>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              revokeAccess(user.user_id);
+            }}
+            disabled={state.saving || user.membership.status === 'revoked' || user.membership.can_revoke === false}
+            title={user.membership?.revoke_disabled_reason || ''}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+          >
+            <UserX size={13} aria-hidden="true" />
+            {t('Revoke')}
+          </button>
+        );
+      },
     },
   ];
   const deliveryConfigured = Boolean(state.deliveryConfig?.configured);
@@ -658,7 +698,7 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <form className="space-y-4" onSubmit={handleCreateInvitation}>
+          <form id="admin-invite-case-form" className="space-y-4" onSubmit={handleCreateInvitation}>
             <label className="block">
               <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Email')}</span>
               <input
