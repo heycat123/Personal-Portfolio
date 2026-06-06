@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, ExternalLink, FileText, Info, ListChecks, Plus, Search, Settings2, ShieldAlert, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, FileText, ListChecks, Plus, Search, Settings2, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -431,34 +431,6 @@ function DocumentsViewTabs({ activeView, onChange, t }) {
         );
       })}
     </nav>
-  );
-}
-
-function DocumentReviewPrompt({ onOpenReview, t }) {
-  return (
-    <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="rounded-xl bg-[var(--lakai-accent-soft)] p-2 text-[var(--lakai-primary-strong)]">
-            <ListChecks size={18} aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="font-serif text-lg font-semibold text-[var(--lakai-primary-strong)]">{t('Document Review')}</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--lakai-text-muted)]">
-              {t('Review how documents are grouped and what still needs attention before sharing or building packets.')}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenReview}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
-        >
-          <ListChecks size={16} aria-hidden="true" />
-          {t('Review categories')}
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -1338,13 +1310,13 @@ export default function DocumentsPage() {
         </>
       ) : (
         <>
-      <NeedsAttentionPanel
-        items={attentionItems}
-        title="Document attention"
-        description="Document issues that affect processing, source copies, search, export, or source checks."
-        emptyTitle="No document attention items right now"
-        emptyDetail="Documents do not show processing or source-copy blockers in this view."
-      />
+      {attentionItems.length ? (
+        <NeedsAttentionPanel
+          items={attentionItems}
+          title="Document attention"
+          description="Document issues that affect processing, source copies, search, export, or source checks."
+        />
+      ) : null}
 
       {s3OnlyFiles > 0 ? (
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
@@ -1430,15 +1402,6 @@ export default function DocumentsPage() {
         </section>
       ) : null}
 
-      <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-        <div className="flex items-start gap-3">
-          <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-          <p>
-            {t('Family-law documents may include private, privileged, child-related, financial, medical, school, or safety-sensitive information. Review sensitive documents before sharing, exporting, or inviting another person to view them.')}
-          </p>
-        </div>
-      </section>
-
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
           <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Ready for search')}</div>
@@ -1461,23 +1424,6 @@ export default function DocumentsPage() {
           <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Files copied to the workspace but not ready for search')}</div>
         </div>
       </div>
-
-      <DocumentReviewPrompt onOpenReview={() => setDocumentsView('review')} t={t} />
-
-      <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
-        <div className="flex items-start gap-3">
-          <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-          <div className="space-y-1">
-            <h3 className="font-semibold">{t('Issue tags are organization aids, not legal conclusions.')}</h3>
-            <p>
-              {t('Document categories and issue tags help group communications, finances, parenting-plan materials, school records, medical records, court filings, and other case materials. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
-            </p>
-            <p className="text-xs text-sky-800 dark:text-sky-200">
-              {t('Pending issue tags usually mean the file is not ready for search yet or no issue tag was suggested. It is not a legal review task.')}
-            </p>
-          </div>
-        </div>
-      </section>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
