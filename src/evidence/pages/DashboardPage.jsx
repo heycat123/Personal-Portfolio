@@ -393,6 +393,15 @@ export default function DashboardPage() {
     }
     try {
       const token = await getAccessToken();
+      if (!canSeeOperations) {
+        setState((current) => ({
+          ...current,
+          resolvePlan: null,
+          resolvePlanError: null,
+          resolvePlanLoading: false,
+        }));
+        return;
+      }
       const result = await evidenceApi.getReadinessResolvePlan(caseId, { token });
       recordFingerprint(result, 'Readiness resolve plan');
       setState((current) => ({
@@ -410,7 +419,7 @@ export default function DashboardPage() {
         resolvePlanLoading: false,
       }));
     }
-  }, [caseId, getAccessToken, recordFingerprint]);
+  }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
 
   const loadDashboard = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -419,9 +428,13 @@ export default function DashboardPage() {
     const token = await getAccessToken();
     const requests = [
       { key: 'summary', label: 'Case summary', promise: evidenceApi.getCaseSummary(caseId, { token }) },
-      { key: 'connectors', label: 'Source connectors', promise: evidenceApi.getSourceConnectors(caseId, { token }) },
-      { key: 'resolvePlan', label: 'Readiness resolve plan', promise: evidenceApi.getReadinessResolvePlan(caseId, { token }) },
     ];
+    if (canContribute) {
+      requests.push({ key: 'connectors', label: 'Source connectors', promise: evidenceApi.getSourceConnectors(caseId, { token }) });
+    }
+    if (canSeeOperations) {
+      requests.push({ key: 'resolvePlan', label: 'Readiness resolve plan', promise: evidenceApi.getReadinessResolvePlan(caseId, { token }) });
+    }
     if (canSeeOperations) {
       requests.push({ key: 'health', label: 'Case health', promise: evidenceApi.getCaseHealth(caseId, { token }) });
       requests.push({ key: 'sourceAlignment', label: 'Source alignment', promise: evidenceApi.getSourceAlignmentLatest(caseId, { token }) });
@@ -455,7 +468,7 @@ export default function DashboardPage() {
       resolving: false,
       resolveActionError: null,
     });
-  }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
+  }, [canContribute, canSeeOperations, caseId, getAccessToken, recordFingerprint]);
 
   const resolveAllReadiness = useCallback(async () => {
     setState((current) => ({ ...current, resolving: true, resolveActionError: null }));
@@ -568,6 +581,7 @@ export default function DashboardPage() {
   const readiness = [
     {
       title: t('Google Drive'),
+      viewerVisible: false,
       status: state.loading ? 'working' : activeGoogleConnection ? 'ready' : google?.configured ? 'attention' : 'attention',
       label: state.loading ? t('Checking') : activeGoogleConnection ? t('Connected') : t('Needs connection'),
       detail: state.loading
@@ -583,6 +597,7 @@ export default function DashboardPage() {
     },
     {
       title: t('Google Contacts'),
+      viewerVisible: false,
       status: state.loading ? 'working' : activeGoogleConnection?.can_sync_contacts ? 'ready' : activeGoogleConnection ? 'attention' : 'attention',
       label: state.loading ? t('Checking') : activeGoogleConnection?.can_sync_contacts ? t('Ready') : t('Needs permission'),
       detail: state.loading
@@ -639,15 +654,17 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <ResolveReadinessPanel
-        error={state.resolvePlanError}
-        loading={state.resolvePlanLoading}
-        onRefresh={() => loadResolvePlan()}
-        onResolveAll={resolveAllReadiness}
-        plan={state.resolvePlan}
-        resolving={state.resolving}
-        result={state.resolveResult}
-      />
+      {canSeeOperations ? (
+        <ResolveReadinessPanel
+          error={state.resolvePlanError}
+          loading={state.resolvePlanLoading}
+          onRefresh={() => loadResolvePlan()}
+          onResolveAll={resolveAllReadiness}
+          plan={state.resolvePlan}
+          resolving={state.resolving}
+          result={state.resolveResult}
+        />
+      ) : null}
 
       {attentionItems.length ? (
         <NeedsAttentionPanel
@@ -672,7 +689,9 @@ export default function DashboardPage() {
           ) : null}
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {readiness.map((item) => (
+          {readiness
+            .filter((item) => canContribute || item.viewerVisible !== false)
+            .map((item) => (
             <ReadinessCard key={item.title} {...item} />
           ))}
         </div>
@@ -753,13 +772,15 @@ export default function DashboardPage() {
             detail={t('Search, filter, preview, and open case files.')}
             to={`/evidence/cases/${caseId}/documents`}
           />
-          <QuickActionCard
-            icon={UploadCloud}
-            title={t('Add documents')}
-            detail={t('Upload files or connect sources such as Google Drive.')}
-            to={`/evidence/cases/${caseId}/intake`}
-            tone="good"
-          />
+          {canContribute ? (
+            <QuickActionCard
+              icon={UploadCloud}
+              title={t('Add documents')}
+              detail={t('Upload files or connect sources such as Google Drive.')}
+              to={`/evidence/cases/${caseId}/intake`}
+              tone="good"
+            />
+          ) : null}
           <QuickActionCard
             icon={LifeBuoy}
             title={t('Get help')}
