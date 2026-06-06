@@ -1,4 +1,4 @@
-import { Info, KeyRound, Mail, RefreshCw, ShieldCheck, Sparkles, Trash2, UserPlus, UserX, X } from 'lucide-react';
+import { Check, Copy, Info, KeyRound, Mail, RefreshCw, ShieldCheck, Sparkles, Trash2, UserPlus, UserX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -37,6 +37,7 @@ export default function AdminPage() {
     error: null,
     result: null,
     invitationResult: null,
+    copiedInviteId: null,
     fingerprint: null,
     selectedUser: null,
     selectedUserMemberships: [],
@@ -180,6 +181,46 @@ export default function AdminPage() {
       setState((current) => ({ ...current, saving: false, error }));
     } finally {
       setState((current) => ({ ...current, saving: false }));
+    }
+  }
+
+  async function copyInvitationLink(invitation) {
+    const inviteUrl = invitation?.invite_url || invitation?.invitation?.invite_url;
+    const invitationId = invitation?.invitation_id || invitation?.invitation?.invitation_id || 'latest';
+    if (!inviteUrl) {
+      setState((current) => ({
+        ...current,
+        invitationResult: {
+          display_message: 'Invitation link is not available yet. Refresh invitations or resend the invite to generate the manual link.',
+        },
+      }));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setState((current) => ({
+        ...current,
+        copiedInviteId: invitationId,
+        invitationResult: {
+          display_message: `Invitation link copied for ${invitation.invited_email || invitation.invitation?.invited_email || 'this user'}.`,
+          invite_url: inviteUrl,
+        },
+      }));
+      window.setTimeout(() => {
+        setState((current) => (
+          current.copiedInviteId === invitationId
+            ? { ...current, copiedInviteId: null }
+            : current
+        ));
+      }, 2500);
+    } catch {
+      setState((current) => ({
+        ...current,
+        invitationResult: {
+          display_message: 'Could not copy automatically. Select and copy the visible invitation link.',
+          invite_url: inviteUrl,
+        },
+      }));
     }
   }
 
@@ -656,11 +697,25 @@ export default function AdminPage() {
             </button>
           </form>
 
-          {state.invitationResult?.invitation?.invite_code ? (
+          {state.invitationResult?.display_message || state.invitationResult?.invitation?.invite_code || state.invitationResult?.invite_url ? (
             <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
-              <div className="font-semibold">{t('Invite code')}</div>
-              <div className="mt-1 break-all font-mono">{state.invitationResult.invitation.invite_code}</div>
-              <div className="mt-2 text-xs">{state.invitationResult.invite_url}</div>
+              <div className="font-semibold">{t(state.invitationResult.display_message || 'Invite code')}</div>
+              {state.invitationResult.invitation?.invite_code ? (
+                <div className="mt-1 break-all font-mono">{state.invitationResult.invitation.invite_code}</div>
+              ) : null}
+              {state.invitationResult.invite_url ? (
+                <div className="mt-2 break-all text-xs">{state.invitationResult.invite_url}</div>
+              ) : null}
+              {state.invitationResult.invite_url ? (
+                <button
+                  type="button"
+                  onClick={() => copyInvitationLink(state.invitationResult)}
+                  className="mt-3 inline-flex items-center gap-2 rounded-md border border-sky-300 px-3 py-2 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-800 dark:text-sky-100 dark:hover:bg-sky-950/30"
+                >
+                  {state.copiedInviteId === (state.invitationResult.invitation?.invitation_id || 'latest') ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                  {state.copiedInviteId === (state.invitationResult.invitation?.invitation_id || 'latest') ? t('Copied') : t('Copy invitation link')}
+                </button>
+              ) : null}
               {state.invitationResult.delivery?.email_delivery_status ? (
                 <div className="mt-2 text-xs font-semibold">
                   {t('Email status')}: {state.invitationResult.delivery.email_delivery_status}
@@ -725,7 +780,7 @@ export default function AdminPage() {
           ) : null}
 
           <div className="mt-8">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Pending Invitations')}</h3>
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Invitations')}</h3>
             <div className="space-y-2">
               {state.invitations.length ? (
                 state.invitations.map((invitation) => (
@@ -739,8 +794,24 @@ export default function AdminPage() {
                           <span>{formatDateTime(invitation.created_at)}</span>
                         </div>
                         <div className="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">{invitation.invite_code}</div>
+                        {invitation.invite_url ? (
+                          <div className="mt-2 break-all rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-600 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300">
+                            {invitation.invite_url}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => copyInvitationLink(invitation)}
+                          disabled={!invitation.invite_url}
+                          className="inline-flex items-center justify-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900/70 dark:text-emerald-100 dark:hover:bg-emerald-950/30"
+                        >
+                          {state.copiedInviteId === invitation.invitation_id ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+                          {state.copiedInviteId === invitation.invitation_id
+                            ? t('Copied')
+                            : t(invitation.copy_invite_url_label || 'Copy invitation link')}
+                        </button>
                         <button
                           type="button"
                           onClick={() => resendInvitation(invitation)}
