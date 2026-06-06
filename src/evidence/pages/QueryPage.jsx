@@ -1547,7 +1547,7 @@ export default function QueryPage() {
         </button>
       </div>
 
-      <div className={`grid h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden lg:h-full ${historyCollapsed ? 'xl:grid-cols-[0_minmax(0,1fr)]' : 'xl:grid-cols-[320px_minmax(0,1fr)]'}`}>
+      <div className={`grid h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden lg:h-full ${historyCollapsed ? 'xl:grid-cols-1' : 'xl:grid-cols-[320px_minmax(0,1fr)]'}`}>
         <div className={`${historyCollapsed ? 'hidden' : 'hidden min-h-0 border-r border-[var(--lakai-border-soft)] bg-[var(--lakai-bg)] p-3 xl:block'}`}>
           <ConversationList
             conversations={conversationState.conversations}
