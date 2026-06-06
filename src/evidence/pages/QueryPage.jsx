@@ -1083,6 +1083,11 @@ function ChatSettingsDrawer({ open, onClose, settings, onChange, t }) {
 export default function QueryPage() {
   const { caseId } = useParams();
   const { openMobileMenu } = useOutletContext() || {};
+  const handleOpenMobileNavigation = useCallback(() => {
+    if (typeof openMobileMenu === 'function') {
+      openMobileMenu();
+    }
+  }, [openMobileMenu]);
   const { getAccessToken, user } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
@@ -1514,10 +1519,10 @@ export default function QueryPage() {
 
   return (
     <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden">
-      <div className="fixed left-3 right-3 top-3 z-30 flex items-center justify-between gap-2 lg:hidden">
+      <div className="fixed left-3 right-3 top-3 z-40 flex items-center justify-between gap-2 lg:hidden">
         <button
           type="button"
-          onClick={openMobileMenu}
+          onClick={handleOpenMobileNavigation}
           className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
           aria-label={t('Open navigation')}
           title={t('Open navigation')}
