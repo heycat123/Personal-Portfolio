@@ -21,6 +21,14 @@ function userFeature(user, featureKey) {
   return (user?.feature_flags || []).find((feature) => feature.feature_key === featureKey) || null;
 }
 
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function invitationStatus(invitation) {
+  return String(invitation?.status || invitation?.invitation_status || '').trim().toLowerCase();
+}
+
 export default function AdminPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -371,7 +379,7 @@ export default function AdminPage() {
     setInviteForm((current) => ({
       ...current,
       email: user.email || '',
-      role: 'contributor',
+      role: user.pendingInvitation?.role || 'lawyer',
     }));
     setState((current) => ({
       ...current,
@@ -384,20 +392,48 @@ export default function AdminPage() {
     }, 0);
   }
 
-  const membershipByUser = useMemo(
-    () => new Map(state.memberships.map((item) => [item.user_id, item])),
-    [state.memberships],
-  );
+  const membershipByUser = useMemo(() => {
+    const byUser = new Map();
+    state.memberships.forEach((item) => {
+      const existing = byUser.get(item.user_id);
+      if (!existing || item.status === 'active') {
+        byUser.set(item.user_id, item);
+      }
+    });
+    return byUser;
+  }, [state.memberships]);
+  const pendingInvitationByEmail = useMemo(() => {
+    const byEmail = new Map();
+    state.invitations.forEach((invitation) => {
+      const email = normalizeEmail(invitation.invited_email || invitation.email);
+      if (!email) {
+        return;
+      }
+      const status = invitationStatus(invitation);
+      const isPending = !['accepted', 'cancelled', 'canceled', 'revoked', 'expired'].includes(status);
+      if (!isPending) {
+        return;
+      }
+      const existing = byEmail.get(email);
+      if (!existing || new Date(invitation.created_at || 0) > new Date(existing.created_at || 0)) {
+        byEmail.set(email, invitation);
+      }
+    });
+    return byEmail;
+  }, [state.invitations]);
   const adminRows = useMemo(() => state.users.map((user) => {
     const membership = membershipByUser.get(user.user_id);
+    const pendingInvitation = pendingInvitationByEmail.get(normalizeEmail(user.email));
     return {
       ...user,
       user: user.display_name || user.email || user.user_id,
-      case_role: membership?.role || '',
+      case_role: membership?.role || pendingInvitation?.role || '',
       membership_status: membership?.status || 'none',
       membership,
+      pendingInvitation,
+      pending_invitation_role: pendingInvitation?.role || '',
     };
-  }), [membershipByUser, state.users]);
+  }), [membershipByUser, pendingInvitationByEmail, state.users]);
   const filteredUsers = useMemo(() => {
     const needle = filters.search.trim().toLowerCase();
     const rows = adminRows.filter((user) => {
@@ -485,6 +521,16 @@ export default function AdminPage() {
       filterOptions: CASE_ROLES.map((role) => ({ value: role, label: role })),
       render: (user) => {
         if (!user.membership || user.membership_status === 'none') {
+          if (user.pendingInvitation) {
+            return (
+              <div className="space-y-1">
+                <StatusBadge status="processing" label={t('Invitation pending')} />
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  {t('Role')}: {user.pending_invitation_role || t('viewer')}
+                </div>
+              </div>
+            );
+          }
           return <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{t('No case access')}</span>;
         }
         return (
@@ -512,7 +558,11 @@ export default function AdminPage() {
       header: t('Access'),
       sortable: true,
       filterOptions: ['active', 'revoked', 'none'].map((status) => ({ value: status, label: status })),
-      render: (user) => <StatusBadge status={user.membership_status || 'none'} />,
+      render: (user) => (
+        user.pendingInvitation && (!user.membership || user.membership_status === 'none')
+          ? <StatusBadge status="processing" label={t('Pending invite')} />
+          : <StatusBadge status={user.membership_status || 'none'} />
+      ),
     },
     {
       key: 'features',
@@ -533,6 +583,24 @@ export default function AdminPage() {
       filterable: false,
       render: (user) => {
         if (!user.membership || user.membership_status === 'none') {
+          if (user.pendingInvitation) {
+            return (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  copyInvitationLink(user.pendingInvitation);
+                }}
+                disabled={state.saving || !user.pendingInvitation.invite_url}
+                className="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-900/70 dark:text-emerald-100 dark:hover:bg-emerald-950/30"
+              >
+                {state.copiedInviteId === user.pendingInvitation.invitation_id ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
+                {state.copiedInviteId === user.pendingInvitation.invitation_id
+                  ? t('Copied')
+                  : t(user.pendingInvitation.copy_invite_url_label || 'Copy invitation link')}
+              </button>
+            );
+          }
           return (
             <button
               type="button"
