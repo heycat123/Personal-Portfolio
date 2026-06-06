@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useOutletContext, useParams } from 'react-router-dom';
 import EmptyState from './components/EmptyState';
 import ErrorPanel from './components/ErrorPanel';
 import PageHeader from './components/PageHeader';
@@ -209,6 +209,7 @@ function AccessManagementRoute({ children }) {
 function CaseScope() {
   const { caseId } = useParams();
   const location = useLocation();
+  const layoutContext = useOutletContext() || {};
   const { getAccessToken } = useEvidenceAuth();
   const { cases: knownCases, isKnownCase, registerCases, setActiveCaseId } = useCaseContext();
   const [remoteCheck, setRemoteCheck] = useState({ caseId: null, loading: false, checked: false, found: false });
@@ -277,7 +278,7 @@ function CaseScope() {
     return <UnknownCasePage />;
   }
 
-  return <Outlet />;
+  return <Outlet context={layoutContext} />;
 }
 
 function NotFoundPage() {
