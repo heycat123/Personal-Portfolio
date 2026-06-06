@@ -152,6 +152,20 @@ Do not list every unavailable connector on work pages. It is acceptable to say `
 
 The production implementation should centralize these token roles. Exact values may be tuned during implementation, but pages should consume roles, not hardcoded colors.
 
+### Light And Dark Themes
+
+Lak.ai must support both light and dark themes through the existing Evidence theme toggle. The toggle should switch the app-level theme class, and every redesigned Evidence component must consume semantic Lak.ai tokens instead of hardcoded one-off colors.
+
+Rules:
+
+- Light theme is the default Aurelian Haven parchment/gold-beige/heritage-blue experience.
+- Dark theme must preserve the same information hierarchy, spacing, component shapes, and status meanings.
+- Dark theme is not a separate product style; it is the same Lak.ai system with dark token values.
+- New components must be visually checked in both themes before merge.
+- Status colors must keep the same meaning in both themes: ready, review, blocked, neutral.
+- Focus rings, borders, disabled states, and hover states must remain visible in both themes.
+- Do not implement light-only components or page-specific hardcoded dark colors unless a token does not exist yet. Add or extend a token instead.
+
 ### Core Color Roles
 
 - `--lakai-bg`: app background, warm bone/parchment.
