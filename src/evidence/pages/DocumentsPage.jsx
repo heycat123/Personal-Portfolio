@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, ExternalLink, FileText, Info, Plus, Search, Settings2, ShieldAlert, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, FileText, Info, ListChecks, Plus, Search, Settings2, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -366,92 +366,97 @@ function DocumentSourcesStrip({ caseId, facets, t }) {
             <span aria-hidden="true">/</span>
             <span>{t('Files and connected folders used for this case')}</span>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 dark:border-emerald-800/70 dark:bg-emerald-950/35 dark:text-emerald-100">
               <CheckCircle2 size={16} aria-hidden="true" />
               {googleDriveLabel}
               {googleDriveCount > 0 ? <span className="text-xs font-medium opacity-75">{googleDriveCount}</span> : null}
             </span>
-            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)]">
-              <Upload size={16} aria-hidden="true" />
-              {t('Upload files available')}
-            </span>
-            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)]">
-              <Settings2 size={16} aria-hidden="true" />
-              {t('More sources available')}
-            </span>
+            <Link
+              to={`/evidence/cases/${caseId}/intake`}
+              aria-label={t('Manage document sources')}
+              title={t('Manage document sources')}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] transition hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface)]"
+            >
+              <Settings2 size={17} aria-hidden="true" />
+            </Link>
           </div>
         </div>
-        <Link
-          to={`/evidence/cases/${caseId}/intake`}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
-        >
-          <Settings2 size={16} aria-hidden="true" />
-          {t('Manage document sources')}
-        </Link>
       </div>
     </section>
   );
 }
 
-function ClassificationOverview({ classificationOptions, issueTagOptions, filterValues, onFilter, t }) {
-  const activeClassification = filterValues.evidence_type_label || '';
-  const activeIssueTag = filterValues.legal_factor_code || '';
-  const visibleClassifications = classificationOptions.slice(0, 8);
-  const reviewOption = issueTagOptions.find((option) => option.value === 'review_needed');
+function DocumentsViewTabs({ activeView, onChange, t }) {
+  const tabs = [
+    {
+      id: 'library',
+      label: t('Library'),
+      icon: FileText,
+      detail: t('Find, preview, remove, export, and organize files.'),
+    },
+    {
+      id: 'review',
+      label: t('Review'),
+      icon: ListChecks,
+      detail: t('Review how documents are grouped and what still needs attention.'),
+    },
+  ];
 
   return (
-    <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-5 shadow-[var(--lakai-shadow-panel)]">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-3xl">
-          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Category groups')}</div>
-          <h2 className="mt-1 text-xl font-semibold text-[var(--lakai-text)]">{t('Review documents by category')}</h2>
-          <p className="mt-2 max-w-2xl text-sm text-[var(--lakai-text-muted)]">
-            {t('Categories help organize your documents. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
-          </p>
-        </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
-          <div className="flex items-start gap-2">
-            <ShieldAlert className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
-            <span>{t('Some files are listed from Google Drive before they are ready for search. Pending items usually mean text, search, or people/contact links are still being prepared.')}</span>
+    <nav className="mb-5 grid gap-2 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-2 shadow-[var(--lakai-shadow-panel)] sm:grid-cols-2" aria-label={t('Document views')}>
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        const selected = activeView === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`flex min-h-14 items-start gap-3 rounded-xl px-3 py-3 text-left transition ${
+              selected
+                ? 'bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)] shadow-sm'
+                : 'text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]'
+            }`}
+            aria-current={selected ? 'page' : undefined}
+          >
+            <Icon className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="block font-semibold">{tab.label}</span>
+              <span className={`mt-0.5 block text-xs leading-5 ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>
+                {tab.detail}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function DocumentReviewPrompt({ onOpenReview, t }) {
+  return (
+    <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="rounded-xl bg-[var(--lakai-accent-soft)] p-2 text-[var(--lakai-primary-strong)]">
+            <ListChecks size={18} aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="font-serif text-lg font-semibold text-[var(--lakai-primary-strong)]">{t('Document Review')}</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--lakai-text-muted)]">
+              {t('Review how documents are grouped and what still needs attention before sharing or building packets.')}
+            </p>
           </div>
         </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {visibleClassifications.length ? visibleClassifications.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onFilter('evidence_type_label', activeClassification === option.value ? '' : option.value)}
-            className={`min-h-10 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-              activeClassification === option.value
-                ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-white'
-                : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface)]'
-            }`}
-          >
-            {option.label || option.value}
-            <span className="ml-1 opacity-70">{option.count}</span>
-          </button>
-        )) : (
-          <span className="rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-1.5 text-xs font-semibold text-[var(--lakai-text-muted)]">
-            {t('Classification data is still processing')}
-          </span>
-        )}
-        {reviewOption ? (
-          <button
-            type="button"
-            onClick={() => onFilter('legal_factor_code', activeIssueTag === reviewOption.value ? '' : reviewOption.value)}
-            className={`min-h-10 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-              activeIssueTag === reviewOption.value
-                ? 'border-amber-700 bg-amber-700 text-white'
-                : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100'
-            }`}
-          >
-            {t('Review suggested issue tag')}
-            <span className="ml-1 opacity-70">{reviewOption.count}</span>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={onOpenReview}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+        >
+          <ListChecks size={16} aria-hidden="true" />
+          {t('Review categories')}
+        </button>
       </div>
     </section>
   );
@@ -489,8 +494,10 @@ function exportGuardrailMessage(guardrails, t) {
 
 export default function DocumentsPage() {
   const { caseId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const attentionContext = String(searchParams.get('attention') || '').trim();
+  const activeDocumentsView = searchParams.get('view') === 'review' ? 'review' : 'library';
+  const isReviewView = activeDocumentsView === 'review';
   const initialTableState = {
     ...readStoredDocumentsTableState(caseId),
     ...readUrlDocumentsTableState(searchParams),
@@ -579,6 +586,15 @@ export default function DocumentsPage() {
   }), [appliedQuery, filterValues, offset, sort]);
   const exactAffectedDocumentFilterActive = Boolean(String(filterValues.file_ids || '').trim());
   const attentionFilterActive = exactAffectedDocumentFilterActive || Boolean(attentionContext);
+  const setDocumentsView = useCallback((view) => {
+    const next = new URLSearchParams(searchParams);
+    if (view === 'review') {
+      next.set('view', 'review');
+    } else {
+      next.delete('view');
+    }
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -685,7 +701,7 @@ export default function DocumentsPage() {
   }, [loadDocuments]);
 
   useEffect(() => {
-    if (exactAffectedDocumentFilterActive) {
+    if (!isReviewView || attentionFilterActive) {
       setCategoryQa((current) => ({ ...current, loading: false, error: null, data: null }));
       return undefined;
     }
@@ -694,10 +710,10 @@ export default function DocumentsPage() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [exactAffectedDocumentFilterActive, loadCategoryQa]);
+  }, [attentionFilterActive, isReviewView, loadCategoryQa]);
 
   useEffect(() => {
-    if (exactAffectedDocumentFilterActive) {
+    if (!isReviewView || attentionFilterActive) {
       setCategoryResolve((current) => ({ ...current, loading: false, error: null, data: null }));
       return undefined;
     }
@@ -706,7 +722,7 @@ export default function DocumentsPage() {
     }, 0);
 
     return () => window.clearTimeout(timerId);
-  }, [exactAffectedDocumentFilterActive, loadCategoryResolvePlan]);
+  }, [attentionFilterActive, isReviewView, loadCategoryResolvePlan]);
 
   useEffect(() => {
     setExpandedDocuments({});
@@ -1164,8 +1180,6 @@ export default function DocumentsPage() {
   const missingS3Files = inventorySummary.extracted_files_missing_s3 || 0;
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
   const s3SyncedRecords = inventorySummary.s3_synced_records || 0;
-  const classificationOptions = facetOptions(state.facets, 'evidence_type_label');
-  const issueTagOptions = facetOptions(state.facets, 'legal_factor_code');
   const processingRequestData = processingRequest.result || {};
   const processingRequestJobId = processingRequestData.job?.job_id || processingRequestData.existing_job?.job_id || processingRequestData.job_id || null;
   const processingBatchDocumentCount = Number(
@@ -1220,6 +1234,7 @@ export default function DocumentsPage() {
       return;
     }
     const filters = categoryReviewFilterValues(category);
+    setDocumentsView('library');
     setOffset(0);
     setFilterValues((current) => {
       const next = { ...current };
@@ -1243,7 +1258,9 @@ export default function DocumentsPage() {
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} ${t('documents in this workspace')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('ready for organization and search')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('need source-copy review')}.`}
+        description={isReviewView
+          ? 'Review how documents are grouped and what still needs attention before sharing or building packets.'
+          : `${state.total} ${t('documents in this workspace')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('ready for organization and search')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('need source-copy review')}.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Link
@@ -1253,24 +1270,74 @@ export default function DocumentsPage() {
               <Plus size={16} aria-hidden="true" />
               {t('Add documents')}
             </Link>
-            <button
-              type="button"
-              onClick={exportCurrentView}
-              disabled={exportState.busy || state.loading || !state.total}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download size={16} aria-hidden="true" />
-              {exportState.busy ? t('Exporting') : t('Export document list')}
-            </button>
+            {!isReviewView ? (
+              <button
+                type="button"
+                onClick={exportCurrentView}
+                disabled={exportState.busy || state.loading || !state.total}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download size={16} aria-hidden="true" />
+                {exportState.busy ? t('Exporting') : t('Export document list')}
+              </button>
+            ) : null}
           </div>
         }
       />
 
       <DocumentSourcesStrip caseId={caseId} facets={state.facets} t={t} />
+      <DocumentsViewTabs activeView={activeDocumentsView} onChange={setDocumentsView} t={t} />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
 
+      {isReviewView ? (
+        <>
+          {attentionFilterActive ? (
+            <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
+              <h3 className="font-semibold">{t('Reviewing affected documents')}</h3>
+              <p className="mt-1">
+                {t('This view is limited to documents linked from a health item. Open the Library tab to review the affected files first.')}
+              </p>
+              <button
+                type="button"
+                onClick={() => setDocumentsView('library')}
+                className="mt-3 inline-flex min-h-10 items-center justify-center rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-950 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
+              >
+                {t('Open Library')}
+              </button>
+            </section>
+          ) : (
+            <CategoryReviewPanel
+              caseId={caseId}
+              data={categoryQa.data}
+              error={categoryQa.error}
+              exportBusy={exportState.busy}
+              lensId={categoryLensId}
+              loading={categoryQa.loading}
+              onLoadResolvePlan={loadCategoryResolvePlan}
+              onExportCurrentView={exportCategoryReview}
+              onFilterCategory={filterCategoryReviewDocuments}
+              onFilterUncategorized={filterUncategorizedDocuments}
+              onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
+              onRetry={loadCategoryQa}
+              onResolveAction={resolveCategoryReviewAction}
+              resolveActionBusyId={categoryResolve.busyActionId}
+              resolveError={categoryResolve.error}
+              resolveLoading={categoryResolve.loading}
+              resolvePlan={categoryResolve.data}
+              resolveResult={categoryResolve.result}
+            />
+          )}
+
+          {showDiagnostics && categoryQa.fingerprint?.id ? (
+            <div className="mb-5">
+              <RequestFingerprint fingerprintId={categoryQa.fingerprint.id} correlationId={categoryQa.fingerprint.correlationId} label={t('Category review fingerprint')} />
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <>
       <NeedsAttentionPanel
         items={attentionItems}
         title="Document attention"
@@ -1395,59 +1462,7 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      <ClassificationOverview
-        classificationOptions={classificationOptions}
-        issueTagOptions={issueTagOptions}
-        filterValues={filterValues}
-        onFilter={applyColumnFilter}
-        t={t}
-      />
-
-      {attentionFilterActive ? (
-        <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
-          <h3 className="font-semibold">{t('Reviewing affected documents')}</h3>
-          <p className="mt-1">
-            {t('This view is limited to documents linked from a health item. Category Review is paused here so the selected documents can load without running the full category handoff report in the background.')}
-          </p>
-          {attentionContext === 'secure-copy-review' ? (
-            <p className="mt-1">
-              {t('Resolve this item by confirming the secure workspace copy, syncing the source again, or removing the row from workspace review if it should not remain in this case.')}
-            </p>
-          ) : null}
-          {state.total === 0 && !state.loading ? (
-            <p className="mt-1 font-semibold">
-              {t('No affected document rows are currently visible for this health item. Refresh Health; if the tile remains open, use the source or support action shown on that tile.')}
-            </p>
-          ) : null}
-        </section>
-      ) : (
-        <CategoryReviewPanel
-          caseId={caseId}
-          data={categoryQa.data}
-          error={categoryQa.error}
-          exportBusy={exportState.busy}
-          lensId={categoryLensId}
-          loading={categoryQa.loading}
-          onLoadResolvePlan={loadCategoryResolvePlan}
-          onExportCurrentView={exportCategoryReview}
-          onFilterCategory={filterCategoryReviewDocuments}
-          onFilterUncategorized={filterUncategorizedDocuments}
-          onLensChange={(value) => setCategoryLensId(value || DEFAULT_CATEGORY_QA_LENS_ID)}
-          onRetry={loadCategoryQa}
-          onResolveAction={resolveCategoryReviewAction}
-          resolveActionBusyId={categoryResolve.busyActionId}
-          resolveError={categoryResolve.error}
-          resolveLoading={categoryResolve.loading}
-          resolvePlan={categoryResolve.data}
-          resolveResult={categoryResolve.result}
-        />
-      )}
-
-      {showDiagnostics && categoryQa.fingerprint?.id ? (
-        <div className="mb-5">
-          <RequestFingerprint fingerprintId={categoryQa.fingerprint.id} correlationId={categoryQa.fingerprint.correlationId} label={t('Category review fingerprint')} />
-        </div>
-      ) : null}
+      <DocumentReviewPrompt onOpenReview={() => setDocumentsView('review')} t={t} />
 
       <section className="mb-5 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100">
         <div className="flex items-start gap-3">
@@ -1617,6 +1632,8 @@ export default function DocumentsPage() {
           </button>
         </div>
       </div>
+        </>
+      )}
 
       {drawer.open ? (
         <div className="fixed inset-0 z-50" role="dialog" aria-modal="true">

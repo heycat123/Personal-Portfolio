@@ -143,10 +143,10 @@ Full connector management belongs in:
 
 Work pages may show contextual source strips:
 
-- Documents: document sources only, such as Google Drive connected, upload files available, more sources available.
+- Documents: document sources only, such as Google Drive connected plus a compact settings/sliders icon for document-source configuration.
 - People & Contacts: contact sources only, such as Google Contacts connected or contacts found in messages.
 
-Do not list every unavailable connector on work pages. It is acceptable to say `More sources available` with a manage icon.
+Do not list every unavailable connector on work pages. Add-document methods and available connectors belong on Add Documents or Case Settings > Connected sources, not in the Documents source strip.
 
 ## Theme Tokens
 
@@ -258,9 +258,7 @@ Source strips summarize relevant sources for the current page.
 Documents strip examples:
 
 - Google Drive connected
-- Upload files available
-- More sources available
-- Manage document sources
+- Settings/sliders icon for `Manage document sources`
 
 People & Contacts strip examples:
 
@@ -430,10 +428,20 @@ Relationship labels help organize the workspace and do not decide legal roles.
 
 Documents should focus on organization and readiness, not backend storage mechanics.
 
+Documents uses two subviews:
+
+- `Library`: default landing. Find, preview, remove, export, and organize files. This view owns the source strip, search/filter bar, file list/table/cards, document preview drawer, export guardrail, and per-document status badges.
+- `Review`: intentional review mode. Review how documents are grouped, what needs attention, category summaries, source-snippet availability, and lawyer-handoff notes.
+
+The full category/lawyer-handoff panel must not render on the default Library landing. Library may show a compact `Document Review` prompt that opens Review.
+
 Use:
 
 - Documents
-- Category review
+- Library
+- Review
+- Document Review
+- Review categories
 - Category
 - Issue tags
 - Pages / extracted text
