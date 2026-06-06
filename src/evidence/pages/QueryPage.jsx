@@ -1,4 +1,26 @@
-import { AlertTriangle, Bot, Check, Clipboard, ExternalLink, FileText, History, Info, ListChecks, Loader2, Menu, MessageSquare, Plus, RefreshCw, Send, Wrench, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bot,
+  Check,
+  Clipboard,
+  ExternalLink,
+  FileText,
+  History,
+  Info,
+  ListChecks,
+  Loader2,
+  LockKeyhole,
+  Menu,
+  MessageSquare,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  SlidersHorizontal,
+  UsersRound,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
@@ -379,12 +401,16 @@ function AgenticSummary({ result, t }) {
   );
 }
 
-function QueryMessage({ message, caseId, onCopyAnswer, copied, onOpenCitation, onOpenCitationList, showDiagnostics, t }) {
+function QueryMessage({ message, caseId, currentUserName, onCopyAnswer, copied, onOpenCitation, onOpenCitationList, showDiagnostics, showCitations = true, t }) {
   if (message.role === 'user') {
     return (
-      <div className="flex min-w-0 max-w-full justify-end">
-        <div className="min-w-0 max-w-[calc(100vw-2rem)] overflow-hidden break-words rounded-lg bg-sky-700 px-4 py-3 text-sm text-white shadow-sm sm:max-w-[88%]">
+      <div className="flex min-w-0 max-w-full justify-end gap-3">
+        <div className="min-w-0 max-w-[calc(100vw-5rem)] overflow-hidden break-words rounded-2xl rounded-tr-md bg-[var(--lakai-primary)] px-4 py-3 text-sm text-[var(--lakai-primary-text)] shadow-sm sm:max-w-[78%]">
+          <div className="mb-1 text-xs font-semibold opacity-80">{t('You')}</div>
           {message.content}
+        </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--lakai-accent)] text-sm font-bold text-[var(--lakai-primary-strong)]">
+          {initialsForName(message.authorName || currentUserName || t('You'))}
         </div>
       </div>
     );
@@ -472,7 +498,7 @@ function QueryMessage({ message, caseId, onCopyAnswer, copied, onOpenCitation, o
                 <AgenticSummary result={result} t={t} />
               </div>
             ) : null}
-            {citations.length ? (
+            {showCitations && citations.length ? (
               <div className="mt-4">
                 <button
                   type="button"
@@ -651,6 +677,74 @@ function formatConversationTime(value) {
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function displayNameFromPerson(value, fallback = 'Case member') {
+  if (!value) {
+    return fallback;
+  }
+  if (typeof value === 'string') {
+    return value || fallback;
+  }
+  return value.display_name
+    || value.displayName
+    || value.name
+    || value.email
+    || value.username
+    || value.user_id
+    || value.userId
+    || fallback;
+}
+
+function conversationStarterName(conversation) {
+  return displayNameFromPerson(
+    conversation?.started_by
+      || conversation?.created_by
+      || conversation?.owner
+      || conversation?.starter,
+    conversation?.started_by_display_name
+      || conversation?.created_by_display_name
+      || conversation?.owner_display_name
+      || conversation?.created_by_email
+      || 'Case member',
+  );
+}
+
+function initialsForName(value) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned) {
+    return 'CM';
+  }
+  const emailPrefix = cleaned.includes('@') ? cleaned.split('@')[0] : cleaned;
+  const parts = emailPrefix
+    .replace(/[._-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) {
+    return 'CM';
+  }
+  return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+}
+
+function conversationParticipantNames(conversation) {
+  const rawParticipants = conversation?.participants || conversation?.case_participants || conversation?.visible_to || [];
+  const names = Array.isArray(rawParticipants)
+    ? rawParticipants.map((item) => displayNameFromPerson(item, '')).filter(Boolean)
+    : [];
+  const starter = conversationStarterName(conversation);
+  const unique = [starter, ...names].filter(Boolean).filter((name, index, all) => all.indexOf(name) === index);
+  return unique.slice(0, 4);
+}
+
+function conversationVisibilityLabel(conversation, t) {
+  const value = String(conversation?.visibility || conversation?.visibility_scope || conversation?.sharing_scope || '').toLowerCase();
+  if (value.includes('case') || value.includes('shared')) {
+    return t('People with case access');
+  }
+  if (value.includes('specific')) {
+    return t('Specific people');
+  }
+  return t('Only me');
+}
+
 function messagesFromConversation(conversation) {
   return (conversation?.messages || []).map((message) => {
     if (message.role === 'assistant') {
@@ -684,38 +778,56 @@ function ConversationList({
   onSelectConversation,
   onRefresh,
   t,
+  showStarters = true,
   className = '',
   onClose,
 }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filter, setFilter] = useState('all');
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredConversations = conversations.filter((conversation) => {
+    const searchable = [
+      conversation.title,
+      conversation.last_message_preview,
+      conversationStarterName(conversation),
+      conversationVisibilityLabel(conversation, t),
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (normalizedSearch && !searchable.includes(normalizedSearch)) {
+      return false;
+    }
+    if (filter === 'mine') {
+      return conversationVisibilityLabel(conversation, t) === t('Only me')
+        || Boolean(conversation.is_mine || conversation.mine || conversation.created_by_current_user);
+    }
+    if (filter === 'shared') {
+      return conversationVisibilityLabel(conversation, t) !== t('Only me')
+        || Boolean(conversation.shared_with_me);
+    }
+    return true;
+  });
+
   return (
-    <aside className={`min-w-0 max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-[#101820] xl:h-full ${className}`}>
-      <div className="mb-3 flex items-center justify-between gap-2">
+    <aside className={`min-w-0 max-w-full overflow-hidden rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)] xl:h-full ${className}`}>
+      <div className="mb-4 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <History size={17} className="shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true" />
-          <h3 className="truncate text-sm font-semibold text-gray-950 dark:text-white">{t('Conversations')}</h3>
+          <History size={17} className="shrink-0 text-[var(--lakai-text-muted)]" aria-hidden="true" />
+          <h3 className="truncate font-serif text-lg font-semibold text-[var(--lakai-primary-strong)]">{t('Chat history')}</h3>
         </div>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={onRefresh}
-            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
             aria-label={t('Refresh conversations')}
+            title={t('Refresh conversations')}
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={onNewConversation}
-            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
-            aria-label={t('New conversation')}
-          >
-            <Plus size={16} aria-hidden="true" />
           </button>
           {onClose ? (
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-white/10 dark:hover:text-white"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
               aria-label={t('Close conversations')}
             >
               <X size={16} aria-hidden="true" />
@@ -723,35 +835,108 @@ function ConversationList({
           ) : null}
         </div>
       </div>
+      <button
+        type="button"
+        onClick={onNewConversation}
+        className="mb-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-[var(--lakai-primary-text)] hover:bg-[var(--lakai-primary-strong)]"
+      >
+        <Plus size={16} aria-hidden="true" />
+        {t('New chat')}
+      </button>
+      <label className="relative mb-3 block">
+        <span className="sr-only">{t('Search chat history')}</span>
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--lakai-text-muted)]" size={16} aria-hidden="true" />
+        <input
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          className="min-h-11 w-full rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] py-2 pl-9 pr-3 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-focus)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lakai-focus)_25%,transparent)]"
+          placeholder={t('Search chat history')}
+        />
+      </label>
+      <p className="mb-3 text-xs text-[var(--lakai-text-muted)]">{t('Search previous chats and answers.')}</p>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[
+          ['all', t('All case chats')],
+          ['mine', t('Mine')],
+          ['shared', t('Shared with me')],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setFilter(value)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              filter === value
+                ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
+                : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {error ? <ErrorPanel title="Conversation history failed" error={error} /> : null}
-      <div className="flex max-w-full gap-2 overflow-x-auto pb-1 xl:max-h-[calc(100%_-_3.25rem)] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
-        {conversations.length ? (
-          conversations.map((conversation) => {
+      <div className="flex max-w-full gap-3 overflow-x-auto pb-1 xl:max-h-[calc(100%_-_13.5rem)] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
+        {filteredConversations.length ? (
+          filteredConversations.map((conversation) => {
             const active = conversation.conversation_id === activeConversationId;
+            const starter = conversationStarterName(conversation);
+            const participants = conversationParticipantNames(conversation);
+            const visibility = conversationVisibilityLabel(conversation, t);
             return (
               <button
                 key={conversation.conversation_id}
                 type="button"
                 onClick={() => onSelectConversation(conversation.conversation_id)}
-                className={`min-w-[240px] rounded-md border p-3 text-left text-sm xl:min-w-0 ${
+                className={`min-w-[260px] rounded-xl border p-3 text-left text-sm transition-colors xl:min-w-0 ${
                   active
-                    ? 'border-sky-400 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100'
-                    : 'border-gray-200 bg-gray-50 text-gray-800 hover:border-sky-300 hover:bg-sky-50 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/20'
+                    ? 'border-[var(--lakai-primary)] bg-[var(--lakai-accent-soft)] text-[var(--lakai-text)]'
+                    : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]'
                 }`}
               >
-                <div className="truncate font-semibold">{conversation.title || t('New conversation')}</div>
-                <div className="mt-1 truncate text-xs opacity-75">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--lakai-primary)] text-sm font-bold text-[var(--lakai-primary-text)]">
+                    {initialsForName(starter)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">{conversation.title || t('New chat')}</div>
+                    {showStarters ? (
+                      <div className="mt-1 truncate text-xs text-[var(--lakai-text-muted)]">
+                        {t('Started by {name}', { name: starter })}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="mt-3 line-clamp-2 text-xs leading-5 text-[var(--lakai-text-muted)]">
                   {conversation.last_message_preview || `${conversation.message_count || 0} ${t('messages')}`}
                 </div>
-                <div className="mt-2 text-xs opacity-70">
-                  {formatConversationTime(conversation.last_message_at || conversation.updated_at || conversation.created_at)}
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--lakai-text-muted)]">
+                    {visibility === t('Only me') ? <LockKeyhole size={12} aria-hidden="true" /> : <UsersRound size={12} aria-hidden="true" />}
+                    {visibility}
+                  </span>
+                  <span className="text-xs text-[var(--lakai-text-muted)]">
+                    {formatConversationTime(conversation.last_message_at || conversation.updated_at || conversation.created_at)}
+                  </span>
                 </div>
+                {participants.length > 1 ? (
+                  <div className="mt-3 flex -space-x-2">
+                    {participants.map((name) => (
+                      <span
+                        key={name}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border-2 border-[var(--lakai-surface-muted)] bg-[var(--lakai-surface)] text-[10px] font-bold text-[var(--lakai-primary-strong)]"
+                        title={name}
+                      >
+                        {initialsForName(name)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </button>
             );
           })
         ) : (
-          <div className="min-w-[240px] rounded-md border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-800 dark:text-gray-400 xl:min-w-0">
-            {loading ? t('Loading conversations.') : t('No saved conversations yet.')}
+          <div className="min-w-[260px] rounded-xl border border-dashed border-[var(--lakai-border)] p-4 text-sm text-[var(--lakai-text-muted)] xl:min-w-0">
+            {loading ? t('Loading chats.') : normalizedSearch || filter !== 'all' ? t('No chats match this view.') : t('No saved chats yet.')}
           </div>
         )}
       </div>
@@ -759,10 +944,114 @@ function ConversationList({
   );
 }
 
+function ToggleRow({ title, description, checked, onChange, disabled = false }) {
+  return (
+    <label className={`flex items-start justify-between gap-4 rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] p-3 ${disabled ? 'opacity-60' : ''}`}>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-[var(--lakai-text)]">{title}</span>
+        {description ? <span className="mt-1 block text-xs leading-5 text-[var(--lakai-text-muted)]">{description}</span> : null}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-1 h-5 w-5 shrink-0 accent-[var(--lakai-primary)]"
+      />
+    </label>
+  );
+}
+
+function AskSettingsDrawer({ open, onClose, settings, onChange, t }) {
+  if (!open) {
+    return null;
+  }
+  const update = (key, value) => onChange((current) => ({ ...current, [key]: value }));
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+      <button type="button" className="absolute inset-0" onClick={onClose} aria-label={t('Close Ask settings')} />
+      <aside className="relative h-full w-screen max-w-full overflow-y-auto border-l border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-5 shadow-xl sm:w-[26rem]">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">
+              <SlidersHorizontal size={15} aria-hidden="true" />
+              {t('Ask settings')}
+            </div>
+            <h2 className="mt-2 font-serif text-2xl font-semibold text-[var(--lakai-primary-strong)]">{t('Chat preferences')}</h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--lakai-text-muted)]">
+              {t('Choose how this Ask Documents page helps you review sources. These settings do not change case documents.')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
+            aria-label={t('Close')}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <ToggleRow
+            title={t('Show document readiness before asking')}
+            description={t('Warn me when documents are still processing and answers may miss sources.')}
+            checked={settings.showReadiness}
+            onChange={(value) => update('showReadiness', value)}
+          />
+          <ToggleRow
+            title={t('Show who started each chat')}
+            description={t('Use account names and initials when conversation history includes them.')}
+            checked={settings.showStarters}
+            onChange={(value) => update('showStarters', value)}
+          />
+          <ToggleRow
+            title={t('Show source citations when available')}
+            description={t('Keep source references visible so answers can be reviewed.')}
+            checked={settings.showCitations}
+            onChange={(value) => update('showCitations', value)}
+          />
+          <ToggleRow
+            title={t('Show follow-up suggestions')}
+            description={t('Reserved for the enhanced chat experience when that feature is available.')}
+            checked={settings.showSuggestions}
+            onChange={(value) => update('showSuggestions', value)}
+            disabled
+          />
+        </div>
+
+        <div className="mt-5 rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] p-4">
+          <label className="block text-sm font-semibold text-[var(--lakai-text)]" htmlFor="ask-default-visibility">
+            {t('Default visibility')}
+          </label>
+          <select
+            id="ask-default-visibility"
+            value={settings.defaultVisibility}
+            onChange={(event) => update('defaultVisibility', event.target.value)}
+            className="mt-2 min-h-11 w-full rounded-lg border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-focus)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lakai-focus)_25%,transparent)]"
+          >
+            <option value="only_me">{t('Only me')}</option>
+            <option value="case_access">{t('People with case access')}</option>
+          </select>
+          <p className="mt-2 text-xs leading-5 text-[var(--lakai-text-muted)]">
+            {settings.defaultVisibility === 'case_access'
+              ? t('People with access to this case will be able to see this chat and its sources when sharing is supported.')
+              : t('New chats should start private unless you choose to share them.')}
+          </p>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-[var(--lakai-review)] bg-[var(--lakai-review-soft)] p-4 text-sm leading-6 text-[var(--lakai-text)]">
+          {t('Chats may include sensitive case information. Review source citations and sharing settings before relying on or sharing an answer.')}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export default function QueryPage() {
   const { caseId } = useParams();
   const { openMobileMenu } = useOutletContext() || {};
-  const { getAccessToken } = useEvidenceAuth();
+  const { getAccessToken, user } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
   const { debugEnabled } = useOperatorMode();
@@ -799,6 +1088,14 @@ export default function QueryPage() {
     conversations: [],
   });
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [askSettingsOpen, setAskSettingsOpen] = useState(false);
+  const [askSettings, setAskSettings] = useState({
+    showReadiness: true,
+    showStarters: true,
+    showCitations: true,
+    showSuggestions: false,
+    defaultVisibility: 'only_me',
+  });
   const [copiedAnswer, setCopiedAnswer] = useState(false);
   const [readinessState, setReadinessState] = useState({
     loading: true,
@@ -921,6 +1218,8 @@ export default function QueryPage() {
     }
   }, [caseId]);
 
+  const currentUserName = user?.displayName || user?.email || t('You');
+
   const copyAnswer = useCallback(async (answer) => {
     if (!answer || !navigator.clipboard) {
       return;
@@ -941,7 +1240,7 @@ export default function QueryPage() {
     const assistantId = `assistant-${timestamp}`;
     setMessages((current) => [
       ...current,
-      { id: `user-${timestamp}`, role: 'user', content: trimmed },
+      { id: `user-${timestamp}`, role: 'user', content: trimmed, authorName: currentUserName },
       { id: assistantId, role: 'assistant', running: true },
     ]);
     setQuestion('');
@@ -1084,7 +1383,7 @@ export default function QueryPage() {
       );
       setState((current) => ({ ...current, running: false, error }));
     }
-  }, [activeConversationId, caseId, getAccessToken, loadConversation, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics]);
+  }, [activeConversationId, caseId, currentUserName, getAccessToken, loadConversation, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics]);
 
   const openCitation = useCallback(
     async (citation) => {
@@ -1184,26 +1483,45 @@ export default function QueryPage() {
         >
           <History size={18} aria-hidden="true" />
         </button>
+        <button
+          type="button"
+          onClick={() => setAskSettingsOpen(true)}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
+          aria-label={t('Ask settings')}
+          title={t('Ask settings')}
+        >
+          <SlidersHorizontal size={18} aria-hidden="true" />
+        </button>
       </div>
 
       <div className="hidden lg:block">
         <PageHeader
           title="Ask Documents"
-          description="Ask document-grounded questions and review source references from this case workspace."
+          description="Ask source-based questions and review citations from this case workspace."
           actions={
-            <StatusBadge
-              status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
-              label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge
+                status={latestReady ? 'succeeded' : state.result ? 'degraded' : 'pending'}
+                label={latestReady ? t('Source citations available') : state.result ? t('Needs review') : t('Ready')}
+              />
+              <button
+                type="button"
+                onClick={() => setAskSettingsOpen(true)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
+              >
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                {t('Ask settings')}
+              </button>
+            </div>
           }
         />
       </div>
 
-      <section className="mb-5 hidden rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100 lg:block">
+      <section className="mb-5 hidden rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] p-4 text-sm leading-6 text-[var(--lakai-text)] lg:block">
         <div className="flex items-start gap-3">
-          <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+          <Info className="mt-0.5 shrink-0 text-[var(--lakai-primary-strong)]" size={18} aria-hidden="true" />
           <p>
-            {t('Answers are based only on documents available in this case workspace. They may miss context and are not legal advice. Review source citations and ask a lawyer before relying on an answer for a filing, hearing, or legal decision.')}
+            {t('Answers are based on your available sources and may need review. Lak.ai does not provide legal advice or decide whether materials are admissible or ready for court use.')}
           </p>
         </div>
       </section>
@@ -1219,14 +1537,16 @@ export default function QueryPage() {
         </div>
       ) : null}
 
-      <NeedsAttentionPanel
-        items={askAttentionItems}
-        title="Ask Documents attention"
-        description="Search and citation readiness items that may affect source-based answers."
-        emptyTitle="Ask Documents is not showing readiness blockers"
-        emptyDetail="Review source citations and keep working in other parts of the workspace."
-        limit={3}
-      />
+      {askSettings.showReadiness ? (
+        <NeedsAttentionPanel
+          items={askAttentionItems}
+          title="Ask Documents attention"
+          description="Search and citation readiness items that may affect source-based answers."
+          emptyTitle="Ask Documents is not showing readiness blockers"
+          emptyDetail="Review source citations and keep working in other parts of the workspace."
+          limit={3}
+        />
+      ) : null}
 
       <div className="grid h-full min-h-0 w-full min-w-0 max-w-full gap-4 overflow-hidden lg:h-[calc(100dvh_-_240px)] lg:min-h-[420px] xl:grid-cols-[300px_minmax(0,1fr)]">
         <div className="hidden min-h-0 xl:block">
@@ -1239,10 +1559,11 @@ export default function QueryPage() {
             onSelectConversation={loadConversation}
             onRefresh={refreshConversations}
             t={t}
+            showStarters={askSettings.showStarters}
           />
         </div>
 
-        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden border-gray-200 bg-gray-50 shadow-sm dark:border-gray-800 dark:bg-[#070b10] lg:rounded-lg lg:border">
+        <section className="flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] shadow-[var(--lakai-shadow-panel)] lg:rounded-2xl lg:border">
         <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-3 pt-16 sm:p-4 lg:pt-4">
           {hasMessages ? (
             messages.map((message) => (
@@ -1250,26 +1571,33 @@ export default function QueryPage() {
                 key={message.id}
                 message={message}
                 caseId={caseId}
+                currentUserName={currentUserName}
                 onCopyAnswer={copyAnswer}
                 copied={copiedAnswer}
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
                 showDiagnostics={showDiagnostics}
+                showCitations={askSettings.showCitations}
                 t={t}
               />
             ))
           ) : (
-            <div className="rounded-lg border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600 dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
-              <div className="flex items-center gap-2">
-                <MessageSquare size={18} aria-hidden="true" />
-                {t('Ask a question about documents in this workspace. Answers should include source references when support is available.')}
+            <div className="rounded-2xl border border-dashed border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-6 text-sm text-[var(--lakai-text-muted)]">
+              <div className="flex items-start gap-3">
+                <MessageSquare className="mt-0.5 shrink-0 text-[var(--lakai-primary-strong)]" size={20} aria-hidden="true" />
+                <div>
+                  <div className="font-serif text-xl font-semibold text-[var(--lakai-primary-strong)]">{t('Start a new chat')}</div>
+                  <p className="mt-2 leading-6">
+                    {t('Ask a question about documents in this workspace. Answers should include source references when support is available.')}
+                  </p>
+                </div>
               </div>
             </div>
           )}
           <div ref={scrollRef} />
         </div>
 
-        <div className="border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-[#101820] sm:p-4">
+        <div className="border-t border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-3 sm:p-4">
           <label className="sr-only" htmlFor="case-query-input">
             {t('Question')}
           </label>
@@ -1285,21 +1613,25 @@ export default function QueryPage() {
                   runQuery();
                 }
               }}
-              className="min-h-[58px] min-w-0 flex-1 resize-none rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 sm:min-h-[54px] sm:rounded-md"
+              className="min-h-[58px] min-w-0 flex-1 resize-none rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-focus)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--lakai-focus)_25%,transparent)] sm:min-h-[54px]"
               placeholder={t(EXAMPLE_QUESTION)}
             />
             <button
               type="button"
               onClick={runQuery}
               disabled={state.running}
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-700 px-3 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 lg:w-36 lg:rounded-md"
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--lakai-primary)] px-3 text-sm font-semibold text-[var(--lakai-primary-text)] hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 lg:w-36"
             >
               <Send size={16} aria-hidden="true" />
               <span className="hidden sm:inline">{state.running ? t('Running') : t('Send')}</span>
             </button>
           </div>
-          <div className="mt-2 hidden flex-wrap items-center gap-3 text-xs font-medium text-gray-500 dark:text-gray-400 sm:flex">
+          <div className="mt-2 hidden flex-wrap items-center gap-3 text-xs font-medium text-[var(--lakai-text-muted)] sm:flex">
             <span>{t('Answer language: {language} | Timezone: {timeZone}', { language: preferences.language, timeZone: preferences.timeZone })}</span>
+            <span className="inline-flex items-center gap-1">
+              <LockKeyhole size={12} aria-hidden="true" />
+              {askSettings.defaultVisibility === 'case_access' ? t('People with case access') : t('Only me')}
+            </span>
             {state.fingerprint?.id ? (
               <RequestFingerprint
                 fingerprintId={state.fingerprint.id}
@@ -1360,6 +1692,7 @@ export default function QueryPage() {
               }}
               onRefresh={refreshConversations}
               t={t}
+              showStarters={askSettings.showStarters}
               className="h-full"
               onClose={() => setConversationMenuOpen(false)}
             />
@@ -1371,6 +1704,13 @@ export default function QueryPage() {
         drawer={citationListDrawer}
         onClose={() => setCitationListDrawer({ open: false, citations: [] })}
         onOpenCitation={openCitation}
+        t={t}
+      />
+      <AskSettingsDrawer
+        open={askSettingsOpen}
+        onClose={() => setAskSettingsOpen(false)}
+        settings={askSettings}
+        onChange={setAskSettings}
         t={t}
       />
       <CitationDrawer drawer={drawer} caseId={caseId} onClose={() => setDrawer((current) => ({ ...current, open: false }))} t={t} />
