@@ -14,6 +14,42 @@ import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 
 const EXAMPLE_QUESTION = 'Which documents mention the parenting schedule?';
+const QUERY_JOB_ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling']);
+
+function waitFor(milliseconds) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, milliseconds);
+  });
+}
+
+function queryJobStatus(job) {
+  return String(job?.status || '').toLowerCase();
+}
+
+function queryJobIsActive(job) {
+  return QUERY_JOB_ACTIVE_STATUSES.has(queryJobStatus(job));
+}
+
+function queryJobDisplayMessage(job) {
+  return job?.result_json?.display_message
+    || job?.display?.display_message
+    || job?.display_message
+    || job?.current_step
+    || job?.result_json?.answer_preview
+    || 'Ask Documents is searching your sources.';
+}
+
+function queryJobResponse(job) {
+  return job?.result_json?.query_response || job?.query_response || null;
+}
+
+function queryJobConversationId(job) {
+  return job?.result_json?.conversation_id || job?.conversation_id || job?.request_payload?.conversation_id || null;
+}
+
+function queryJobFingerprint(job) {
+  return job?.result_json?.request_fingerprint_id || job?.request_fingerprint_id || null;
+}
 
 function Panel({ title, children }) {
   return (
@@ -343,7 +379,7 @@ function AgenticSummary({ result, t }) {
   );
 }
 
-function QueryMessage({ message, onCopyAnswer, copied, onOpenCitation, onOpenCitationList, showDiagnostics, t }) {
+function QueryMessage({ message, caseId, onCopyAnswer, copied, onOpenCitation, onOpenCitationList, showDiagnostics, t }) {
   if (message.role === 'user') {
     return (
       <div className="flex min-w-0 max-w-full justify-end">
@@ -365,13 +401,29 @@ function QueryMessage({ message, onCopyAnswer, copied, onOpenCitation, onOpenCit
   const displayGuidance = typeof result?.display_guidance === 'string'
     ? result.display_guidance
     : result?.display_guidance?.message || result?.display_guidance?.summary || null;
+  const jobId = message.job?.job_id;
+  const jobLabel = queryJobDisplayMessage(message.job);
   return (
     <div className="flex min-w-0 max-w-full justify-start">
       <div className="min-w-0 w-full max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820] sm:max-w-[92%] sm:p-4">
         {message.running ? (
-          <div className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
-            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-            {t('Running')}
+          <div className="space-y-3 text-gray-700 dark:text-gray-200">
+            <div className="flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              <span className="font-semibold">{t('Ask Documents is working')}</span>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {t(jobLabel)}
+            </p>
+            {jobId ? (
+              <Link
+                to={`/evidence/cases/${caseId}/jobs/${jobId}`}
+                className="inline-flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100"
+              >
+                <ExternalLink size={13} aria-hidden="true" />
+                {t('Open query job')}
+              </Link>
+            ) : null}
           </div>
         ) : message.error ? (
           <ErrorPanel title="Query failed" error={message.error} />
@@ -754,7 +806,15 @@ export default function QueryPage() {
     error: null,
   });
   const scrollRef = useRef(null);
+  const mountedRef = useRef(true);
   const showDiagnostics = debugEnabled;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const loadQueryReadiness = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -888,7 +948,7 @@ export default function QueryPage() {
     setState((current) => ({ ...current, running: true, error: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.queryCase(
+      const result = await evidenceApi.createQueryJob(
         caseId,
         {
           question: trimmed,
@@ -900,44 +960,131 @@ export default function QueryPage() {
         },
         { token },
       );
-      recordFingerprint(result, 'Case query');
+      recordFingerprint(result, 'Queue case query');
       const fingerprint = {
         id: result.requestFingerprintId || result.data?.request_fingerprint_id,
         correlationId: result.correlationId,
       };
+      const queuedJob = result.data?.job || result.data;
+      const queuedConversationId = result.data?.conversation_id || queryJobConversationId(queuedJob);
       setMessages((current) =>
         current.map((message) =>
           message.id === assistantId
             ? {
                 ...message,
-                running: false,
-                result: result.data,
+                running: true,
+                job: queuedJob,
                 fingerprint,
               }
             : message,
         ),
       );
       setConversationMenuOpen(false);
-      setState({
-        running: false,
+      setState((current) => ({
+        ...current,
+        running: true,
         error: null,
-        result: result.data,
+        result: null,
         fingerprint,
-      });
-      if (result.data?.conversation_id) {
-        setActiveConversationId(result.data.conversation_id);
+      }));
+      if (queuedConversationId) {
+        setActiveConversationId(queuedConversationId);
         if (typeof window !== 'undefined') {
-          window.localStorage.setItem(conversationStorageKey(caseId), result.data.conversation_id);
+          window.localStorage.setItem(conversationStorageKey(caseId), queuedConversationId);
         }
       }
-      await refreshConversations();
+
+      let latestJob = queuedJob;
+      while (mountedRef.current && latestJob?.job_id && queryJobIsActive(latestJob)) {
+        await waitFor(2500);
+        if (!mountedRef.current) {
+          return;
+        }
+        const jobResult = await evidenceApi.getJob(caseId, latestJob.job_id, { token });
+        recordFingerprint(jobResult, 'Query job status');
+        latestJob = jobResult.data;
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  running: queryJobIsActive(latestJob),
+                  job: latestJob,
+                  fingerprint: {
+                    id: jobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
+                    correlationId: jobResult.correlationId,
+                  },
+                }
+              : message,
+          ),
+        );
+      }
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const queryResponse = queryJobResponse(latestJob);
+      const completedConversationId = queryJobConversationId(latestJob) || queuedConversationId;
+      const completedFingerprint = {
+        id: queryJobFingerprint(latestJob) || fingerprint.id,
+        correlationId: fingerprint.correlationId,
+      };
+
+      if (queryResponse) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  running: false,
+                  job: latestJob,
+                  result: queryResponse,
+                  fingerprint: completedFingerprint,
+                }
+              : message,
+          ),
+        );
+        setState({
+          running: false,
+          error: null,
+          result: queryResponse,
+          fingerprint: completedFingerprint,
+        });
+        if (completedConversationId) {
+          setActiveConversationId(completedConversationId);
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem(conversationStorageKey(caseId), completedConversationId);
+          }
+        }
+        await refreshConversations();
+        if (completedConversationId) {
+          await loadConversation(completedConversationId);
+        }
+        return;
+      }
+
+      if (completedConversationId) {
+        const conversation = await loadConversation(completedConversationId);
+        await refreshConversations();
+        if (conversation) {
+          return;
+        }
+      }
+
+      const terminalStatus = queryJobStatus(latestJob);
+      const message = latestJob?.error_message
+        || latestJob?.result_json?.error_message
+        || queryJobDisplayMessage(latestJob)
+        || `Ask Documents job finished with status ${terminalStatus || 'unknown'}.`;
+      throw new Error(message);
     } catch (error) {
       setMessages((current) =>
         current.map((message) => (message.id === assistantId ? { ...message, running: false, error } : message)),
       );
       setState((current) => ({ ...current, running: false, error }));
     }
-  }, [activeConversationId, caseId, getAccessToken, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics]);
+  }, [activeConversationId, caseId, getAccessToken, loadConversation, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics]);
 
   const openCitation = useCallback(
     async (citation) => {
@@ -1102,6 +1249,7 @@ export default function QueryPage() {
               <QueryMessage
                 key={message.id}
                 message={message}
+                caseId={caseId}
                 onCopyAnswer={copyAnswer}
                 copied={copiedAnswer}
                 onOpenCitation={openCitation}
