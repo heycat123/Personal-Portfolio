@@ -659,12 +659,12 @@ export default function DashboardPage() {
         result={state.resolveResult}
       />
 
-      <NeedsAttentionPanel
-        items={attentionItems}
-        description="Items that may block full propagation, sync, search, access, or review."
-        emptyTitle="No attention items blocking readiness"
-        emptyDetail="Source sync, search readiness, and access checks do not show open issues right now."
-      />
+      {attentionItems.length ? (
+        <NeedsAttentionPanel
+          items={attentionItems}
+          description="Items that may block full propagation, sync, search, access, or review."
+        />
+      ) : null}
 
       <section className="mb-5">
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
