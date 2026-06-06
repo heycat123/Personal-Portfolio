@@ -28,19 +28,33 @@ function citationLabel(citation) {
   if (typeof citation === 'string') {
     return citation;
   }
-  return citation?.citation || `${citation?.source || 'Source'}${citation?.page ? `, p. ${citation.page}` : ''}`;
+  return citation?.citation_label || citation?.citation || `${citation?.source || 'Source'}${citationPage(citation) ? `, p. ${citationPage(citation)}` : ''}`;
+}
+
+function citationSourceTarget(citation) {
+  if (!citation || typeof citation === 'string') {
+    return {};
+  }
+  return citation.source_target && typeof citation.source_target === 'object' ? citation.source_target : {};
+}
+
+function citationPage(citation) {
+  const target = citationSourceTarget(citation);
+  return target.page_number || target.page || citation?.page_number || citation?.page || null;
 }
 
 function citationOpenId(citation) {
   if (!citation || typeof citation === 'string') {
     return null;
   }
-  return citation.file_id || citation.file_hash || citation.content_hash || null;
+  const target = citationSourceTarget(citation);
+  return target.file_id || target.file_hash || target.content_hash || citation.file_id || citation.file_hash || citation.content_hash || null;
 }
 
 function communicationCitationDetails(citation) {
+  const target = citationSourceTarget(citation);
   const rawCitation = typeof citation === 'string' ? citation : citation?.citation || '';
-  const sourceType = typeof citation === 'string' ? '' : String(citation?.source_type || '');
+  const sourceType = typeof citation === 'string' ? '' : String(target.source_type || citation?.source_type || '');
   const conversationMatch = rawCitation.match(/\b([A-Za-z0-9_-]+)\s+conversation\s+([^,\]]+)/i);
   const messageMatch = rawCitation.match(/\bmessage_id\s+([A-Za-z0-9_-]+)/i);
   const timestampMatch = rawCitation.match(/\bconversation\s+[^,]+,\s*([^,]+),\s*from\s+/i);
@@ -48,9 +62,9 @@ function communicationCitationDetails(citation) {
   const details = {
     source_type: sourceType || (conversationMatch || messageMatch ? 'communication_message' : ''),
     platform: typeof citation === 'string' ? conversationMatch?.[1] : citation?.platform || conversationMatch?.[1],
-    conversation_id: typeof citation === 'string' ? conversationMatch?.[2] : citation?.conversation_id || conversationMatch?.[2],
-    message_id: typeof citation === 'string' ? messageMatch?.[1] : citation?.message_id || messageMatch?.[1],
-    timestamp_iso: typeof citation === 'string' ? timestampMatch?.[1] : citation?.timestamp_iso || timestampMatch?.[1],
+    conversation_id: typeof citation === 'string' ? conversationMatch?.[2] : target.conversation_id || citation?.conversation_id || conversationMatch?.[2],
+    message_id: typeof citation === 'string' ? messageMatch?.[1] : target.message_id || citation?.message_id || messageMatch?.[1],
+    timestamp_iso: typeof citation === 'string' ? timestampMatch?.[1] : target.timestamp_iso || citation?.timestamp_iso || timestampMatch?.[1],
     sender_display_name: typeof citation === 'string' ? senderRecipientMatch?.[1] : citation?.sender_display_name || senderRecipientMatch?.[1],
     sender_address: typeof citation === 'string' ? null : citation?.sender_address,
     recipient_display_name: typeof citation === 'string' ? senderRecipientMatch?.[2] : citation?.recipient_display_name || senderRecipientMatch?.[2],
@@ -59,16 +73,24 @@ function communicationCitationDetails(citation) {
     message_text_preview: typeof citation === 'string' ? null : citation?.message_text_preview,
     citation: rawCitation,
   };
-  const isCommunication = details.source_type === 'communication_message'
+  const isCommunication = ['communication_message', 'communication_behavior_audit'].includes(details.source_type)
     || Boolean(details.message_id)
     || Boolean(details.conversation_id && /conversation/i.test(rawCitation));
   return isCommunication ? details : null;
 }
 
 function citationOpenTarget(citation) {
+  const target = citationSourceTarget(citation);
+  const targetType = String(target.source_type || '').toLowerCase();
+  if (targetType.includes('communication') || target.message_id || target.conversation_id) {
+    const communication = communicationCitationDetails(citation);
+    if (communication) {
+      return { type: 'communication', communication };
+    }
+  }
   const documentId = citationOpenId(citation);
   if (documentId) {
-    return { type: 'document', documentId };
+    return { type: 'document', documentId, page: citationPage(citation), sourceTarget: target };
   }
   const communication = communicationCitationDetails(citation);
   if (communication) {
@@ -90,11 +112,12 @@ function citationCandidates(citation) {
   if (!citation || typeof citation === 'string') {
     return [citation].filter(Boolean);
   }
-  const page = citation.page || citation.page_number;
+  const page = citationPage(citation);
   return [
     citation.packet_item_id,
     citation.packet_item_id ? `[${citation.packet_item_id}]` : null,
     citationLabel(citation),
+    citation.citation_label,
     citation.citation,
     citation.source && page ? `${citation.source}, p. ${page}` : null,
     citation.source && page ? `${citation.source} p. ${page}` : null,
@@ -147,7 +170,7 @@ function matchingCitationsForBracket(part, citations, lookup) {
 
     if (bestIndex === Infinity && citation && typeof citation !== 'string') {
       const source = normalizeCitationLabel(citation.source);
-      const page = citation.page || citation.page_number;
+      const page = citationPage(citation);
       const pagePattern = page ? new RegExp(`\\bp(?:age)?\\.?\\s*${escapeRegex(page)}\\b`) : null;
       if (source && pagePattern && inner.includes(source) && pagePattern.test(inner)) {
         bestIndex = inner.indexOf(source);
@@ -940,7 +963,7 @@ export default function QueryPage() {
         loading: true,
         error: null,
         citation,
-        page: citation.page_number || citation.page,
+        page: target.page || citationPage(citation),
         document: null,
         communication: null,
       });
