@@ -49,26 +49,26 @@ function statusTone(status) {
   if (status === 'ready') {
     return {
       icon: CheckCircle2,
-      iconClass: 'text-emerald-700 dark:text-emerald-300',
-      border: 'border-emerald-200 dark:border-emerald-900/60',
-      background: 'bg-emerald-50 dark:bg-emerald-950/20',
+      iconClass: 'text-[var(--lakai-ready)]',
+      border: 'border-[var(--lakai-border-soft)]',
+      background: 'bg-[var(--lakai-surface)]',
       badge: 'configured',
     };
   }
   if (status === 'working') {
     return {
       icon: Activity,
-      iconClass: 'text-sky-700 dark:text-sky-300',
-      border: 'border-sky-200 dark:border-sky-900/60',
-      background: 'bg-sky-50 dark:bg-sky-950/20',
+      iconClass: 'text-[var(--lakai-primary)]',
+      border: 'border-[var(--lakai-border-soft)]',
+      background: 'bg-[var(--lakai-accent-soft)]',
       badge: 'running',
     };
   }
   return {
     icon: CircleAlert,
-    iconClass: 'text-amber-700 dark:text-amber-300',
-    border: 'border-amber-200 dark:border-amber-900/60',
-    background: 'bg-amber-50 dark:bg-amber-950/20',
+    iconClass: 'text-[var(--lakai-review)]',
+    border: 'border-[var(--lakai-border-soft)]',
+    background: 'bg-[var(--lakai-surface)]',
     badge: 'pending',
   };
 }
@@ -77,15 +77,15 @@ function ReadinessCard({ title, status, label, detail, actionLabel, to }) {
   const tone = statusTone(status);
   const Icon = tone.icon;
   return (
-    <section className={`rounded-lg border p-4 shadow-sm ${tone.border} ${tone.background}`}>
+    <section className={`rounded-2xl border p-4 shadow-sm ${tone.border} ${tone.background}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="rounded-md border border-black/10 bg-white/70 p-2 dark:border-white/10 dark:bg-white/10">
+          <div className="rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] p-2">
             <Icon className={tone.iconClass} size={18} aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{title}</h3>
-            <p className="mt-1 text-sm leading-5 text-gray-700 dark:text-gray-300">{detail}</p>
+            <h3 className="text-sm font-semibold text-[var(--lakai-text)]">{title}</h3>
+            <p className="mt-1 text-sm leading-5 text-[var(--lakai-text-muted)]">{detail}</p>
           </div>
         </div>
         <StatusBadge status={tone.badge} label={label} />
@@ -93,7 +93,7 @@ function ReadinessCard({ title, status, label, detail, actionLabel, to }) {
       {to && actionLabel ? (
         <Link
           to={to}
-          className="mt-4 inline-flex items-center rounded-md border border-black/10 bg-white/70 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-white dark:border-white/10 dark:bg-white/10 dark:text-gray-100 dark:hover:bg-white/15"
+          className="mt-4 inline-flex min-h-10 items-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--lakai-primary-strong)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
         >
           {actionLabel}
         </Link>
@@ -104,22 +104,22 @@ function ReadinessCard({ title, status, label, detail, actionLabel, to }) {
 
 function QuickActionCard({ icon, title, detail, to, tone = 'default' }) {
   const toneClasses = {
-    default: 'border-gray-200 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-gray-700',
-    primary: 'border-sky-200 bg-sky-50 hover:border-sky-300 dark:border-sky-900/60 dark:bg-sky-950/20 dark:hover:border-sky-800',
-    good: 'border-emerald-200 bg-emerald-50 hover:border-emerald-300 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:hover:border-emerald-800',
+    default: 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] hover:border-[var(--lakai-primary)]',
+    primary: 'border-[var(--lakai-primary)] bg-[var(--lakai-accent-soft)] hover:border-[var(--lakai-primary-strong)]',
+    good: 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] hover:border-[var(--lakai-ready)]',
   };
   return (
     <Link
       to={to}
-      className={`block rounded-lg border p-4 shadow-sm transition-colors ${toneClasses[tone] || toneClasses.default}`}
+      className={`block rounded-2xl border p-4 shadow-sm transition-colors ${toneClasses[tone] || toneClasses.default}`}
     >
       <div className="flex items-start gap-3">
-        <div className="rounded-md border border-black/10 bg-white/70 p-2 text-gray-700 dark:border-white/10 dark:bg-white/10 dark:text-gray-100">
+        <div className="rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] p-2 text-[var(--lakai-primary-strong)]">
           {createElement(icon, { size: 18, 'aria-hidden': true })}
         </div>
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-gray-950 dark:text-white">{title}</div>
-          <div className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-400">{detail}</div>
+          <div className="text-sm font-semibold text-[var(--lakai-text)]">{title}</div>
+          <div className="mt-1 text-sm leading-5 text-[var(--lakai-text-muted)]">{detail}</div>
         </div>
       </div>
     </Link>
@@ -138,20 +138,20 @@ function ReviewCard({ icon, title, detail, to, count, countLabel }) {
   return (
     <Link
       to={to}
-      className="block rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-sky-300 dark:border-gray-800 dark:bg-[#101820] dark:hover:border-sky-800"
+      className="block rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-sm transition-colors hover:border-[var(--lakai-primary)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="rounded-md border border-black/10 bg-gray-50 p-2 text-gray-700 dark:border-white/10 dark:bg-white/10 dark:text-gray-100">
+          <div className="rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] p-2 text-[var(--lakai-primary-strong)]">
             {createElement(icon, { size: 18, 'aria-hidden': true })}
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{title}</h3>
-            <p className="mt-1 text-sm leading-5 text-gray-600 dark:text-gray-400">{detail}</p>
+            <h3 className="text-sm font-semibold text-[var(--lakai-text)]">{title}</h3>
+            <p className="mt-1 text-sm leading-5 text-[var(--lakai-text-muted)]">{detail}</p>
           </div>
         </div>
         {Number.isFinite(count) ? (
-          <div className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="shrink-0 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] px-2 py-1 text-xs font-semibold text-[var(--lakai-primary-strong)]">
             <AnimatedCount value={count} /> {countLabel}
           </div>
         ) : null}
@@ -630,16 +630,6 @@ export default function DashboardPage() {
       <PageHeader
         title="Case Home"
         description="Review document readiness, source sync, people/contact review, and pending invitations."
-        actions={
-          <button
-            type="button"
-            onClick={loadDashboard}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
-          >
-            <RefreshCw size={15} aria-hidden="true" />
-            {t('Refresh')}
-          </button>
-        }
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDashboard} /></div> : null}
