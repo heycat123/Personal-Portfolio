@@ -745,6 +745,15 @@ function conversationVisibilityLabel(conversation, t) {
   return t('Only me');
 }
 
+function conversationPreviewText(conversation, t) {
+  const raw = conversation?.last_message_preview || `${conversation?.message_count || 0} ${t('messages')}`;
+  const normalized = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 150) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 147).trim()}...`;
+}
+
 function messagesFromConversation(conversation) {
   return (conversation?.messages || []).map((message) => {
     if (message.role === 'assistant') {
@@ -907,7 +916,7 @@ function ConversationList({
                   </div>
                 </div>
                 <div className="mt-3 line-clamp-2 text-xs leading-5 text-[var(--lakai-text-muted)]">
-                  {conversation.last_message_preview || `${conversation.message_count || 0} ${t('messages')}`}
+                  {conversationPreviewText(conversation, t)}
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-2 py-1 text-[11px] font-semibold text-[var(--lakai-text-muted)]">
