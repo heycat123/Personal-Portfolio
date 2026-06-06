@@ -1630,13 +1630,11 @@ export default function QueryPage() {
             <ErrorPanel title="Ask Documents readiness failed" error={readinessState.error} onRetry={loadQueryReadiness} />
           ) : null}
 
-          {chatSettings.showReadiness ? (
+          {chatSettings.showReadiness && askAttentionItems.length ? (
             <NeedsAttentionPanel
               items={askAttentionItems}
               title="Ask Documents attention"
               description="Search and citation readiness items that may affect source-based answers."
-              emptyTitle="Ask Documents is not showing readiness blockers"
-              emptyDetail="Review source citations and keep working in other parts of the workspace."
               limit={3}
             />
           ) : null}
