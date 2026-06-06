@@ -109,15 +109,15 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
         run: |
           ARCHIVE="${IMAGE_NAME}-${GITHUB_SHA}.tar.gz"
-          ssh -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" "mkdir -p ~/frontend-releases"
-          scp -i ~/.ssh/ec2_deploy_key "${ARCHIVE}" "${EC2_USER}@${EC2_HOST}:~/frontend-releases/${ARCHIVE}"
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" "mkdir -p ~/frontend-releases"
+          scp -O -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/ec2_deploy_key "${ARCHIVE}" "${EC2_USER}@${EC2_HOST}:~/frontend-releases/${ARCHIVE}"
 
       - name: Deploy on EC2
         env:
           EC2_HOST: ${{ env.EC2_DEPLOY_HOST }}
           EC2_USER: ${{ secrets.EC2_USER || 'ec2-user' }}
         run: |
-          ssh -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" \
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -i ~/.ssh/ec2_deploy_key "${EC2_USER}@${EC2_HOST}" \
             IMAGE_NAME="${IMAGE_NAME}" \
             IMAGE_TAG="${GITHUB_SHA}" \
             CONTAINER_NAME="${CONTAINER_NAME}" \
@@ -127,48 +127,78 @@ jobs:
           RELEASE_DIR="$HOME/frontend-releases"
           ARCHIVE="${IMAGE_NAME}-${IMAGE_TAG}.tar.gz"
           IMAGE_REF="${IMAGE_NAME}:${IMAGE_TAG}"
-          CANDIDATE_NAME="${CONTAINER_NAME}-candidate"
-          PREVIOUS_NAME="${CONTAINER_NAME}-previous"
+          SHORT_TAG="$(printf '%s' "${IMAGE_TAG}" | cut -c1-12)"
+          CANDIDATE_NAME="${CONTAINER_NAME}-${SHORT_TAG}"
+          NGINX_CONF="/etc/nginx/conf.d/forestlee.us.conf"
 
           cd "${RELEASE_DIR}"
           docker load -i "${ARCHIVE}"
 
           docker rm -f "${CANDIDATE_NAME}" >/dev/null 2>&1 || true
-          docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
 
-          docker run -d --name "${CANDIDATE_NAME}" --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18081:80 "${IMAGE_REF}"
-          sleep 3
-          for path in / /projects /evidence; do
-            curl -fsS "http://127.0.0.1:18081${path}" >/dev/null
-          done
-          curl -fsS "http://127.0.0.1:18081/evidence-api/health" >/dev/null
-          docker rm -f "${CANDIDATE_NAME}" >/dev/null
-
-          rollback() {
-            echo "Deployment failed. Rolling back frontend container."
-            docker logs --tail 100 "${CONTAINER_NAME}" || true
-            docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
-            if docker ps -a --format '{{.Names}}' | grep -Fxq "${PREVIOUS_NAME}"; then
-              docker rename "${PREVIOUS_NAME}" "${CONTAINER_NAME}" || true
-              docker start "${CONTAINER_NAME}" || true
-            fi
-          }
-
-          if docker ps -a --format '{{.Names}}' | grep -Fxq "${CONTAINER_NAME}"; then
-            docker rename "${CONTAINER_NAME}" "${PREVIOUS_NAME}"
-            docker stop "${PREVIOUS_NAME}" >/dev/null
+          if ! sudo test -f "${NGINX_CONF}"; then
+            echo "Missing ${NGINX_CONF}; cannot perform blue/green frontend switch."
+            exit 1
           fi
 
-          trap rollback ERR
-          docker run -d --name "${CONTAINER_NAME}" --restart unless-stopped --add-host=host.docker.internal:host-gateway -p 127.0.0.1:18080:80 "${IMAGE_REF}"
+          current_port="$(sudo grep -Eo 'proxy_pass http://127\.0\.0\.1:1808[01];' "${NGINX_CONF}" | head -n 1 | grep -Eo '1808[01]' || true)"
+          if [ -z "${current_port}" ]; then
+            current_port="18080"
+          fi
+          if [ "${current_port}" = "18080" ]; then
+            candidate_port="18081"
+          else
+            candidate_port="18080"
+          fi
+          echo "Current frontend port: ${current_port}; candidate port: ${candidate_port}."
+
+          docker ps --format '{{.ID}} {{.Ports}} {{.Names}}' \
+            | awk -v port="${candidate_port}" '$0 ~ "127.0.0.1:" port "->80/tcp" { print $1 }' \
+            | xargs -r docker rm -f
+
+          docker run -d \
+            --name "${CANDIDATE_NAME}" \
+            --restart unless-stopped \
+            --label app=hom-central-frontend \
+            --label role=frontend \
+            --label release="${IMAGE_TAG}" \
+            --label frontend-port="${candidate_port}" \
+            --log-driver json-file \
+            --log-opt max-size=50m \
+            --log-opt max-file=3 \
+            --add-host=host.docker.internal:host-gateway \
+            -p "127.0.0.1:${candidate_port}:80" \
+            "${IMAGE_REF}"
           sleep 3
           for path in / /projects /evidence; do
-            curl -fsS "http://127.0.0.1:18080${path}" >/dev/null
+            curl -fsS "http://127.0.0.1:${candidate_port}${path}" >/dev/null
           done
-          curl -fsS "http://127.0.0.1:18080/evidence-api/health" >/dev/null
+          curl -fsS "http://127.0.0.1:${candidate_port}/evidence-api/health" >/dev/null
+
+          rollback() {
+            echo "Deployment failed. Keeping or restoring frontend on port ${current_port}."
+            sudo sed -i -E "s#proxy_pass http://127\\.0\\.0\\.1:1808[01];#proxy_pass http://127.0.0.1:${current_port};#g" "${NGINX_CONF}" || true
+            sudo nginx -t && sudo systemctl reload nginx || true
+            docker logs --tail 100 "${CANDIDATE_NAME}" || true
+            docker rm -f "${CANDIDATE_NAME}" >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+
+          sudo cp "${NGINX_CONF}" "${NGINX_CONF}.bak.${IMAGE_TAG}"
+          sudo sed -i -E "s#proxy_pass http://127\\.0\\.0\\.1:1808[01];#proxy_pass http://127.0.0.1:${candidate_port};#g" "${NGINX_CONF}"
+          sudo nginx -t
+          sudo systemctl reload nginx
+
+          for path in / /projects /evidence; do
+            curl -fsS --resolve forestlee.us:443:127.0.0.1 "https://forestlee.us${path}" >/dev/null
+          done
+          curl -fsS --resolve forestlee.us:443:127.0.0.1 "https://forestlee.us/evidence-api/health" >/dev/null
           trap - ERR
 
-          docker rm -f "${PREVIOUS_NAME}" >/dev/null 2>&1 || true
+          docker ps --format '{{.ID}} {{.Ports}} {{.Names}}' \
+            | awk -v port="${current_port}" '$0 ~ "127.0.0.1:" port "->80/tcp" { print $1 }' \
+            | xargs -r docker rm -f
+          docker ps -a --filter label=app=hom-central-frontend --filter status=exited -q | xargs -r docker rm -f
           rm -f "${ARCHIVE}"
           docker image prune -f --filter "label=app=hom-central-frontend" --filter "until=168h" >/dev/null
           REMOTE_SCRIPT
