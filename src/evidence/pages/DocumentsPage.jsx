@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Info, Search, ShieldAlert, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, FileText, Info, Plus, Search, Settings2, ShieldAlert, Trash2, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -343,6 +343,57 @@ function facetOptions(facets, key) {
   }));
 }
 
+function originCount(facets, matcher) {
+  return facetOptions(facets, 'origin_label').reduce((total, option) => (
+    matcher(String(option.label || option.value || '').toLowerCase())
+      ? total + Number(option.count || 0)
+      : total
+  ), 0);
+}
+
+function DocumentSourcesStrip({ caseId, facets, t }) {
+  const googleDriveCount = originCount(facets, (label) => label.includes('google') || label.includes('drive'));
+  const googleDriveLabel = googleDriveCount > 0
+    ? t('Google Drive connected')
+    : t('Google Drive available');
+
+  return (
+    <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--lakai-text-muted)]">
+            <span className="font-semibold text-[var(--lakai-text)]">{t('Document sources')}</span>
+            <span aria-hidden="true">/</span>
+            <span>{t('Files and connected folders used for this case')}</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 dark:border-emerald-800/70 dark:bg-emerald-950/35 dark:text-emerald-100">
+              <CheckCircle2 size={16} aria-hidden="true" />
+              {googleDriveLabel}
+              {googleDriveCount > 0 ? <span className="text-xs font-medium opacity-75">{googleDriveCount}</span> : null}
+            </span>
+            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)]">
+              <Upload size={16} aria-hidden="true" />
+              {t('Upload files available')}
+            </span>
+            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)]">
+              <Settings2 size={16} aria-hidden="true" />
+              {t('More sources available')}
+            </span>
+          </div>
+        </div>
+        <Link
+          to={`/evidence/cases/${caseId}/intake`}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+        >
+          <Settings2 size={16} aria-hidden="true" />
+          {t('Manage document sources')}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function ClassificationOverview({ classificationOptions, issueTagOptions, filterValues, onFilter, t }) {
   const activeClassification = filterValues.evidence_type_label || '';
   const activeIssueTag = filterValues.legal_factor_code || '';
@@ -350,16 +401,16 @@ function ClassificationOverview({ classificationOptions, issueTagOptions, filter
   const reviewOption = issueTagOptions.find((option) => option.value === 'review_needed');
 
   return (
-    <section className="mb-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+    <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-5 shadow-[var(--lakai-shadow-panel)]">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Document categories')}</div>
-          <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{t('Organize documents by category')}</h2>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Category groups')}</div>
+          <h2 className="mt-1 text-xl font-semibold text-[var(--lakai-text)]">{t('Review documents by category')}</h2>
+          <p className="mt-2 max-w-2xl text-sm text-[var(--lakai-text-muted)]">
             {t('Categories help organize your documents. They do not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
           </p>
         </div>
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex items-start gap-2">
             <ShieldAlert className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
             <span>{t('Some files are listed from Google Drive before they are ready for search. Pending items usually mean text, search, or people/contact links are still being prepared.')}</span>
@@ -373,17 +424,17 @@ function ClassificationOverview({ classificationOptions, issueTagOptions, filter
             key={option.value}
             type="button"
             onClick={() => onFilter('evidence_type_label', activeClassification === option.value ? '' : option.value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+            className={`min-h-10 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
               activeClassification === option.value
-                ? 'border-sky-700 bg-sky-700 text-white'
-                : 'border-gray-200 bg-gray-50 text-gray-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-700 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30'
+                ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-white'
+                : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface)]'
             }`}
           >
             {option.label || option.value}
             <span className="ml-1 opacity-70">{option.count}</span>
           </button>
         )) : (
-          <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:border-gray-700 dark:bg-black/20 dark:text-gray-300">
+          <span className="rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-1.5 text-xs font-semibold text-[var(--lakai-text-muted)]">
             {t('Classification data is still processing')}
           </span>
         )}
@@ -391,7 +442,7 @@ function ClassificationOverview({ classificationOptions, issueTagOptions, filter
           <button
             type="button"
             onClick={() => onFilter('legal_factor_code', activeIssueTag === reviewOption.value ? '' : reviewOption.value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+            className={`min-h-10 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
               activeIssueTag === reviewOption.value
                 ? 'border-amber-700 bg-amber-700 text-white'
                 : 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100'
@@ -1192,19 +1243,30 @@ export default function DocumentsPage() {
     <div>
       <PageHeader
         title="Documents"
-        description={`${state.total} ${t('documents tracked')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('processed documents')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('still need secure-copy review')}.`}
+        description={`${state.total} ${t('documents in this workspace')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('ready for organization and search')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('need source-copy review')}.`}
         actions={
-          <button
-            type="button"
-            onClick={exportCurrentView}
-            disabled={exportState.busy || state.loading || !state.total}
-            className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Download size={16} aria-hidden="true" />
-            {exportState.busy ? t('Exporting') : t('Export current view')}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={`/evidence/cases/${caseId}/intake`}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
+            >
+              <Plus size={16} aria-hidden="true" />
+              {t('Add documents')}
+            </Link>
+            <button
+              type="button"
+              onClick={exportCurrentView}
+              disabled={exportState.busy || state.loading || !state.total}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={16} aria-hidden="true" />
+              {exportState.busy ? t('Exporting') : t('Export document list')}
+            </button>
+          </div>
         }
       />
+
+      <DocumentSourcesStrip caseId={caseId} facets={state.facets} t={t} />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
@@ -1311,25 +1373,25 @@ export default function DocumentsPage() {
       </section>
 
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processed Documents')}</div>
-          <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{extractedFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Documents recorded for organization and search')}</div>
+        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Ready for search')}</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--lakai-text)]">{extractedFiles}</div>
+          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Documents recorded for organization and Ask Documents')}</div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure Copies')}</div>
+        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Secure workspace copies')}</div>
           <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{s3SyncedFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{s3SyncedRecords} {t('secure workspace copy records')}</div>
+          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{s3SyncedRecords} {t('secure workspace copy records')}</div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Needs source copy review')}</div>
+        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Needs source-copy review')}</div>
           <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">{missingS3Files}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Files that need a secure workspace copy confirmed before full search')}</div>
+          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Files that need a secure workspace copy confirmed before search')}</div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Not processed yet')}</div>
-          <div className="mt-1 text-2xl font-semibold text-sky-700 dark:text-sky-300">{s3OnlyFiles}</div>
-          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{t('Files copied to the workspace but not processed yet')}</div>
+        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Not processed yet')}</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--lakai-primary)]">{s3OnlyFiles}</div>
+          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Files copied to the workspace but not ready for search')}</div>
         </div>
       </div>
 
