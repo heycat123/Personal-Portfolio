@@ -381,9 +381,6 @@ function originCount(facets, matcher) {
 
 function DocumentSourcesStrip({ caseId, facets, t, canManageSources = false }) {
   const googleDriveCount = originCount(facets, (label) => label.includes('google') || label.includes('drive'));
-  const googleDriveLabel = googleDriveCount > 0
-    ? t('Google Drive connected')
-    : t('Google Drive available');
 
   return (
     <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
@@ -395,11 +392,13 @@ function DocumentSourcesStrip({ caseId, facets, t, canManageSources = false }) {
             <span>{t('Files and connected folders used for this case')}</span>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 dark:border-emerald-800/70 dark:bg-emerald-950/35 dark:text-emerald-100">
-              <CheckCircle2 size={16} aria-hidden="true" />
-              {googleDriveLabel}
-              {googleDriveCount > 0 ? <span className="text-xs font-medium opacity-75">{googleDriveCount}</span> : null}
-            </span>
+            {googleDriveCount > 0 ? (
+              <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 dark:border-emerald-800/70 dark:bg-emerald-950/35 dark:text-emerald-100">
+                <CheckCircle2 size={16} aria-hidden="true" />
+                {t('Google Drive connected')}
+                <span className="text-xs font-medium opacity-75">{googleDriveCount}</span>
+              </span>
+            ) : null}
             {canManageSources ? (
               <Link
                 to={`/evidence/cases/${caseId}/intake`}
