@@ -24,6 +24,7 @@ import JobDetailPage from './pages/JobDetailPage';
 import JobsPage from './pages/JobsPage';
 import LoginPage from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
+import PlaceholderPage from './pages/PlaceholderPage';
 import QueryPage from './pages/QueryPage';
 import SettingsPage from './pages/SettingsPage';
 import SupportPage from './pages/SupportPage';
@@ -308,6 +309,15 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="jobs" element={<JobsPage />} />
             <Route path="jobs/:jobId" element={<JobDetailPage />} />
             <Route path="query" element={<QueryPage />} />
+            <Route
+              path="packets"
+              element={(
+                <PlaceholderPage
+                  title="Packets"
+                  description="Organize document groups for review or lawyer handoff. This workspace will keep packet labels as organizational aids, not legal filing readiness."
+                />
+              )}
+            />
             <Route path="system-query" element={<OperationsRoute><SystemQueryPage /></OperationsRoute>} />
             <Route path="health" element={<OperationsRoute><HealthPage /></OperationsRoute>} />
             <Route path="entities" element={<EntitiesPage />} />

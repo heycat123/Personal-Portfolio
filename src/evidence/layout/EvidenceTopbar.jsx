@@ -31,13 +31,13 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
   }
 
   return (
-    <header className="shrink-0 border-b border-gray-200 bg-white/95 px-3 py-3 backdrop-blur dark:border-gray-800 dark:bg-[#101820]/95 sm:px-4 lg:px-6">
+    <header className="shrink-0 border-b border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)]/95 px-3 py-3 text-[var(--lakai-text)] backdrop-blur sm:px-4 lg:px-6">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 items-start gap-2">
           <button
             type="button"
             onClick={onOpenMenu}
-            className="mt-0.5 rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white lg:hidden"
+            className="mt-0.5 rounded-md border border-[var(--lakai-border-soft)] p-2 text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)] lg:hidden"
             title={t('Open navigation')}
             aria-label={t('Open navigation')}
           >
@@ -45,13 +45,13 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
           </button>
           <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold text-gray-950 dark:text-white">{t('Evidence Workspace')}</h1>
+            <h1 className="truncate font-serif text-xl font-semibold text-[var(--lakai-primary-strong)]">
+              {activeCase.caseName}
+            </h1>
             <StatusBadge status={activeCase.status} />
             {isPreviewing ? <StatusBadge status="running" label={t('Preview: {role}', { role: effectiveCaseRole })} /> : null}
           </div>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            {activeCase.tenantName} / {activeCase.caseName}
-          </p>
+          <p className="mt-1 text-sm text-[var(--lakai-text-muted)]">{activeCase.tenantName}</p>
           </div>
         </div>
 
@@ -64,19 +64,19 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
               title={t('Help & Support')}
               aria-label={t('Help & Support')}
               aria-expanded={helpOpen}
-              className="inline-flex items-center gap-2 rounded-md border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white sm:px-3"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[var(--lakai-border-soft)] px-2 py-2 text-sm font-semibold text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)] sm:px-3"
             >
               <HelpCircle size={16} aria-hidden="true" />
               <span className="hidden sm:inline">{t('Help & Support')}</span>
             </button>
             {helpOpen ? (
-              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-800 dark:bg-[#101820]">
+              <div className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-64 rounded-lg border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-2 shadow-xl">
                 <AxiomHelpDrawer trigger="menu" onOpen={() => setHelpOpen(false)} />
                 <SupportFeedbackDrawer trigger="menu" onOpen={() => setHelpOpen(false)} />
                 <Link
                   to={supportPath}
                   onClick={() => setHelpOpen(false)}
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-950 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+                  className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-[var(--lakai-text-muted)] transition-colors hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
                 >
                   <LifeBuoy size={16} aria-hidden="true" />
                   <span>{t('Support history')}</span>
@@ -85,7 +85,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
             ) : null}
           </div>
           <EvidenceThemeToggle darkTheme={darkTheme} setDarkTheme={setDarkTheme} />
-          <label className="flex items-center gap-2 rounded-md border border-gray-200 px-2 py-1.5 text-gray-700 dark:border-gray-800 dark:text-gray-300">
+          <label className="flex min-h-11 items-center gap-2 rounded-md border border-[var(--lakai-border-soft)] px-2 py-1.5 text-[var(--lakai-text-muted)]">
             <Languages size={16} aria-hidden="true" />
             <span className="sr-only">{t('Language')}</span>
             <select
@@ -93,7 +93,7 @@ export default function EvidenceTopbar({ darkTheme, setDarkTheme, onOpenMenu }) 
               onChange={handleLanguageChange}
               disabled={savingLocale}
               title={t('Display language')}
-              className="bg-transparent text-sm font-semibold outline-none dark:bg-[#101820]"
+              className="bg-transparent text-sm font-semibold outline-none"
             >
               {supportedLanguages.map((language) => (
                 <option key={language.code} value={language.code}>
