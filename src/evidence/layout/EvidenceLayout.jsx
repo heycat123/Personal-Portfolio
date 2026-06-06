@@ -35,7 +35,7 @@ export default function EvidenceLayout({ darkTheme, setDarkTheme }) {
   const isAskDocumentsRoute = /\/evidence\/cases\/[^/]+\/query(?:\/|$)/.test(location.pathname);
 
   return (
-    <section className="h-dvh w-full max-w-full overflow-hidden bg-[#f6f7f9] text-gray-900 dark:bg-[#0b0f14] dark:text-gray-100">
+    <section className="lakai-evidence h-dvh w-full max-w-full overflow-hidden bg-[#f6f7f9] text-gray-900 dark:bg-[#0b0f14] dark:text-gray-100">
       <div className="flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden lg:flex-row">
         <EvidenceSidebar open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
         <div className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden">

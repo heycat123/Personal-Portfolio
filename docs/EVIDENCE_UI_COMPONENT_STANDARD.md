@@ -1,5 +1,7 @@
 # Evidence UI Component Standard
 
+> Lak.ai redesign note: `LAKAI_DESIGN_SYSTEM.md` is the current source of truth for the Aurelian Haven `/evidence` redesign, including app shell IA, theme tokens, Ask Documents privacy defaults, and cross-page component standards. Keep this document as the legacy component baseline and operational UX reference unless it conflicts with the Lak.ai standard.
+
 ## Purpose
 
 This document is the baseline for Evidence frontend UX, UI components, routing surfaces, styling, accessibility, and multilingual support. New Evidence UI work should follow this standard unless a product requirement explicitly calls for a different pattern.
