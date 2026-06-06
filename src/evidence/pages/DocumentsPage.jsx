@@ -305,18 +305,46 @@ function PipelineDot({ label, status, colorClass }) {
   );
 }
 
-function PipelineDots({ document, showLabels = false }) {
+function pipelineReadinessItems(document) {
   const statuses = document?.pipeline_status || {};
   const display = document?.pipeline_display || {};
-  const items = [
-    { key: 'postgres', label: display.indexed?.label || 'Text ready', status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending', colorClass: 'bg-sky-500' },
-    { key: 'vector', label: display.search?.label || 'Q&A ready', status: display.search?.status || statuses.vector || document?.vector_status || 'pending', colorClass: 'bg-emerald-500' },
-    { key: 'graph', label: display.relationship_map?.label || 'People/contact links ready', status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending', colorClass: 'bg-violet-500' },
+  return [
+    {
+      key: 'postgres',
+      label: display.indexed?.label || 'Indexed for review',
+      shortLabel: 'Indexed',
+      status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending',
+      colorClass: 'bg-sky-500',
+    },
+    {
+      key: 'vector',
+      label: display.search?.label || 'Search ready',
+      shortLabel: 'Search',
+      status: display.search?.status || statuses.vector || document?.vector_status || 'pending',
+      colorClass: 'bg-sky-500',
+    },
+    {
+      key: 'graph',
+      label: display.relationship_map?.label || 'Relationship map ready',
+      shortLabel: 'Relationship map',
+      status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending',
+      colorClass: 'bg-violet-500',
+    },
   ];
+}
+
+function PipelineDots({ document, showLabels = false }) {
+  const items = pipelineReadinessItems(document);
   if (!showLabels) {
     return (
-      <div className="inline-flex items-center gap-2">
-        {items.map((item) => <PipelineDot key={item.key} {...item} />)}
+      <div className="grid gap-1">
+        {items.map((item) => (
+          <div key={item.key} className="flex min-w-0 items-center gap-2 text-xs" title={`${item.label}: ${statusText(item.status)}`}>
+            <PipelineDot {...item} />
+            <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">{item.shortLabel}</span>
+            <span className="ml-auto shrink-0 capitalize text-gray-500 dark:text-gray-400">{statusText(item.status)}</span>
+          </div>
+        ))}
       </div>
     );
   }
@@ -1111,19 +1139,19 @@ export default function DocumentsPage() {
     {
       key: 'pipeline_status',
       header: t('Search readiness'),
-      headerClassName: 'w-[9%]',
+      headerClassName: 'w-[13%]',
       filterable: true,
       sortable: false,
       filterMulti: true,
       filterOptions: facetOptions(state.facets, 'pipeline_status'),
       filterLabel: t('Require completed steps'),
       filterHint: t('Selected processing filters are combined with AND.'),
-      help: t('Shows whether text, Q&A search, and people/contact links are ready for this document. Empty dots usually mean processing has not finished yet.'),
-      render: (document) => <PipelineDots document={document} />,
+      help: t('Shows the same readiness steps used in the document drawer: indexed for review, search ready, and relationship map ready.'),
+      render: (document) => <PipelineDots document={documentDetails[document.file_id]?.document || document} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
     { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[10%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
-  ]), [caseId, state.facets, t]);
+  ]), [caseId, documentDetails, state.facets, t]);
 
   const appliedFilters = useMemo(() =>
     Object.entries(filterValues || {})
