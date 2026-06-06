@@ -9,7 +9,7 @@ export default function EvidenceThemeToggle({ darkTheme, setDarkTheme }) {
       onClick={() => setDarkTheme?.(!darkTheme)}
       title={darkTheme ? t('Use light mode') : t('Use dark mode')}
       aria-label={darkTheme ? t('Use light mode') : t('Use dark mode')}
-      className="rounded-md border border-gray-200 p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+      className="min-h-11 rounded-md border border-[var(--lakai-border-soft)] p-2 text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
     >
       {darkTheme ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
     </button>
