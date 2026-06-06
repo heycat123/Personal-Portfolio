@@ -274,7 +274,7 @@ Use drawers for focused detail without losing page context:
 
 - Contact details.
 - Add contact.
-- Ask settings.
+- Chat settings.
 - Citation detail.
 - Document preview.
 - Case detail edit.
@@ -327,11 +327,13 @@ Conversation rows should show:
 
 Starter and participant role labels must come from explicit account/role metadata. Do not infer attorney status from a name, email domain, or invitation.
 
-### Privacy Default
+### Chat Privacy
 
 New chats should default to `Only me` for consumer-first MVP unless backend/product policy explicitly changes. Family-law chats may contain sensitive case information.
 
-Visibility options:
+Sharing should be chosen per chat so one conversation can stay private while another can be shared.
+
+Future visibility options:
 
 - Only me
 - People with case access
@@ -341,19 +343,20 @@ When changing to case access, show:
 
 `People with access to this case will be able to see this chat and its sources.`
 
-### Ask Settings
+### Chat Settings
 
-The sliders icon opens `Ask settings`, a section-level drawer.
+The sliders icon opens `Chat settings`, a section-level drawer.
 
 Recommended settings:
 
 - Enhanced chat, only if available on this account.
 - Show follow-up suggestions.
 - Show document readiness before asking.
-- Default visibility.
 - Show who started each chat.
 - Show source citations when available.
 - Warn when documents are still processing.
+
+Do not use a single global sharing toggle for all chats. Per-chat sharing requires a backend visibility update contract before the UI can safely change who sees a saved chat.
 
 If enhanced chat is unavailable, hide it unless there is a product reason to explain the unavailable state. Do not imply enhanced chat is legally better.
 
