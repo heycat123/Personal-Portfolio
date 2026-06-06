@@ -351,7 +351,7 @@ function originCount(facets, matcher) {
   ), 0);
 }
 
-function DocumentSourcesStrip({ caseId, facets, t }) {
+function DocumentSourcesStrip({ caseId, facets, t, canManageSources = false }) {
   const googleDriveCount = originCount(facets, (label) => label.includes('google') || label.includes('drive'));
   const googleDriveLabel = googleDriveCount > 0
     ? t('Google Drive connected')
@@ -372,14 +372,16 @@ function DocumentSourcesStrip({ caseId, facets, t }) {
               {googleDriveLabel}
               {googleDriveCount > 0 ? <span className="text-xs font-medium opacity-75">{googleDriveCount}</span> : null}
             </span>
-            <Link
-              to={`/evidence/cases/${caseId}/intake`}
-              aria-label={t('Manage document sources')}
-              title={t('Manage document sources')}
-              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] transition hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface)]"
-            >
-              <Settings2 size={17} aria-hidden="true" />
-            </Link>
+            {canManageSources ? (
+              <Link
+                to={`/evidence/cases/${caseId}/intake`}
+                aria-label={t('Manage document sources')}
+                title={t('Manage document sources')}
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] transition hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface)]"
+              >
+                <Settings2 size={17} aria-hidden="true" />
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>
@@ -387,7 +389,7 @@ function DocumentSourcesStrip({ caseId, facets, t }) {
   );
 }
 
-function DocumentsViewTabs({ activeView, onChange, t }) {
+function DocumentsViewTabs({ activeView, onChange, t, canReview = true }) {
   const tabs = [
     {
       id: 'library',
@@ -401,7 +403,7 @@ function DocumentsViewTabs({ activeView, onChange, t }) {
       icon: ListChecks,
       detail: t('Review how documents are grouped and what still needs attention.'),
     },
-  ];
+  ].filter((tab) => tab.id !== 'review' || canReview);
 
   return (
     <nav className="mb-5 grid gap-2 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-2 shadow-[var(--lakai-shadow-panel)] sm:grid-cols-2" aria-label={t('Document views')}>
@@ -477,8 +479,9 @@ export default function DocumentsPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { canSeeAdmin, canSeeOperations, debugEnabled } = useOperatorMode();
+  const { canContribute, canSeeAdmin, canSeeOperations, debugEnabled } = useOperatorMode();
   const showDiagnostics = canSeeOperations || debugEnabled;
+  const canReviewDocuments = canContribute || canSeeOperations;
   const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
   const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
   const [filterValues, setFilterValues] = useState(initialTableState.filterValues || {});
@@ -567,6 +570,12 @@ export default function DocumentsPage() {
     }
     setSearchParams(next);
   }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (isReviewView && !canReviewDocuments) {
+      setDocumentsView('library');
+    }
+  }, [canReviewDocuments, isReviewView, setDocumentsView]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -1235,13 +1244,15 @@ export default function DocumentsPage() {
           : `${state.total} ${t('documents in this workspace')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('ready for organization and search')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('need source-copy review')}.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              to={`/evidence/cases/${caseId}/intake`}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
-            >
-              <Plus size={16} aria-hidden="true" />
-              {t('Add documents')}
-            </Link>
+            {canContribute ? (
+              <Link
+                to={`/evidence/cases/${caseId}/intake`}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
+              >
+                <Plus size={16} aria-hidden="true" />
+                {t('Add documents')}
+              </Link>
+            ) : null}
             {!isReviewView ? (
               <button
                 type="button"
@@ -1257,8 +1268,8 @@ export default function DocumentsPage() {
         }
       />
 
-      <DocumentSourcesStrip caseId={caseId} facets={state.facets} t={t} />
-      <DocumentsViewTabs activeView={activeDocumentsView} onChange={setDocumentsView} t={t} />
+      <DocumentSourcesStrip caseId={caseId} facets={state.facets} t={t} canManageSources={canContribute} />
+      <DocumentsViewTabs activeView={activeDocumentsView} onChange={setDocumentsView} t={t} canReview={canReviewDocuments} />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
@@ -1733,16 +1744,18 @@ export default function DocumentsPage() {
                       {t('View transcript')}
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={openRemovalDialog}
-                    disabled={drawer.removalBusy || !drawer.document?.file_id}
-                    className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
-                    title={t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.')}
-                  >
-                    <Trash2 size={16} aria-hidden="true" />
-                    {drawer.removalBusy ? t('Removing') : t('Remove from workspace')}
-                  </button>
+                  {canContribute ? (
+                    <button
+                      type="button"
+                      onClick={openRemovalDialog}
+                      disabled={drawer.removalBusy || !drawer.document?.file_id}
+                      className="inline-flex items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/30"
+                      title={t('Choose soft remove or delete the secure workspace copy. The original source file is not deleted.')}
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                      {drawer.removalBusy ? t('Removing') : t('Remove from workspace')}
+                    </button>
+                  ) : null}
                 </div>
               </section>
 

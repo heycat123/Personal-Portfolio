@@ -307,8 +307,8 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="documents/:fileId" element={<DocumentDetailPage />} />
             <Route path="intake" element={<ContributorRoute><IntakePage /></ContributorRoute>} />
-            <Route path="jobs" element={<JobsPage />} />
-            <Route path="jobs/:jobId" element={<JobDetailPage />} />
+            <Route path="jobs" element={<OperationsRoute><JobsPage /></OperationsRoute>} />
+            <Route path="jobs/:jobId" element={<OperationsRoute><JobDetailPage /></OperationsRoute>} />
             <Route path="query" element={<QueryPage />} />
             <Route
               path="packets"
@@ -321,8 +321,8 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             />
             <Route path="system-query" element={<OperationsRoute><SystemQueryPage /></OperationsRoute>} />
             <Route path="health" element={<OperationsRoute><HealthPage /></OperationsRoute>} />
-            <Route path="entities" element={<EntitiesPage />} />
-            <Route path="entities/:personId" element={<EntityDetailPage />} />
+            <Route path="entities" element={<ContributorRoute><EntitiesPage /></ContributorRoute>} />
+            <Route path="entities/:personId" element={<ContributorRoute><EntityDetailPage /></ContributorRoute>} />
             <Route path="access" element={<AccessManagementRoute><AccessSharingPage /></AccessManagementRoute>} />
             <Route path="tests" element={<OperationsRoute><TestsPage /></OperationsRoute>} />
             <Route path="settings" element={<SettingsPage />} />

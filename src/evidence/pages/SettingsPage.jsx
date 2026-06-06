@@ -129,21 +129,36 @@ export default function SettingsPage() {
             <StatusBadge status={canRename ? 'succeeded' : 'blocked'} label={canRename ? t('editable') : t('restricted')} />
           </div>
 
-          <form className="space-y-4" onSubmit={saveCaseName}>
-            <label className="block">
-              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Workspace display name')}</span>
-              <input
-                type="text"
-                value={caseName}
-                onChange={(event) => setCaseName(event.target.value)}
-                minLength={3}
-                maxLength={180}
-                disabled={!canRename || state.saving}
-                className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:disabled:bg-black/30 dark:disabled:text-gray-500"
-              />
-            </label>
+          {canRename ? (
+            <form className="space-y-4" onSubmit={saveCaseName}>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('Workspace display name')}</span>
+                <input
+                  type="text"
+                  value={caseName}
+                  onChange={(event) => setCaseName(event.target.value)}
+                  minLength={3}
+                  maxLength={180}
+                  disabled={state.saving}
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:disabled:bg-black/30 dark:disabled:text-gray-500"
+                />
+              </label>
 
-            {!canRename ? (
+              <button
+                type="submit"
+                disabled={state.saving || caseName.trim().length < 3}
+                className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
+              >
+                <Save size={16} aria-hidden="true" />
+                {state.saving ? t('Saving') : t('Save display name')}
+              </button>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 dark:border-gray-800 dark:bg-white/5 dark:text-gray-200">
+                <div className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{t('Workspace display name')}</div>
+                <div className="mt-1 font-semibold">{caseName || currentCase.caseName || caseId}</div>
+              </div>
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
                 <div className="flex items-start gap-2">
                   <LockKeyhole className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
@@ -153,17 +168,8 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={!canRename || state.saving || caseName.trim().length < 3}
-              className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
-            >
-              <Save size={16} aria-hidden="true" />
-              {state.saving ? t('Saving') : t('Save display name')}
-            </button>
-          </form>
+            </div>
+          )}
         </section>
 
         <aside className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">

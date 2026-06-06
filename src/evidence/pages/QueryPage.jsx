@@ -1091,7 +1091,7 @@ export default function QueryPage() {
   const { getAccessToken, user } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { preferences, t } = useLocaleSettings();
-  const { debugEnabled } = useOperatorMode();
+  const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [state, setState] = useState({
@@ -1172,6 +1172,10 @@ export default function QueryPage() {
   }, [caseId, historyCollapsed]);
 
   const loadQueryReadiness = useCallback(async ({ quiet = false } = {}) => {
+    if (!canSeeOperations) {
+      setReadinessState({ loading: false, health: null, error: null });
+      return;
+    }
     if (!quiet) {
       setReadinessState((current) => ({ ...current, loading: true, error: null }));
     }
@@ -1183,7 +1187,7 @@ export default function QueryPage() {
     } catch (error) {
       setReadinessState((current) => ({ ...current, loading: false, error }));
     }
-  }, [caseId, getAccessToken, recordFingerprint]);
+  }, [canSeeOperations, caseId, getAccessToken, recordFingerprint]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
