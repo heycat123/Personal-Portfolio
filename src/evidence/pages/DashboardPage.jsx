@@ -277,8 +277,9 @@ function ResolveReadinessPanel({
   const executed = Array.isArray(result?.executed_actions) ? result.executed_actions : [];
   const skipped = Array.isArray(result?.skipped_actions) ? result.skipped_actions : [];
   const canRun = executable.length > 0 && !resolving;
+  const hasPlanContent = actions.length > 0 || executed.length > 0 || skipped.length > 0 || Boolean(error) || loading || resolving;
 
-  if (!hasPlan && !loading && !error) {
+  if ((!hasPlan && !loading && !error) || (!hasPlanContent && !result)) {
     return null;
   }
 
@@ -288,11 +289,11 @@ function ResolveReadinessPanel({
         <div className="max-w-4xl">
           <div className="flex flex-wrap items-center gap-2">
             <ListChecks className="text-amber-700 dark:text-amber-300" size={18} aria-hidden="true" />
-            <h2 className="text-base font-semibold text-gray-950 dark:text-white">Resolve readiness items</h2>
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">Safe readiness fixes</h2>
             {loading ? <StatusBadge status="running" label="Checking plan" /> : null}
           </div>
           <p className="mt-2 text-sm leading-6 text-gray-700 dark:text-gray-300">
-            Start safe fixes only starts backend work that is available now, such as text/search processing or selected-source cleanup. It does not remove original source files or make confirmation choices for you.
+            Start safe fixes only starts work that is available now, such as text/search processing or selected-source cleanup. It does not remove original source files or make confirmation choices for you.
           </p>
           {plan?.display_message || plan?.message ? (
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">{plan.display_message || plan.message}</p>
@@ -313,7 +314,7 @@ function ResolveReadinessPanel({
             onClick={onResolveAll}
             disabled={!canRun}
             className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-            title={!executable.length ? 'No safe automatic actions are available right now.' : undefined}
+            title={!executable.length ? 'No safe automatic fixes are available right now.' : undefined}
           >
             <Play size={15} aria-hidden="true" />
             {resolving ? 'Starting' : 'Start safe fixes'}
@@ -345,7 +346,7 @@ function ResolveReadinessPanel({
       <div className="mt-4 grid gap-3 xl:grid-cols-3">
         <ResolveActionGroup
           title="Safe to start"
-          detail="Start safe fixes can run these without deleting files or choosing for you."
+          detail="These can start without deleting files or choosing for you."
           actions={executable}
           tone="safe"
         />
@@ -639,6 +640,45 @@ export default function DashboardPage() {
     sourceAlignment: state.sourceAlignment,
     connectors: state.connectors,
   }), 'case-home'), [caseId, counts, state.connectors, state.health, state.sourceAlignment]);
+  const attentionCards = [
+    documentsNeedingAttention > 0
+      ? {
+        icon: FileText,
+        title: t('Documents needing attention'),
+        detail: copiedFilesPendingProcessing > 0
+          ? (
+            <PendingProcessingText
+              count={copiedFilesPendingProcessing}
+              suffix={t('document row(s) still need text/search processing before they are fully available in Ask Documents.')}
+            />
+          )
+          : t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.'),
+        to: `/evidence/cases/${caseId}/documents`,
+        count: documentsNeedingAttention,
+        countLabel: t('items'),
+      }
+      : null,
+    canContribute && peopleNeedingReview > 0
+      ? {
+        icon: UsersRound,
+        title: t('People & contacts needing review'),
+        detail: t('Phone numbers and emails may be linked from contacts, messages, or manual review. Confirm uncertain matches before using them in summaries or exports.'),
+        to: `/evidence/cases/${caseId}/entities`,
+        count: peopleNeedingReview,
+        countLabel: t('items'),
+      }
+      : null,
+    canSeeAdmin && pendingInvitations > 0
+      ? {
+        icon: ShieldAlert,
+        title: t('Access & sharing'),
+        detail: t('Only authorized people should have workspace access. Review pending invitations and sharing before exports.'),
+        to: `/evidence/cases/${caseId}/access`,
+        count: pendingInvitations,
+        countLabel: t('pending'),
+      }
+      : null,
+  ].filter(Boolean);
 
   return (
     <div>
@@ -697,51 +737,21 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="mb-5">
-        <div className="mb-3">
-          <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Needs attention')}</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {t('Important items for document readiness, contact links, and safe workspace access.')}
-          </p>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <ReviewCard
-            icon={FileText}
-            title={t('Documents needing attention')}
-            detail={copiedFilesPendingProcessing > 0
-              ? (
-                <PendingProcessingText
-                  count={copiedFilesPendingProcessing}
-                  suffix={t('document row(s) still need text/search processing before they are fully available in Ask Documents.')}
-                />
-              )
-              : t('Uncategorized documents, missing source/date/text, or sensitive-info warnings should be reviewed before sharing or export.')}
-            to={`/evidence/cases/${caseId}/documents`}
-            count={documentsNeedingAttention}
-            countLabel={t('items')}
-          />
-          {canContribute ? (
-            <ReviewCard
-              icon={UsersRound}
-              title={t('People & contacts needing review')}
-              detail={t('Phone numbers and emails may be linked from contacts, messages, or manual review. Confirm uncertain matches before using them in summaries or exports.')}
-              to={`/evidence/cases/${caseId}/entities`}
-              count={peopleNeedingReview}
-              countLabel={t('items')}
-            />
-          ) : null}
-          {canSeeAdmin ? (
-            <ReviewCard
-              icon={ShieldAlert}
-              title={t('Access & sharing')}
-              detail={t('Only authorized people should have workspace access. Review pending invitations and sharing before exports.')}
-              to={`/evidence/cases/${caseId}/access`}
-              count={pendingInvitations}
-              countLabel={t('pending')}
-            />
-          ) : null}
-        </div>
-      </section>
+      {attentionCards.length ? (
+        <section className="mb-5">
+          <div className="mb-3">
+            <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Needs attention')}</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {t('Important items for document readiness, contact links, and safe workspace access.')}
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {attentionCards.map((card) => (
+              <ReviewCard key={card.title} {...card} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
