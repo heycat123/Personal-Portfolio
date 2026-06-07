@@ -196,6 +196,7 @@ function friendlyError(error) {
   const detail = error?.payload?.detail;
   if (typeof detail === 'string') return detail;
   if (detail?.user_message) return detail.user_message;
+  if (detail?.display_message) return detail.display_message;
   return error?.message || 'Packet request failed.';
 }
 
@@ -214,6 +215,26 @@ function googleDriveReconnectDetail(error) {
     return detail;
   }
   return null;
+}
+
+function googleDriveImportErrorMessage(error) {
+  const message = friendlyError(error);
+  if (!message || message === 'Internal Server Error' || Number(error?.status) >= 500) {
+    return 'Google Drive could not import this file right now. Try again, or choose fewer files and import them in smaller groups.';
+  }
+  return message;
+}
+
+function googleDriveErrorTitle(error) {
+  if (googleDriveReconnectDetail(error)) {
+    return 'Google Drive connection needs attention';
+  }
+  const detail = error?.payload?.detail;
+  const issueState = typeof detail === 'object' ? String(detail.issue_state || '').toLowerCase() : '';
+  if (issueState.includes('import') || Number(error?.status) >= 500 || friendlyError(error) === 'Internal Server Error') {
+    return 'Google Drive import needs attention';
+  }
+  return 'Google Drive connection needs attention';
 }
 
 function documentDisplayName(document) {
@@ -478,6 +499,7 @@ function PacketDocumentPicker({
   driveItems,
   drivePath,
   driveSelectedIds,
+  driveImportFailures,
   driveAction,
   onDriveSearch,
   onBrowseDriveRoot,
@@ -659,7 +681,24 @@ function PacketDocumentPicker({
                 </div>
               </section>
             ) : connectorError ? (
-              <ErrorPanel title="Google Drive connection needs attention" error={{ message: friendlyError(connectorError) }} />
+              <ErrorPanel title={googleDriveErrorTitle(connectorError)} error={{ message: googleDriveImportErrorMessage(connectorError) }} />
+            ) : null}
+            {driveImportFailures?.length ? (
+              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className="font-semibold">
+                  {driveImportFailures.length === 1 ? 'One Drive file still needs attention' : `${driveImportFailures.length} Drive files still need attention`}
+                </p>
+                <p className="mt-1">
+                  Files that could not be imported stayed selected. Try again, preview the file, or import fewer files at a time. Files already imported stay in Documents and are linked to this packet item.
+                </p>
+                <ul className="mt-3 space-y-1">
+                  {driveImportFailures.slice(0, 4).map((failure) => (
+                    <li key={failure.id || failure.name} className="break-words text-xs">
+                      <span className="font-semibold">{failure.name || 'Drive file'}</span>: {failure.message}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ) : null}
             {connectorsLoading ? (
               <EmptyState title="Checking Google Drive" description="Looking for a connected Google Drive account." />
@@ -1168,6 +1207,7 @@ export default function PacketsPage() {
     driveItems: [],
     drivePath: [{ id: 'root', name: 'My Drive' }],
     driveSelectedIds: [],
+    driveImportFailures: [],
   });
   const [unlinking, setUnlinking] = useState(null);
 
@@ -1709,11 +1749,19 @@ export default function PacketsPage() {
     if (!selectedItems.length) {
       return;
     }
-    setDocumentPicker((current) => ({ ...current, driveAction: 'import', connectorError: null }));
+    setDocumentPicker((current) => ({ ...current, driveAction: 'import', connectorError: null, driveImportFailures: [] }));
     const importedFileIds = [];
+    const importFailures = [];
+    let alreadyInDocumentsCount = 0;
+    let token;
     try {
-      const token = await getAccessToken();
-      for (const item of selectedItems) {
+      token = await getAccessToken();
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, driveAction: null, connectorError: error }));
+      return;
+    }
+    for (const item of selectedItems) {
+      try {
         setDocumentPicker((current) => ({ ...current, driveAction: `import:${item.id}` }));
         const result = await evidenceApi.importGoogleDriveFile(
           caseId,
@@ -1725,8 +1773,25 @@ export default function PacketsPage() {
         const uploadId = result.data?.upload?.upload_id;
         if (uploadId) {
           importedFileIds.push(uploadId);
+          if (result.data?.already_uploaded || result.data?.duplicate) {
+            alreadyInDocumentsCount += 1;
+          }
+        } else {
+          importFailures.push({
+            id: item.id,
+            name: item.name || item.id,
+            message: 'The file imported, but the response did not include a document id to link to this packet item.',
+          });
         }
+      } catch (error) {
+        importFailures.push({
+          id: item.id,
+          name: item.name || item.id,
+          message: googleDriveImportErrorMessage(error),
+        });
       }
+    }
+    try {
       if (importedFileIds.length) {
         const linkResult = await evidenceApi.linkPacketRequirementDocuments(
           caseId,
@@ -1739,18 +1804,24 @@ export default function PacketsPage() {
         setState((current) => ({
           ...current,
           packet: linkResult.data?.packet || current.packet,
-          notice: 'Google Drive files were imported into Documents and linked to this packet item. Processing may continue in the background.',
+          notice: [
+            `${importedFileIds.length} Google Drive file(s) were linked to this packet item.`,
+            alreadyInDocumentsCount
+              ? `${alreadyInDocumentsCount} file(s) were already in Documents, so Evidence AI linked the existing workspace copy instead of adding a duplicate.`
+              : 'New Drive imports were added to Documents first.',
+            importFailures.length ? `${importFailures.length} file(s) still need attention.` : 'Processing may continue in the background.',
+          ].join(' '),
           fingerprint: linkResult.requestFingerprintId,
         }));
         setDocumentPicker((current) => ({
           ...current,
-          open: false,
-          requirement: null,
           driveAction: null,
-          driveSelectedIds: [],
+          driveSelectedIds: importFailures.length ? importFailures.map((failure) => failure.id).filter(Boolean) : [],
+          driveImportFailures: importFailures,
+          ...(importFailures.length ? {} : { open: false, requirement: null }),
         }));
       } else {
-        setDocumentPicker((current) => ({ ...current, driveAction: null }));
+        setDocumentPicker((current) => ({ ...current, driveAction: null, driveImportFailures: importFailures }));
       }
     } catch (error) {
       setDocumentPicker((current) => ({ ...current, driveAction: null, connectorError: error }));
@@ -1852,6 +1923,7 @@ export default function PacketsPage() {
           driveItems={documentPicker.driveItems}
           drivePath={documentPicker.drivePath}
           driveSelectedIds={documentPicker.driveSelectedIds}
+          driveImportFailures={documentPicker.driveImportFailures}
           driveAction={documentPicker.driveAction}
           onDriveSearch={searchDriveFiles}
           onBrowseDriveRoot={browseDriveFolder}
