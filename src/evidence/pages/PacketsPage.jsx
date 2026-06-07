@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Save,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 import ErrorPanel from '../components/ErrorPanel';
@@ -362,6 +362,7 @@ function RequirementEditor({ requirement, packetId, canContribute, saving, onSav
 export default function PacketsPage() {
   const { caseId, packetId } = useParams();
   const navigate = useNavigate();
+  const createPacketRef = useRef(null);
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { activeCase } = useCaseContext();
@@ -378,6 +379,7 @@ export default function PacketsPage() {
     packet: null,
     fingerprint: null,
   });
+  const [showCreateFlow, setShowCreateFlow] = useState(false);
 
   const loadPackets = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -423,6 +425,14 @@ export default function PacketsPage() {
     () => groupRequirements(selectedPacket?.requirements || []),
     [selectedPacket?.requirements],
   );
+  const showCreateSection = showCreateFlow || (!state.loading && !state.packets.length);
+
+  function startPacketWorkflow() {
+    setShowCreateFlow(true);
+    window.setTimeout(() => {
+      createPacketRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }
 
   async function createPacket(template) {
     if (!canContribute) {
@@ -606,14 +616,26 @@ export default function PacketsPage() {
         title="Packets"
         description="Organize document groups, notes, and checklist items for review or lawyer handoff."
         actions={(
-          <button
-            type="button"
-            onClick={loadPackets}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canContribute ? (
+              <button
+                type="button"
+                onClick={startPacketWorkflow}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
+              >
+                <Plus size={16} aria-hidden="true" />
+                Add packet
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={loadPackets}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+            >
+              <RefreshCw size={16} aria-hidden="true" />
+              Refresh
+            </button>
+          </div>
         )}
       />
 
@@ -657,7 +679,19 @@ export default function PacketsPage() {
         <EmptyState title="Loading packets" description="Checking packet templates and packet checklists for this case." />
       ) : state.packets.length ? (
         <section className="mb-5 space-y-3">
-          <h3 className="text-base font-semibold text-gray-950 dark:text-white">Your packets</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">Your packets</h3>
+            {canContribute ? (
+              <button
+                type="button"
+                onClick={startPacketWorkflow}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
+              >
+                <Plus size={16} aria-hidden="true" />
+                Add packet
+              </button>
+            ) : null}
+          </div>
           <div className="grid gap-4">
             {state.packets.map((packet) => (
               <PacketCard key={packet.packet_id} packet={packet} caseId={caseId} />
@@ -669,16 +703,30 @@ export default function PacketsPage() {
           <EmptyState
             title="Create a packet"
             description="Create a packet to organize documents, notes, and checklist items for a specific case purpose."
+            action={canContribute ? (
+              <button
+                type="button"
+                onClick={startPacketWorkflow}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
+              >
+                <Plus size={16} aria-hidden="true" />
+                Add packet
+              </button>
+            ) : null}
           />
         </div>
       )}
 
-      <TemplatePicker
-        templates={state.templates}
-        creating={state.creating}
-        onCreate={createPacket}
-        canContribute={canContribute}
-      />
+      {canContribute && showCreateSection ? (
+        <div ref={createPacketRef} id="create-packet" className="scroll-mt-6">
+          <TemplatePicker
+            templates={state.templates}
+            creating={state.creating}
+            onCreate={createPacket}
+            canContribute={canContribute}
+          />
+        </div>
+      ) : null}
 
       <RequestFingerprint fingerprint={state.fingerprint} />
     </div>
