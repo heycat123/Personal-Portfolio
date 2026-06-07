@@ -217,6 +217,12 @@ function casePath(caseId, suffix = '') {
   return `/api/v1/cases/${encodeURIComponent(caseId)}${suffix}`;
 }
 
+function webSocketUrl(path) {
+  const url = apiUrl(path);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
 export const evidenceApi = {
   getHealth: (options) => request('/health', options),
   getMe: (options) => request('/api/v1/me', options),
@@ -518,6 +524,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/jobs'), { ...options, query: params }),
   getJob: (caseId, jobId, options) =>
     request(casePath(caseId, `/jobs/${encodeURIComponent(jobId)}`), options),
+  getJobEventsWebSocketUrl: (caseId, jobId) =>
+    webSocketUrl(casePath(caseId, `/jobs/${encodeURIComponent(jobId)}/events/ws`)),
   createJob: (caseId, payload, options) =>
     request(casePath(caseId, '/jobs'), { ...options, method: 'POST', body: payload }),
   cancelJob: (caseId, jobId, options) =>
