@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Briefcase, CheckCircle2, FolderPlus, HelpCircle, UserPlus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
@@ -119,6 +119,7 @@ export default function OnboardingPage() {
   const [autoAcceptAttempted, setAutoAcceptAttempted] = useState(false);
   const [unsure, setUnsure] = useState({ filed: '', invited: '', preparing: '' });
   const [joinForm, setJoinForm] = useState({ invite_code: initialInviteCode });
+  const setupRef = useRef(null);
   const [form, setForm] = useState({
     workspace_name:
       (initialIntent || 'active-case') === 'precase'
@@ -164,6 +165,9 @@ export default function OnboardingPage() {
         (id === 'precase' ? 'Pre-case preparation workspace' : id === 'active-case' ? 'New active legal case' : ''),
       procedural_stage: id === 'precase' ? 'Gathering documents' : id === 'active-case' ? 'Unknown' : current.procedural_stage,
     }));
+    window.setTimeout(() => {
+      setupRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
   };
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -306,7 +310,14 @@ export default function OnboardingPage() {
                   <Icon size={22} aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t(option.title)}</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t(option.title)}</h3>
+                    {active ? (
+                      <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:bg-sky-950/60 dark:text-sky-200">
+                        {t('Selected')}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{t(option.description)}</p>
                 </div>
               </div>
@@ -324,7 +335,7 @@ export default function OnboardingPage() {
       </div>
 
       {selectedOption ? (
-        <section className="mt-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        <section ref={setupRef} className="mt-5 scroll-mt-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">{t('Set up your workspace')}</p>
