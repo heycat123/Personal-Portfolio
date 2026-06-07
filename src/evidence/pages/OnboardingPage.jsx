@@ -5,6 +5,7 @@ import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useCaseContext } from '../context/CaseContext';
+import { useLocaleSettings } from '../context/LocaleContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { caseMatchesRouteId, evidenceCasePath } from '../utils/caseRouting';
 
@@ -12,17 +13,17 @@ const OPTIONS = [
   {
     id: 'active-case',
     title: 'Create personal case workspace',
-    description: 'Use this when a formal court case, agency matter, appeal, or filed legal matter already exists.',
+    description: 'Create a private workspace for a family-law case or issue. Add what you know now and update details later.',
     icon: Briefcase,
-    cta: 'Start workspace setup',
+    cta: 'Create personal case workspace',
+    emphasized: true,
   },
   {
     id: 'precase',
     title: 'Prepare before a case is filed',
-    description: 'Organize documents, define parties, build a timeline, and preserve evidence before anything is filed.',
+    description: 'Use this when you are gathering documents or preparing before anything has been filed.',
     icon: FolderPlus,
-    cta: 'Create personal case workspace',
-    emphasized: true,
+    cta: 'Prepare workspace',
   },
   {
     id: 'join',
@@ -52,6 +53,7 @@ const ENTITY_TYPES = ['People', 'Children', 'Parents', 'Attorneys', 'Courts', 'A
 const RELATIONSHIP_TYPES = ['Parent of', 'Represented by', 'Employed by', 'Enrolled at', 'Lives at', 'Sent message to', 'Possible missed response', 'Filed document', 'Served document', 'Related to order', 'Order-related event', 'Payment history', 'Amount owed', 'Moved from', 'Moved to'];
 const FACT_PRIORITIES = ['Timeline of events', 'Possible missed communication', 'Parenting time notes', 'Payment history', 'Differences between records', 'Location history', 'School history', 'Medical events', 'Safety-related events', 'Deadlines', 'Order-related events', 'Damages', 'Witnesses', 'Evidence gaps'];
 const ACCESS_ROLES = ['Owner', 'Attorney', 'Paralegal', 'Co-party', 'Expert', 'Witness', 'Viewer', 'Document uploader'];
+const COUNTRIES = ['United States', 'Brazil'];
 
 function splitList(value) {
   return String(value || '')
@@ -74,13 +76,14 @@ function inputClass() {
 }
 
 function ChipGroup({ title, values, selectedValues, onToggle, tone = 'sky' }) {
+  const { t } = useLocaleSettings();
   const activeClass =
     tone === 'emerald'
       ? 'border-emerald-600 bg-emerald-50 text-emerald-900 dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-100'
       : 'border-sky-600 bg-sky-50 text-sky-900 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100';
   return (
     <div>
-      <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{title}</p>
+      <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{t(title)}</p>
       <div className="flex flex-wrap gap-2">
         {values.map((item) => (
           <button
@@ -94,7 +97,7 @@ function ChipGroup({ title, values, selectedValues, onToggle, tone = 'sky' }) {
                 : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10',
             ].join(' ')}
           >
-            {item}
+            {t(item)}
           </button>
         ))}
       </div>
@@ -107,9 +110,10 @@ export default function OnboardingPage() {
   const navigate = useNavigate();
   const { getAccessToken } = useEvidenceAuth();
   const { registerCases } = useCaseContext();
+  const { t } = useLocaleSettings();
   const initialIntent = searchParams.get('intent') || null;
   const initialInviteCode = searchParams.get('invite_code') || '';
-  const [selected, setSelected] = useState(initialIntent);
+  const [selected, setSelected] = useState(initialIntent || 'active-case');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [autoAcceptAttempted, setAutoAcceptAttempted] = useState(false);
@@ -117,16 +121,14 @@ export default function OnboardingPage() {
   const [joinForm, setJoinForm] = useState({ invite_code: initialInviteCode });
   const [form, setForm] = useState({
     workspace_name:
-      initialIntent === 'precase'
+      (initialIntent || 'active-case') === 'precase'
         ? 'Pre-case preparation workspace'
-        : initialIntent === 'active-case'
-          ? 'New active legal case'
-          : '',
+        : 'Personal case workspace',
     matter_type: 'Family law',
     case_subtype: '',
     jurisdiction_country: 'United States',
-    jurisdiction_state: '',
-    jurisdiction_county: '',
+    jurisdiction_state: 'Florida',
+    jurisdiction_county: 'Indian River County',
     court_or_agency: '',
     procedural_stage:
       initialIntent === 'precase'
@@ -165,6 +167,28 @@ export default function OnboardingPage() {
   };
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const updateCountry = (value) => {
+    setForm((current) => ({
+      ...current,
+      jurisdiction_country: value,
+      jurisdiction_state:
+        value === 'Brazil'
+          ? current.jurisdiction_country === 'Brazil' && current.jurisdiction_state
+            ? current.jurisdiction_state
+            : 'São Paulo'
+          : current.jurisdiction_country === 'United States' && current.jurisdiction_state
+            ? current.jurisdiction_state
+            : 'Florida',
+      jurisdiction_county:
+        value === 'Brazil'
+          ? current.jurisdiction_country === 'Brazil' && current.jurisdiction_county
+            ? current.jurisdiction_county
+            : 'São Paulo'
+          : current.jurisdiction_country === 'United States' && current.jurisdiction_county
+            ? current.jurisdiction_county
+            : 'Indian River County',
+    }));
+  };
   const toggle = (key, value) => {
     setForm((current) => {
       const next = new Set(current[key] || []);
@@ -252,13 +276,13 @@ export default function OnboardingPage() {
     <div>
       <PageHeader
         title="Start New Workspace"
-        description="Choose how this account should start. You can create a personal case workspace, prepare before a case is filed, or join an existing workspace."
+        description="Start with the country and location for this case or issue. You can update these details later."
         actions={
           <Link
             to="/evidence/cases"
             className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
           >
-            My cases
+            {t('My cases')}
           </Link>
         }
       />
@@ -282,8 +306,8 @@ export default function OnboardingPage() {
                   <Icon size={22} aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{option.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{option.description}</p>
+                  <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t(option.title)}</h3>
+                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">{t(option.description)}</p>
                 </div>
               </div>
               <button
@@ -291,7 +315,7 @@ export default function OnboardingPage() {
                 onClick={() => selectPath(option.id)}
                 className="mt-5 inline-flex items-center gap-2 rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
-                {option.cta}
+                {t(option.cta)}
                 <ArrowRight size={16} aria-hidden="true" />
               </button>
             </section>
@@ -303,8 +327,8 @@ export default function OnboardingPage() {
         <section className="mt-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">Set up your workspace</p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{selectedOption.title}</h2>
+              <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">{t('Set up your workspace')}</p>
+              <h2 className="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{t(selectedOption.title)}</h2>
             </div>
             <button
               type="button"
@@ -312,7 +336,7 @@ export default function OnboardingPage() {
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:hover:bg-white/10"
             >
               <ArrowLeft size={16} aria-hidden="true" />
-              Change path
+              {t('Change path')}
             </button>
           </div>
 
@@ -320,48 +344,62 @@ export default function OnboardingPage() {
 
           {showWorkspaceForm ? (
             <form className="space-y-5" onSubmit={submitWorkspace}>
+              <section className="rounded-lg border border-sky-200 bg-sky-50/70 p-4 dark:border-sky-900/60 dark:bg-sky-950/20">
+                <div className="mb-4">
+                  <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">{t('Location')}</p>
+                  <h3 className="mt-1 text-base font-semibold text-gray-950 dark:text-white">{t('Where is this case or issue located?')}</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {t('Choose the country first. For a personal case workspace, city and state or region are enough to get started.')}
+                  </p>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <Field label={t('Country')}>
+                    <select className={inputClass()} value={form.jurisdiction_country} onChange={(event) => updateCountry(event.target.value)}>
+                      {COUNTRIES.map((item) => <option key={item} value={item}>{t(item)}</option>)}
+                    </select>
+                  </Field>
+                  <Field label={form.jurisdiction_country === 'Brazil' ? t('State') : t('State')}>
+                    <input className={inputClass()} value={form.jurisdiction_state} onChange={(event) => update('jurisdiction_state', event.target.value)} placeholder={form.jurisdiction_country === 'Brazil' ? 'São Paulo' : 'Florida'} />
+                  </Field>
+                  <Field label={form.jurisdiction_country === 'Brazil' ? t('City') : t('County')}>
+                    <input className={inputClass()} value={form.jurisdiction_county} onChange={(event) => update('jurisdiction_county', event.target.value)} placeholder={form.jurisdiction_country === 'Brazil' ? 'São Paulo' : 'Indian River County'} />
+                  </Field>
+                </div>
+              </section>
+
               <div className="grid gap-4 lg:grid-cols-2">
-                <Field label="Workspace name">
+                <Field label={t('Workspace name')}>
                   <input className={inputClass()} value={form.workspace_name} onChange={(event) => update('workspace_name', event.target.value)} required minLength={3} />
                 </Field>
-                <Field label="Family-law topic">
+                <Field label={t('Family-law topic')}>
                   <select className={inputClass()} value={form.matter_type} onChange={(event) => update('matter_type', event.target.value)}>
-                    {MATTER_TYPES.map((item) => <option key={item}>{item}</option>)}
+                    {MATTER_TYPES.map((item) => <option key={item} value={item}>{t(item)}</option>)}
                   </select>
                 </Field>
-                <Field label="Topic details">
-                  <input className={inputClass()} value={form.case_subtype} onChange={(event) => update('case_subtype', event.target.value)} placeholder="Relocation, parenting plan, time-sharing, debt collection, employment termination" />
+                <Field label={t('Topic details')}>
+                  <input className={inputClass()} value={form.case_subtype} onChange={(event) => update('case_subtype', event.target.value)} placeholder={t('Parenting, divorce, support, documents, or another family matter')} />
                 </Field>
-                <Field label={selected === 'precase' ? 'Preparation status' : 'Case stage'}>
+                <Field label={selected === 'precase' ? t('Preparation status') : t('Case stage')}>
                   <select className={inputClass()} value={form.procedural_stage} onChange={(event) => update('procedural_stage', event.target.value)}>
-                    {stageOptions.map((item) => <option key={item}>{item}</option>)}
+                    {stageOptions.map((item) => <option key={item} value={item}>{t(item)}</option>)}
                   </select>
                 </Field>
                 {selected === 'active-case' ? (
                   <>
-                    <Field label="Court case number, if known">
+                    <Field label={t('Court case number, if known')}>
                       <input className={inputClass()} value={form.case_number} onChange={(event) => update('case_number', event.target.value)} />
                     </Field>
-                    <Field label="Court/county, if known">
+                    <Field label={form.jurisdiction_country === 'Brazil' ? t('Court or forum, if known') : t('Court/county, if known')}>
                       <input className={inputClass()} value={form.court_or_agency} onChange={(event) => update('court_or_agency', event.target.value)} />
                     </Field>
                   </>
                 ) : null}
-                <Field label="Country">
-                  <input className={inputClass()} value={form.jurisdiction_country} onChange={(event) => update('jurisdiction_country', event.target.value)} />
-                </Field>
-                <Field label="State or region">
-                  <input className={inputClass()} value={form.jurisdiction_state} onChange={(event) => update('jurisdiction_state', event.target.value)} />
-                </Field>
-                <Field label="County or city">
-                  <input className={inputClass()} value={form.jurisdiction_county} onChange={(event) => update('jurisdiction_county', event.target.value)} />
-                </Field>
-                <Field label="People, organizations, or agencies involved">
-                  <input className={inputClass()} value={form.parties} onChange={(event) => update('parties', event.target.value)} placeholder="Separate names with commas" />
+                <Field label={t('People involved, if known')}>
+                  <input className={inputClass()} value={form.parties} onChange={(event) => update('parties', event.target.value)} placeholder={t('Separate names with commas. You can add people later.')} />
                 </Field>
               </div>
 
-              <Field label={selected === 'precase' ? 'What happened or what are you preparing for?' : 'Requested outcome'}>
+              <Field label={selected === 'precase' ? t('What happened or what are you preparing for?') : t('What would you like to organize first?')}>
                 <textarea
                   className={`${inputClass()} min-h-28 resize-y`}
                   value={selected === 'precase' ? form.situation_summary : form.requested_outcome}
@@ -371,10 +409,10 @@ export default function OnboardingPage() {
 
               <section className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-[#0b1117]">
                 <div className="mb-4">
-                  <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">Workspace setup</p>
-                  <h3 className="mt-1 text-base font-semibold text-gray-950 dark:text-white">Guide document organization before processing</h3>
+                  <p className="text-xs font-semibold uppercase text-sky-700 dark:text-sky-300">{t('Workspace setup')}</p>
+                  <h3 className="mt-1 text-base font-semibold text-gray-950 dark:text-white">{t('Guide document organization before processing')}</h3>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    These choices help organize documents and search. They do not decide what applies to your case or whether any material is legally important.
+                    {t('These choices help organize documents and search. They do not decide what applies to your case or whether any material is legally important.')}
                   </p>
                 </div>
                 <div className="grid gap-5 lg:grid-cols-2">
@@ -389,14 +427,14 @@ export default function OnboardingPage() {
                   <ChipGroup title="Expected access roles" values={ACCESS_ROLES} selectedValues={form.access_roles} onToggle={(item) => toggle('access_roles', item)} />
                 </div>
                 <div className="mt-5 grid gap-4 lg:grid-cols-3">
-                  <Field label="Known laws, rules, orders, or standards (optional)">
-                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.known_laws_rules_orders} onChange={(event) => update('known_laws_rules_orders', event.target.value)} placeholder="Optional. The user can say they do not know." />
+                  <Field label={t('Known laws, rules, orders, or standards (optional)')}>
+                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.known_laws_rules_orders} onChange={(event) => update('known_laws_rules_orders', event.target.value)} placeholder={t('Optional. You can leave this blank if you do not know.')} />
                   </Field>
-                  <Field label="Existing orders or agreements">
-                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.existing_orders_agreements} onChange={(event) => update('existing_orders_agreements', event.target.value)} placeholder="Court orders, contracts, agreements, agency decisions." />
+                  <Field label={t('Existing orders or agreements')}>
+                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.existing_orders_agreements} onChange={(event) => update('existing_orders_agreements', event.target.value)} placeholder={t('Court orders, contracts, agreements, or agency decisions.')} />
                   </Field>
-                  <Field label="Important dates">
-                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.important_dates} onChange={(event) => update('important_dates', event.target.value)} placeholder="Filing dates, incidents, deadlines, move dates, hearing dates." />
+                  <Field label={t('Important dates')}>
+                    <textarea className={`${inputClass()} min-h-28 resize-y`} value={form.important_dates} onChange={(event) => update('important_dates', event.target.value)} placeholder={t('Filing dates, incidents, deadlines, move dates, or hearing dates.')} />
                   </Field>
                 </div>
               </section>
@@ -407,11 +445,11 @@ export default function OnboardingPage() {
                   disabled={submitting}
                   className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
                 >
-                  {submitting ? 'Creating workspace...' : 'Create workspace'}
+                  {submitting ? t('Creating workspace...') : t('Create personal case workspace')}
                   <CheckCircle2 size={16} aria-hidden="true" />
                 </button>
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  This creates a personal case workspace. Case owner means the person who controls access to this workspace. Document source setup comes next.
+                  {t('This creates a personal case workspace. Case owner means the person who controls access to this workspace. Document source setup comes next.')}
                 </p>
               </div>
             </form>
@@ -420,20 +458,20 @@ export default function OnboardingPage() {
           {selected === 'join' ? (
             <form className="space-y-4" onSubmit={acceptInvitation}>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Paste an invitation code from a case owner, attorney, or admin. The email on the invitation must match this account.
+                {t('Paste an invitation code from a case owner, attorney, or admin. The email on the invitation must match this account.')}
               </p>
               <div className="grid gap-4 lg:grid-cols-2">
-                <Field label="Invite code">
+                <Field label={t('Invite code')}>
                   <input
                     className={inputClass()}
                     value={joinForm.invite_code}
                     onChange={(event) => setJoinForm({ invite_code: event.target.value })}
-                    placeholder="case_xxxxxxxxxx_xxxxxxxxxx"
+                    placeholder={t('case_xxxxxxxxxx_xxxxxxxxxx')}
                     required
                   />
                 </Field>
-                <Field label="Inviter email">
-                  <input className={inputClass()} placeholder="Optional reference only" disabled />
+                <Field label={t('Inviter email')}>
+                  <input className={inputClass()} placeholder={t('Optional reference only')} disabled />
                 </Field>
               </div>
               <button
@@ -441,7 +479,7 @@ export default function OnboardingPage() {
                 disabled={submitting || !joinForm.invite_code.trim()}
                 className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
-                {submitting ? 'Accepting invitation...' : 'Accept invitation'}
+                {submitting ? t('Accepting invitation...') : t('Accept invitation')}
                 <CheckCircle2 size={16} aria-hidden="true" />
               </button>
             </form>
@@ -455,7 +493,7 @@ export default function OnboardingPage() {
                 ['preparing', 'Are you organizing documents before speaking with an attorney or filing?'],
               ].map(([key, label]) => (
                 <div key={key}>
-                  <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{label}</p>
+                  <p className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">{t(label)}</p>
                   <div className="flex gap-2">
                     {['yes', 'no', 'not sure'].map((value) => (
                       <button
@@ -469,7 +507,7 @@ export default function OnboardingPage() {
                             : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-white/10',
                         ].join(' ')}
                       >
-                        {value}
+                        {t(value)}
                       </button>
                     ))}
                   </div>
@@ -480,7 +518,7 @@ export default function OnboardingPage() {
                 onClick={routeUnsure}
                 className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500"
               >
-                Recommend path
+                {t('Recommend path')}
                 <ArrowRight size={16} aria-hidden="true" />
               </button>
             </div>
