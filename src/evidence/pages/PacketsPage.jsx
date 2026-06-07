@@ -1,9 +1,13 @@
 import {
   ArrowLeft,
+  CheckCircle2,
   ClipboardCheck,
   FileText,
+  FileUp,
+  Folder,
   FolderOpen,
   Info,
+  Link2,
   Loader2,
   NotepadText,
   PackageCheck,
@@ -14,6 +18,7 @@ import {
   Search,
   Trash2,
   Upload,
+  UploadCloud,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -62,6 +67,7 @@ const REQUIREMENT_STATUS_OPTIONS = [
 
 const REQUIREMENT_STATUS_MAP = Object.fromEntries(REQUIREMENT_STATUS_OPTIONS.map((item) => [item.value, item]));
 const COVERED_STATUSES = ['added', 'may_not_apply', 'skipped'];
+const GOOGLE_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const REQUIREMENT_UPLOAD_GUIDANCE = {
   financial_affidavit_draft_form: [
     'Draft or completed Florida financial affidavit form 12.902(b) or 12.902(c), if you already have one.',
@@ -201,6 +207,55 @@ function documentFileId(document) {
   return document?.file_id || document?.document_id || document?.upload_id || document?.matched_s3_upload_id || '';
 }
 
+function formatBytes(value) {
+  const numeric = Number(value || 0);
+  if (!numeric) return 'Unknown size';
+  if (numeric < 1024) return `${numeric.toLocaleString()} B`;
+  if (numeric < 1024 * 1024) return `${(numeric / 1024).toFixed(1)} KB`;
+  return `${(numeric / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function sha256File(selectedFile) {
+  if (!window.crypto?.subtle) {
+    return null;
+  }
+  const buffer = await selectedFile.arrayBuffer();
+  const digest = await window.crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function uploadItemId(selectedFile, index) {
+  return `${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}-${index}`;
+}
+
+function uploadWithProgress(url, { method = 'PUT', headers = {}, file, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    Object.entries(headers || {}).forEach(([key, value]) => {
+      xhr.setRequestHeader(key, value);
+    });
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && typeof onProgress === 'function') {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        onProgress(percent);
+      }
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve({ status: xhr.status });
+      } else {
+        reject(new Error(`Upload failed with HTTP ${xhr.status}.`));
+      }
+    });
+    xhr.addEventListener('error', () => reject(new Error('Upload failed before the secure workspace copy was created.')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload was cancelled.')));
+    xhr.send(file);
+  });
+}
+
 function GuardrailPanel({ guardrails, completionDefinition }) {
   const message = guardrails?.user_message ||
     'This packet helps organize documents and notes for review. It does not decide what must be filed, served, exchanged, or omitted.';
@@ -228,8 +283,8 @@ function ComingLaterPanel() {
         <div>
           <p className="font-semibold">Checklist planning is available now</p>
           <p className="mt-1">
-            Link existing case documents to checklist items, or upload new files through Documents. Packet export, sharing, and draft
-            affidavit generation are coming later.
+            Link existing case documents to checklist items, import from Google Drive, or upload files from this screen. Packet export,
+            sharing, and draft affidavit generation are coming later.
           </p>
         </div>
       </div>
@@ -378,6 +433,8 @@ function PacketCreateDialog({
 function PacketDocumentPicker({
   open,
   requirement,
+  mode,
+  onModeChange,
   documents,
   loading,
   selectedFileIds,
@@ -389,10 +446,37 @@ function PacketDocumentPicker({
   onLink,
   linking,
   canContribute,
+  localUploadItems,
+  localUploading,
+  onLocalFilesChange,
+  onUploadLocalFiles,
+  connectorsLoading,
+  connectorError,
+  connectorAction,
+  activeGoogleConnection,
+  onConnectGoogleDrive,
+  driveSearch,
+  onDriveSearchChange,
+  driveLoading,
+  driveItems,
+  driveSelectedIds,
+  driveAction,
+  onDriveSearch,
+  onBrowseDriveRoot,
+  onToggleDriveItem,
+  onImportDriveItems,
 }) {
   if (!open || !requirement) {
     return null;
   }
+
+  const tabs = [
+    { id: 'existing', label: 'Choose from Documents', icon: Paperclip },
+    { id: 'google_drive', label: 'Google Drive', icon: FolderOpen },
+    { id: 'local_upload', label: 'Upload from computer', icon: FileUp },
+  ];
+  const selectedDriveItems = driveItems.filter((item) => driveSelectedIds.includes(item.id));
+  const busy = linking || localUploading || Boolean(driveAction);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
@@ -400,7 +484,7 @@ function PacketDocumentPicker({
         role="dialog"
         aria-modal="true"
         aria-labelledby="packet-document-picker-title"
-        className="w-full max-w-5xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
+        className="w-full max-w-6xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -423,9 +507,33 @@ function PacketDocumentPicker({
         </div>
 
         <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
-          Upload new files through Documents so they enter the normal processing, search, and Q&A readiness pipeline.
+          Add files here without leaving this packet. New uploads and Drive imports are added to the case Documents library, then linked to this checklist item.
         </div>
 
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {tabs.map((tab) => {
+            const TabIcon = tab.icon;
+            return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onModeChange(tab.id)}
+              disabled={busy}
+              className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                mode === tab.id
+                  ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-white'
+                  : 'border-[var(--lakai-border)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] hover:bg-[var(--lakai-surface-muted)]'
+              }`}
+            >
+              <TabIcon size={16} aria-hidden="true" />
+              {tab.label}
+            </button>
+            );
+          })}
+        </div>
+
+        {mode === 'existing' ? (
+          <>
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
           <label className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--lakai-text-muted)]" size={16} aria-hidden="true" />
@@ -479,7 +587,7 @@ function PacketDocumentPicker({
               );
             })
           ) : (
-            <EmptyState title="No matching documents" description="Try a different search, or upload a new document through Documents." />
+            <EmptyState title="No matching documents" description="Try a different search, or use the upload options in this dialog." />
           )}
         </div>
 
@@ -497,6 +605,187 @@ function PacketDocumentPicker({
             Link selected documents
           </button>
         </div>
+          </>
+        ) : null}
+
+        {mode === 'google_drive' ? (
+          <div className="mt-4 space-y-4">
+            {connectorError ? <ErrorPanel title="Google Drive connection needs attention" error={{ message: friendlyError(connectorError) }} /> : null}
+            {connectorsLoading ? (
+              <EmptyState title="Checking Google Drive" description="Looking for a connected Google Drive account." />
+            ) : !activeGoogleConnection ? (
+              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">Reconnect Google Drive</p>
+                    <p className="mt-1">Connect or reconnect Google Drive before selecting files for this packet item.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onConnectGoogleDrive}
+                    disabled={Boolean(connectorAction)}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {connectorAction ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Link2 size={16} aria-hidden="true" />}
+                    Reconnect Google Drive
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <>
+                <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                  <label className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--lakai-text-muted)]" size={16} aria-hidden="true" />
+                    <span className="sr-only">Search Google Drive</span>
+                    <input
+                      value={driveSearch}
+                      onChange={(event) => onDriveSearchChange(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          onDriveSearch();
+                        }
+                      }}
+                      placeholder="Search Google Drive"
+                      className="min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] py-2 pl-10 pr-3 text-sm text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={onDriveSearch}
+                    disabled={driveLoading}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {driveLoading ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Search size={16} aria-hidden="true" />}
+                    Search
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onBrowseDriveRoot('root', 'My Drive')}
+                    disabled={driveLoading}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Folder size={16} aria-hidden="true" />
+                    My Drive
+                  </button>
+                </div>
+
+                <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+                  {driveLoading ? (
+                    <EmptyState title="Loading Drive files" description="Checking your connected Google Drive." />
+                  ) : driveItems.length ? (
+                    driveItems.map((item) => {
+                      const isFolder = item.mimeType === GOOGLE_FOLDER_MIME_TYPE;
+                      const checked = driveSelectedIds.includes(item.id);
+                      return (
+                        <div key={item.id} className="flex gap-3 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => onToggleDriveItem(item)}
+                            disabled={isFolder || !canContribute || Boolean(driveAction)}
+                            className="mt-1 h-4 w-4 accent-[var(--lakai-primary)]"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              {isFolder ? <Folder size={16} className="shrink-0 text-amber-600" aria-hidden="true" /> : <FileText size={16} className="shrink-0 text-[var(--lakai-text-muted)]" aria-hidden="true" />}
+                              <button
+                                type="button"
+                                onClick={() => isFolder ? onBrowseDriveRoot(item.id, item.name) : onToggleDriveItem(item)}
+                                className={`min-w-0 break-words text-left text-sm font-semibold ${isFolder ? 'text-[var(--lakai-primary)] hover:underline' : 'text-[var(--lakai-text)]'}`}
+                              >
+                                {item.name || item.id}
+                              </button>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+                              <span>{isFolder ? 'Folder' : formatBytes(item.size)}</span>
+                              {item.modifiedTime ? <span>Updated {new Date(item.modifiedTime).toLocaleDateString()}</span> : null}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <EmptyState title="No Drive files shown" description="Search Google Drive or open My Drive to choose files." />
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-3 border-t border-[var(--lakai-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-[var(--lakai-text-muted)]">
+                    {selectedDriveItems.length ? `${selectedDriveItems.length} Drive file(s) selected.` : 'Select one or more Drive files to import and link.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onImportDriveItems}
+                    disabled={!canContribute || !selectedDriveItems.length || Boolean(driveAction)}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {driveAction ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <UploadCloud size={16} aria-hidden="true" />}
+                    Import and link selected
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {mode === 'local_upload' ? (
+          <div className="mt-4 space-y-4">
+            <label className="block rounded-lg border border-dashed border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-5 text-center">
+              <FileUp className="mx-auto text-[var(--lakai-text-muted)]" size={24} aria-hidden="true" />
+              <span className="mt-2 block text-sm font-semibold text-[var(--lakai-text)]">Choose files from this computer</span>
+              <span className="mt-1 block text-sm text-[var(--lakai-text-muted)]">
+                Files are uploaded to this case, registered for processing, and linked to {requirement.label}.
+              </span>
+              <input
+                type="file"
+                multiple
+                disabled={!canContribute || localUploading}
+                onChange={(event) => onLocalFilesChange(Array.from(event.target.files || []))}
+                className="sr-only"
+              />
+            </label>
+
+            <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+              {localUploadItems.length ? (
+                localUploadItems.map((item) => (
+                  <div key={item.id} className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{item.name}</p>
+                        <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{formatBytes(item.size)} · {item.message || 'Ready to upload.'}</p>
+                      </div>
+                      {item.progress >= 100 ? <CheckCircle2 className="shrink-0 text-emerald-600" size={18} aria-hidden="true" /> : null}
+                    </div>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-[var(--lakai-primary)] transition-all"
+                        style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <EmptyState title="No files selected" description="Choose files from this computer to upload and link here." />
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-[var(--lakai-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-[var(--lakai-text-muted)]">
+                {localUploadItems.length ? `${localUploadItems.length} file(s) ready.` : 'Select files to start upload.'}
+              </p>
+              <button
+                type="button"
+                onClick={onUploadLocalFiles}
+                disabled={!canContribute || !localUploadItems.length || localUploading}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {localUploading ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <UploadCloud size={16} aria-hidden="true" />}
+                Upload and link files
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -551,7 +840,6 @@ function RequirementEditor({
   onSave,
   onOpenDocumentPicker,
   onUnlinkDocument,
-  uploadPath,
 }) {
   const [status, setStatus] = useState(requirement.status || 'needed');
   const [note, setNote] = useState(requirement.user_note || '');
@@ -667,15 +955,8 @@ function RequirementEditor({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
             >
               <Paperclip size={16} aria-hidden="true" />
-              Choose from Documents
+              Add documents
             </button>
-            <Link
-              to={uploadPath}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
-            >
-              <Upload size={16} aria-hidden="true" />
-              Upload new documents
-            </Link>
           </div>
         </div>
 
@@ -753,16 +1034,28 @@ export default function PacketsPage() {
   const [documentPicker, setDocumentPicker] = useState({
     open: false,
     requirement: null,
+    mode: 'existing',
     loading: false,
     linking: false,
     search: '',
     documents: [],
     selectedFileIds: [],
+    localUploading: false,
+    localUploadItems: [],
+    connectorsLoading: false,
+    connectorAction: null,
+    connectorError: null,
+    connectors: [],
+    driveSearch: '',
+    driveLoading: false,
+    driveAction: null,
+    driveItems: [],
+    driveSelectedIds: [],
   });
   const [unlinking, setUnlinking] = useState(null);
 
   useEffect(() => {
-    if (!documentPicker.open) {
+    if (!documentPicker.open || documentPicker.mode !== 'existing') {
       return undefined;
     }
     const timeoutId = window.setTimeout(async () => {
@@ -792,7 +1085,7 @@ export default function PacketsPage() {
       }
     }, 350);
     return () => window.clearTimeout(timeoutId);
-  }, [caseId, documentPicker.open, documentPicker.search, getAccessToken, recordFingerprint]);
+  }, [caseId, documentPicker.mode, documentPicker.open, documentPicker.search, getAccessToken, recordFingerprint]);
 
   const loadPackets = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -838,6 +1131,13 @@ export default function PacketsPage() {
     () => groupRequirements(selectedPacket?.requirements || []),
     [selectedPacket?.requirements],
   );
+  const activeGoogleConnection = useMemo(() => {
+    const google = documentPicker.connectors.find((provider) => provider.provider === 'google_drive');
+    return google?.connections?.find((connection) => (
+      connection.status === 'active' &&
+      (connection.can_browse || connection.owned_by_current_user)
+    )) || null;
+  }, [documentPicker.connectors]);
 
   function startPacketWorkflow() {
     setShowCreateFlow(true);
@@ -938,22 +1238,128 @@ export default function PacketsPage() {
     setDocumentPicker({
       open: true,
       requirement,
+      mode: 'existing',
       loading: false,
       linking: false,
       search: '',
       documents: [],
       selectedFileIds: [],
+      localUploading: false,
+      localUploadItems: [],
+      connectorsLoading: false,
+      connectorAction: null,
+      connectorError: null,
+      connectors: [],
+      driveSearch: '',
+      driveLoading: false,
+      driveAction: null,
+      driveItems: [],
+      driveSelectedIds: [],
     });
   }
 
   function closeDocumentPicker() {
-    if (!documentPicker.linking) {
+    if (!documentPicker.linking && !documentPicker.localUploading && !documentPicker.driveAction) {
       setDocumentPicker((current) => ({ ...current, open: false, requirement: null, selectedFileIds: [] }));
     }
   }
 
   function updatePickerSearch(search) {
     setDocumentPicker((current) => ({ ...current, search }));
+  }
+
+  async function loadPacketConnectors() {
+    setDocumentPicker((current) => ({ ...current, connectorsLoading: true, connectorError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getSourceConnectors(caseId, { token });
+      recordFingerprint(result, 'Packet source connectors');
+      setDocumentPicker((current) => ({
+        ...current,
+        connectorsLoading: false,
+        connectors: result.data?.providers || [],
+      }));
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, connectorsLoading: false, connectorError: error }));
+    }
+  }
+
+  async function connectGoogleDrive() {
+    setDocumentPicker((current) => ({ ...current, connectorAction: 'google_drive', connectorError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.authorizeGoogleDrive(caseId, { display_name: 'Google Drive' }, { token });
+      recordFingerprint(result, 'Authorize Google Drive from packet');
+      window.location.assign(result.data.auth_url);
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, connectorAction: null, connectorError: error }));
+    }
+  }
+
+  async function browseDriveFolder(folderId = 'root') {
+    if (!activeGoogleConnection?.source_connection_id) {
+      await loadPacketConnectors();
+      return;
+    }
+    setDocumentPicker((current) => ({ ...current, driveLoading: true, driveAction: null, connectorError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.browseGoogleDrive(
+        caseId,
+        activeGoogleConnection.source_connection_id,
+        { folder_id: folderId, page_size: 100 },
+        { token },
+      );
+      recordFingerprint(result, 'Packet Google Drive browse');
+      setDocumentPicker((current) => ({
+        ...current,
+        driveLoading: false,
+        driveItems: result.data?.files || [],
+        driveSelectedIds: [],
+      }));
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, driveLoading: false, connectorError: error }));
+    }
+  }
+
+  async function searchDriveFiles() {
+    if (!activeGoogleConnection?.source_connection_id) {
+      await loadPacketConnectors();
+      return;
+    }
+    const query = documentPicker.driveSearch.trim();
+    if (!query) {
+      await browseDriveFolder('root');
+      return;
+    }
+    setDocumentPicker((current) => ({ ...current, driveLoading: true, connectorError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.searchGoogleDrive(
+        caseId,
+        activeGoogleConnection.source_connection_id,
+        { q: query, page_size: 50 },
+        { token },
+      );
+      recordFingerprint(result, 'Packet Google Drive search');
+      setDocumentPicker((current) => ({
+        ...current,
+        driveLoading: false,
+        driveItems: result.data?.files || [],
+        driveSelectedIds: [],
+      }));
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, driveLoading: false, connectorError: error }));
+    }
+  }
+
+  function setPickerMode(mode) {
+    setDocumentPicker((current) => ({ ...current, mode }));
+    if (mode === 'google_drive') {
+      window.setTimeout(() => {
+        loadPacketConnectors();
+      }, 0);
+    }
   }
 
   function togglePickerDocument(fileId) {
@@ -994,6 +1400,203 @@ export default function PacketsPage() {
     } catch (error) {
       setDocumentPicker((current) => ({ ...current, linking: false }));
       setState((current) => ({ ...current, error }));
+    }
+  }
+
+  function updateLocalUploadItem(id, patch) {
+    setDocumentPicker((current) => ({
+      ...current,
+      localUploadItems: current.localUploadItems.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    }));
+  }
+
+  function setLocalFiles(files) {
+    setDocumentPicker((current) => ({
+      ...current,
+      localUploadItems: files.map((file, index) => ({
+        id: uploadItemId(file, index),
+        file,
+        name: file.name,
+        size: file.size,
+        status: 'ready',
+        progress: 0,
+        message: 'Ready to upload.',
+      })),
+    }));
+  }
+
+  async function uploadLocalFiles() {
+    const requirement = documentPicker.requirement;
+    const items = documentPicker.localUploadItems;
+    if (!requirement || !items.length || !selectedPacket?.packet_id) {
+      return;
+    }
+    setDocumentPicker((current) => ({ ...current, localUploading: true }));
+    const uploadedFileIds = [];
+    try {
+      const token = await getAccessToken();
+      for (const item of items) {
+        const selectedFile = item.file;
+        updateLocalUploadItem(item.id, { status: 'hashing', progress: 8, message: 'Creating file fingerprint.' });
+        const contentHash = await sha256File(selectedFile);
+
+        updateLocalUploadItem(item.id, { status: 'preparing', progress: 18, message: 'Preparing secure workspace upload.' });
+        const presignResult = await evidenceApi.presignDocumentUpload(
+          caseId,
+          {
+            file_name: selectedFile.name,
+            content_type: selectedFile.type || 'application/octet-stream',
+            content_length: selectedFile.size,
+            content_hash: contentHash || undefined,
+            content_hash_algorithm: contentHash ? 'sha256' : undefined,
+            source_of_truth_mode: 'web_upload',
+            source_provider: 'web_upload',
+          },
+          { token },
+        );
+        recordFingerprint(presignResult, `Packet presign upload: ${selectedFile.name}`);
+
+        if (presignResult.data?.already_uploaded) {
+          const existingFileId = presignResult.data?.upload?.upload_id;
+          if (existingFileId) {
+            uploadedFileIds.push(existingFileId);
+          }
+          updateLocalUploadItem(item.id, {
+            status: 'already_uploaded',
+            progress: 90,
+            message: presignResult.data?.display_message || 'This exact file is already in the workspace.',
+          });
+          continue;
+        }
+
+        const presign = presignResult.data?.presign;
+        updateLocalUploadItem(item.id, { status: 'uploading', progress: 30, message: 'Uploading secure workspace copy.' });
+        await uploadWithProgress(presign.upload_url, {
+          method: presign.method || 'PUT',
+          headers: presign.headers || { 'Content-Type': selectedFile.type || 'application/octet-stream' },
+          file: selectedFile,
+          onProgress: (percent) => updateLocalUploadItem(item.id, {
+            progress: 30 + Math.round(Math.min(100, percent) * 0.35),
+            message: 'Uploading secure workspace copy.',
+          }),
+        });
+
+        updateLocalUploadItem(item.id, { status: 'registering', progress: 75, message: 'Registering file and starting processing.' });
+        const registerResult = await evidenceApi.registerDocumentUpload(
+          caseId,
+          { upload_id: presignResult.data.upload.upload_id },
+          { token },
+        );
+        recordFingerprint(registerResult, `Packet register upload: ${selectedFile.name}`);
+        const uploadId = registerResult.data?.upload?.upload_id || presignResult.data?.upload?.upload_id;
+        if (uploadId) {
+          uploadedFileIds.push(uploadId);
+        }
+        updateLocalUploadItem(item.id, {
+          status: 'registered',
+          progress: 90,
+          message: registerResult.data?.display_message || 'Processing started. Linking to packet item.',
+        });
+      }
+
+      if (uploadedFileIds.length) {
+        const linkResult = await evidenceApi.linkPacketRequirementDocuments(
+          caseId,
+          selectedPacket.packet_id,
+          requirement.requirement_id,
+          { file_ids: uploadedFileIds },
+          { token },
+        );
+        recordFingerprint(linkResult, 'Link packet uploads');
+        setState((current) => ({
+          ...current,
+          packet: linkResult.data?.packet || current.packet,
+          notice: 'Uploaded files were added to Documents and linked to this packet item. Processing may continue in the background.',
+          fingerprint: linkResult.requestFingerprintId,
+        }));
+        setDocumentPicker((current) => ({
+          ...current,
+          open: false,
+          requirement: null,
+          localUploading: false,
+          localUploadItems: [],
+          selectedFileIds: [],
+        }));
+      } else {
+        setDocumentPicker((current) => ({ ...current, localUploading: false }));
+      }
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, localUploading: false }));
+      setState((current) => ({ ...current, error }));
+    }
+  }
+
+  function toggleDriveItem(driveItem) {
+    if (!driveItem?.id || driveItem.mimeType === GOOGLE_FOLDER_MIME_TYPE) {
+      return;
+    }
+    setDocumentPicker((current) => {
+      const selected = current.driveSelectedIds.includes(driveItem.id)
+        ? current.driveSelectedIds.filter((item) => item !== driveItem.id)
+        : [...current.driveSelectedIds, driveItem.id];
+      return { ...current, driveSelectedIds: selected };
+    });
+  }
+
+  async function importSelectedDriveItems() {
+    const requirement = documentPicker.requirement;
+    if (!requirement || !selectedPacket?.packet_id || !activeGoogleConnection?.source_connection_id) {
+      return;
+    }
+    const selectedItems = documentPicker.driveItems.filter((item) => documentPicker.driveSelectedIds.includes(item.id));
+    if (!selectedItems.length) {
+      return;
+    }
+    setDocumentPicker((current) => ({ ...current, driveAction: 'import', connectorError: null }));
+    const importedFileIds = [];
+    try {
+      const token = await getAccessToken();
+      for (const item of selectedItems) {
+        setDocumentPicker((current) => ({ ...current, driveAction: `import:${item.id}` }));
+        const result = await evidenceApi.importGoogleDriveFile(
+          caseId,
+          activeGoogleConnection.source_connection_id,
+          { drive_file_id: item.id, add_to_watch: true, register: true },
+          { token },
+        );
+        recordFingerprint(result, 'Import packet Google Drive file');
+        const uploadId = result.data?.upload?.upload_id;
+        if (uploadId) {
+          importedFileIds.push(uploadId);
+        }
+      }
+      if (importedFileIds.length) {
+        const linkResult = await evidenceApi.linkPacketRequirementDocuments(
+          caseId,
+          selectedPacket.packet_id,
+          requirement.requirement_id,
+          { file_ids: importedFileIds },
+          { token },
+        );
+        recordFingerprint(linkResult, 'Link packet Drive imports');
+        setState((current) => ({
+          ...current,
+          packet: linkResult.data?.packet || current.packet,
+          notice: 'Google Drive files were imported into Documents and linked to this packet item. Processing may continue in the background.',
+          fingerprint: linkResult.requestFingerprintId,
+        }));
+        setDocumentPicker((current) => ({
+          ...current,
+          open: false,
+          requirement: null,
+          driveAction: null,
+          driveSelectedIds: [],
+        }));
+      } else {
+        setDocumentPicker((current) => ({ ...current, driveAction: null }));
+      }
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, driveAction: null, connectorError: error }));
     }
   }
 
@@ -1064,6 +1667,8 @@ export default function PacketsPage() {
         <PacketDocumentPicker
           open={documentPicker.open}
           requirement={documentPicker.requirement}
+          mode={documentPicker.mode}
+          onModeChange={setPickerMode}
           documents={documentPicker.documents}
           loading={documentPicker.loading}
           selectedFileIds={documentPicker.selectedFileIds}
@@ -1075,6 +1680,25 @@ export default function PacketsPage() {
           onLink={linkSelectedDocuments}
           linking={documentPicker.linking}
           canContribute={canContribute}
+          localUploadItems={documentPicker.localUploadItems}
+          localUploading={documentPicker.localUploading}
+          onLocalFilesChange={setLocalFiles}
+          onUploadLocalFiles={uploadLocalFiles}
+          connectorsLoading={documentPicker.connectorsLoading}
+          connectorError={documentPicker.connectorError}
+          connectorAction={documentPicker.connectorAction}
+          activeGoogleConnection={activeGoogleConnection}
+          onConnectGoogleDrive={connectGoogleDrive}
+          driveSearch={documentPicker.driveSearch}
+          onDriveSearchChange={(driveSearch) => setDocumentPicker((current) => ({ ...current, driveSearch }))}
+          driveLoading={documentPicker.driveLoading}
+          driveItems={documentPicker.driveItems}
+          driveSelectedIds={documentPicker.driveSelectedIds}
+          driveAction={documentPicker.driveAction}
+          onDriveSearch={searchDriveFiles}
+          onBrowseDriveRoot={browseDriveFolder}
+          onToggleDriveItem={toggleDriveItem}
+          onImportDriveItems={importSelectedDriveItems}
         />
 
         <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -1139,10 +1763,6 @@ export default function PacketsPage() {
                   onSave={saveRequirement}
                   onOpenDocumentPicker={openDocumentPicker}
                   onUnlinkDocument={unlinkDocument}
-                  uploadPath={evidenceCasePath(
-                    activeCase,
-                    `/documents?packet_id=${encodeURIComponent(selectedPacket.packet_id)}&requirement_id=${encodeURIComponent(requirement.requirement_id)}`,
-                  )}
                 />
               ))}
             </section>
