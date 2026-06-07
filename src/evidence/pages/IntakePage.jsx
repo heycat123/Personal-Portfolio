@@ -1,5 +1,5 @@
 import { CheckCircle2, ChevronRight, ExternalLink, Eye, FileText, FileUp, Folder, FolderOpen, Link2, Lock, MinusCircle, PlusCircle, RefreshCw, Search, Unlink, UploadCloud, Users } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ErrorPanel from '../components/ErrorPanel';
 import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
@@ -70,6 +70,21 @@ function driveItemPath(pathStack, itemName) {
   return parts.length ? parts.join('/') : 'My Drive';
 }
 
+async function sha256File(selectedFile) {
+  if (!window.crypto?.subtle) {
+    return null;
+  }
+  const buffer = await selectedFile.arrayBuffer();
+  const digest = await window.crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function uploadItemId(selectedFile, index) {
+  return `${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}-${index}`;
+}
+
 export default function IntakePage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -78,6 +93,8 @@ export default function IntakePage() {
   const { canSeeOperations, debugEnabled } = useOperatorMode();
   const showDiagnostics = canSeeOperations || debugEnabled;
   const [file, setFile] = useState(null);
+  const [uploadItems, setUploadItems] = useState([]);
+  const uploadSocketsRef = useRef({});
   const [sourceMode, setSourceMode] = useState('web_upload');
   const [state, setState] = useState({
     busy: false,
@@ -132,6 +149,83 @@ export default function IntakePage() {
     open: false,
     connection: null,
   });
+
+  const updateUploadItem = useCallback((id, patch) => {
+    setUploadItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }, []);
+
+  const watchUploadJob = useCallback((itemId, jobId, token) => {
+    if (typeof window === 'undefined' || typeof WebSocket === 'undefined' || !jobId || !token) {
+      return;
+    }
+    if (uploadSocketsRef.current[itemId]) {
+      uploadSocketsRef.current[itemId].close();
+    }
+    const socket = new WebSocket(evidenceApi.getJobEventsWebSocketUrl(caseId, jobId));
+    uploadSocketsRef.current[itemId] = socket;
+
+    socket.addEventListener('open', () => {
+      socket.send(JSON.stringify({ type: 'auth', access_token: token }));
+      updateUploadItem(itemId, { message: 'Watching server-side propagation status.' });
+    });
+
+    socket.addEventListener('message', async (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      const jobPayload = payload?.job;
+      if (jobPayload) {
+        const result = jobPayload.result_json || {};
+        const progress = Number(jobPayload.progress_percent ?? result.progress_percent ?? 85);
+        updateUploadItem(itemId, {
+          serverJob: jobPayload,
+          progress: Math.max(80, Math.min(100, progress || 85)),
+          status: jobPayload.status === 'succeeded' ? 'propagation_queued' : jobPayload.status || 'running',
+          message: jobPayload.display_message || result.display_message || payload.message || 'Propagation status updated.',
+        });
+      } else if (payload?.message) {
+        updateUploadItem(itemId, { message: payload.message });
+      }
+
+      if (payload?.type === 'job_complete') {
+        try {
+          const finalJob = await evidenceApi.getJob(caseId, jobId, { token });
+          updateUploadItem(itemId, {
+            serverJob: finalJob.data,
+            status: finalJob.data?.status === 'succeeded' ? 'propagation_queued' : finalJob.data?.status || 'complete',
+            progress: 100,
+            message: finalJob.data?.display_message || 'Server-side propagation status is ready.',
+          });
+        } catch {
+          updateUploadItem(itemId, { progress: 100, message: 'Server-side propagation status is ready.' });
+        }
+      }
+    });
+
+    socket.addEventListener('error', () => {
+      updateUploadItem(itemId, { message: 'Live status unavailable. Open processing status to review progress.' });
+    });
+
+    socket.addEventListener('close', () => {
+      if (uploadSocketsRef.current[itemId] === socket) {
+        delete uploadSocketsRef.current[itemId];
+      }
+    });
+  }, [caseId, updateUploadItem]);
+
+  useEffect(() => () => {
+    Object.values(uploadSocketsRef.current || {}).forEach((socket) => {
+      try {
+        socket.close();
+      } catch {
+        // Ignore cleanup failures for sockets already closed by the server.
+      }
+    });
+    uploadSocketsRef.current = {};
+  }, []);
 
   const activeGoogleConnection = useMemo(() => {
     const google = state.connectors.find((provider) => provider.provider === 'google_drive');
@@ -661,63 +755,111 @@ export default function IntakePage() {
   }, [activeGoogleConnection?.source_connection_id, loadDriveWatchItems, openDriveFolder]);
 
   const runUpload = useCallback(async () => {
-    if (!file) {
+    const selectedItems = uploadItems.length
+      ? uploadItems
+      : file
+        ? [{ id: uploadItemId(file, 0), file, name: file.name, size: file.size, status: 'ready', progress: 0 }]
+        : [];
+    if (!selectedItems.length) {
       setState((current) => ({ ...current, error: new Error('Select a file before starting intake.') }));
       return;
     }
 
-    setState((current) => ({ ...current, busy: true, error: null, step: 'presigning' }));
+    setState((current) => ({ ...current, busy: true, error: null, step: 'preparing_uploads' }));
     try {
       const token = await getAccessToken();
-      const presignResult = await evidenceApi.presignDocumentUpload(
-        caseId,
-        {
-          file_name: file.name,
-          content_type: file.type || 'application/octet-stream',
-          content_length: file.size,
-          source_of_truth_mode: sourceMode,
-          source_provider: sourceMode === 'google_drive_mirror' ? 'google_drive' : 'web_upload',
-        },
-        { token },
-      );
-      addFingerprint(presignResult, 'Presign upload');
+      for (const item of selectedItems) {
+        const selectedFile = item.file;
+        updateUploadItem(item.id, { status: 'hashing', progress: 10, message: 'Creating file fingerprint.' });
+        setState((current) => ({ ...current, step: 'hashing' }));
+        const contentHash = await sha256File(selectedFile);
 
-      setState((current) => ({
-        ...current,
-        step: 'uploading',
-        presign: presignResult.data,
-      }));
+        updateUploadItem(item.id, { status: 'presigning', progress: 25, contentHash, message: 'Preparing secure cloud upload.' });
+        const presignResult = await evidenceApi.presignDocumentUpload(
+          caseId,
+          {
+            file_name: selectedFile.name,
+            content_type: selectedFile.type || 'application/octet-stream',
+            content_length: selectedFile.size,
+            content_hash: contentHash || undefined,
+            content_hash_algorithm: contentHash ? 'sha256' : undefined,
+            source_of_truth_mode: sourceMode,
+            source_provider: sourceMode === 'google_drive_mirror' ? 'google_drive' : 'web_upload',
+          },
+          { token },
+        );
+        addFingerprint(presignResult, `Presign upload: ${selectedFile.name}`);
 
-      const presign = presignResult.data?.presign;
-      const uploadResponse = await fetch(presign.upload_url, {
-        method: presign.method || 'PUT',
-        headers: presign.headers || { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      });
+        if (presignResult.data?.already_uploaded) {
+          updateUploadItem(item.id, {
+            status: 'already_uploaded',
+            progress: 100,
+            upload: presignResult.data.upload,
+            message: presignResult.data.display_message || 'This file is already in the workspace.',
+          });
+          setState((current) => ({
+            ...current,
+            step: 'already_uploaded',
+            presign: presignResult.data,
+          }));
+          continue;
+        }
 
-      if (!uploadResponse.ok) {
-        throw new Error(`Cloud upload failed with HTTP ${uploadResponse.status}. Check storage CORS and presigned URL settings.`);
+        setState((current) => ({
+          ...current,
+          step: 'uploading',
+          presign: presignResult.data,
+        }));
+        updateUploadItem(item.id, { status: 'uploading', progress: 55, presign: presignResult.data, message: 'Uploading secure cloud copy.' });
+
+        const presign = presignResult.data?.presign;
+        const uploadResponse = await fetch(presign.upload_url, {
+          method: presign.method || 'PUT',
+          headers: presign.headers || { 'Content-Type': selectedFile.type || 'application/octet-stream' },
+          body: selectedFile,
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`Cloud upload failed with HTTP ${uploadResponse.status}. Check storage CORS and presigned URL settings.`);
+        }
+
+        updateUploadItem(item.id, { status: 'registering', progress: 75, message: 'Registering upload and starting propagation.' });
+        setState((current) => ({ ...current, step: 'registering', upload: { ok: true, status: uploadResponse.status } }));
+
+        const registerResult = await evidenceApi.registerDocumentUpload(
+          caseId,
+          { upload_id: presignResult.data.upload.upload_id },
+          { token },
+        );
+        addFingerprint(registerResult, `Register upload: ${selectedFile.name}`);
+
+        updateUploadItem(item.id, {
+          status: registerResult.data?.already_registered ? 'already_registered' : 'propagation_queued',
+          progress: 100,
+          upload: registerResult.data?.upload,
+          job: registerResult.data?.job,
+          message: registerResult.data?.display_message || 'Propagation is queued.',
+        });
+        if (registerResult.data?.job?.job_id) {
+          watchUploadJob(item.id, registerResult.data.job.job_id, token);
+        }
+
+        setState((current) => ({
+          ...current,
+          step: registerResult.data?.already_registered ? 'already_registered' : 'propagation_queued',
+          register: registerResult.data,
+        }));
       }
-
-      setState((current) => ({ ...current, step: 'registering', upload: { ok: true, status: uploadResponse.status } }));
-
-      const registerResult = await evidenceApi.registerDocumentUpload(
-        caseId,
-        { upload_id: presignResult.data.upload.upload_id },
-        { token },
-      );
-      addFingerprint(registerResult, 'Register upload');
-
       setState((current) => ({
         ...current,
         busy: false,
-        step: 'registered',
-        register: registerResult.data,
+        step: 'complete',
       }));
     } catch (error) {
       setState((current) => ({ ...current, busy: false, error, step: 'failed' }));
+      setUploadItems((current) => current.map((item) => (item.status && item.status !== 'ready' && item.progress < 100 ? { ...item, status: 'failed', message: error.message || 'Upload failed.' } : item)));
     }
-  }, [addFingerprint, caseId, file, getAccessToken, sourceMode]);
+  }, [addFingerprint, caseId, file, getAccessToken, sourceMode, updateUploadItem, uploadItems, watchUploadJob]);
 
   const job = state.register?.job;
   const upload = state.presign?.upload;
@@ -741,7 +883,12 @@ export default function IntakePage() {
       <PageHeader
         title="Add Documents"
         description="Connect file sources, select folders or files, and upload new documents into this case. Source files keep their original language; only the interface translates."
-        actions={state.step !== 'ready' ? <StatusBadge status={state.step === 'registered' ? 'succeeded' : state.step === 'failed' ? 'failed' : 'pending'} label={state.step} /> : null}
+        actions={state.step !== 'ready' ? (
+          <StatusBadge
+            status={['complete', 'propagation_queued', 'already_registered', 'already_uploaded'].includes(state.step) ? 'succeeded' : state.step === 'failed' ? 'failed' : 'pending'}
+            label={state.step}
+          />
+        ) : null}
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Intake failed" error={state.error} /></div> : null}
@@ -1440,7 +1587,29 @@ export default function IntakePage() {
                 <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{t('File')}</span>
                 <input
                   type="file"
-                  onChange={(event) => setFile(event.target.files?.[0] || null)}
+                  multiple
+                  onChange={(event) => {
+                    const selectedFiles = Array.from(event.target.files || []);
+                    setFile(selectedFiles[0] || null);
+                    setUploadItems(selectedFiles.map((selectedFile, index) => ({
+                      id: uploadItemId(selectedFile, index),
+                      file: selectedFile,
+                      name: selectedFile.name,
+                      type: selectedFile.type || 'application/octet-stream',
+                      size: selectedFile.size,
+                      status: 'ready',
+                      progress: 0,
+                      message: 'Ready to upload.',
+                    })));
+                    setState((current) => ({
+                      ...current,
+                      error: null,
+                      step: selectedFiles.length ? 'ready' : 'ready',
+                      presign: null,
+                      upload: null,
+                      register: null,
+                    }));
+                  }}
                   className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gray-800 hover:file:bg-gray-200 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:file:bg-gray-800 dark:file:text-gray-100"
                 />
               </label>
@@ -1457,22 +1626,66 @@ export default function IntakePage() {
                 </select>
               </label>
 
-              {file ? (
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-[#0c1218]">
-                  <DetailRow label="Name" value={file.name} />
-                  <DetailRow label="Type" value={file.type || 'application/octet-stream'} />
-                  <DetailRow label="Bytes" value={file.size.toLocaleString()} />
+              {uploadItems.length ? (
+                <div className="space-y-3 rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-[#0c1218]">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-950 dark:text-white">{t('Upload queue')}</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">
+                        {t('Files are copied to secure cloud storage first, then propagation is queued automatically.')}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
+                      {uploadItems.length} {t('file(s)')}
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {uploadItems.map((item) => (
+                      <div key={item.id} className="rounded-md border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-[#101820]">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="break-all text-sm font-semibold text-gray-950 dark:text-white">{item.name}</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              {item.type || 'application/octet-stream'} · {formatBytes(item.size)}
+                            </p>
+                          </div>
+                          <StatusBadge
+                            status={item.status === 'failed' ? 'failed' : item.progress >= 100 ? 'succeeded' : item.status === 'ready' ? 'pending' : 'running'}
+                            label={item.status === 'already_uploaded' ? 'Already uploaded' : item.status === 'propagation_queued' ? 'Propagation queued' : item.status}
+                          />
+                        </div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+                          <div
+                            className={`h-full rounded-full ${item.status === 'failed' ? 'bg-red-500' : item.progress >= 100 ? 'bg-emerald-500' : 'bg-sky-600'}`}
+                            style={{ width: `${Math.max(0, Math.min(100, Number(item.progress || 0)))}%` }}
+                          />
+                        </div>
+                        <div className="mt-2 flex flex-col gap-2 text-xs text-gray-600 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+                          <span>{t(item.message || 'Waiting.')}</span>
+                          {item.job?.job_id ? (
+                            <Link
+                              to={`/evidence/cases/${caseId}/jobs/${item.job.job_id}`}
+                              className="inline-flex items-center gap-1 font-semibold text-sky-700 hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-200"
+                            >
+                              <CheckCircle2 size={14} aria-hidden="true" />
+                              {t('Open processing status')}
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
               <button
                 type="button"
                 onClick={runUpload}
-                disabled={!file || state.busy}
+                disabled={!uploadItems.length || state.busy}
                 className="inline-flex items-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <UploadCloud size={16} aria-hidden="true" />
-                {state.busy ? t('Working') : t('Upload file')}
+                {state.busy ? t('Uploading') : t('Upload and start propagation')}
               </button>
             </div>
           </section>
@@ -1486,7 +1699,7 @@ export default function IntakePage() {
             {showDiagnostics ? <DetailRow label="Upload ID" value={upload?.upload_id} /> : null}
             {showDiagnostics ? <DetailRow label="Cloud Storage Key" value={state.presign?.presign?.key} /> : null}
             {showDiagnostics ? <DetailRow label="Register Job" value={job?.job_id} /> : null}
-            {showDiagnostics && job ? (
+            {job ? (
               <div className="mt-3">
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${job.job_id}`}
