@@ -227,6 +227,38 @@ function TemplatePicker({ templates, creating, onCreate, canContribute }) {
   );
 }
 
+function PacketCreatePanel({ templates, creating, onCreate, canContribute, onClose }) {
+  return (
+    <section className="mb-5 rounded-xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-4 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Packet setup</p>
+          <h3 className="mt-1 text-lg font-semibold text-[var(--lakai-text)]">Choose a packet template</h3>
+          <p className="mt-1 max-w-3xl text-sm text-[var(--lakai-text-muted)]">
+            Create a packet to organize checklist items, notes, and materials for review. You can start with what you know and
+            update the checklist later.
+          </p>
+        </div>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+          >
+            Close setup
+          </button>
+        ) : null}
+      </div>
+      <TemplatePicker
+        templates={templates}
+        creating={creating}
+        onCreate={onCreate}
+        canContribute={canContribute}
+      />
+    </section>
+  );
+}
+
 function PacketCard({ packet, caseId }) {
   const coverage = coverageFromPacket(packet);
   return (
@@ -425,13 +457,16 @@ export default function PacketsPage() {
     () => groupRequirements(selectedPacket?.requirements || []),
     [selectedPacket?.requirements],
   );
-  const showCreateSection = showCreateFlow || (!state.loading && !state.packets.length);
+  const showCreateSection = canContribute && (showCreateFlow || (!state.loading && !state.packets.length));
+
+  useEffect(() => {
+    if (showCreateFlow) {
+      createPacketRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showCreateFlow]);
 
   function startPacketWorkflow() {
     setShowCreateFlow(true);
-    window.setTimeout(() => {
-      createPacketRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 0);
   }
 
   async function createPacket(template) {
@@ -621,6 +656,8 @@ export default function PacketsPage() {
               <button
                 type="button"
                 onClick={startPacketWorkflow}
+                aria-controls="create-packet"
+                aria-expanded={showCreateSection}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
               >
                 <Plus size={16} aria-hidden="true" />
@@ -643,6 +680,18 @@ export default function PacketsPage() {
       {state.notice ? (
         <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
           {state.notice}
+        </div>
+      ) : null}
+
+      {showCreateSection ? (
+        <div ref={createPacketRef} id="create-packet" className="scroll-mt-6">
+          <PacketCreatePanel
+            templates={state.templates}
+            creating={state.creating}
+            onCreate={createPacket}
+            canContribute={canContribute}
+            onClose={showCreateFlow && state.packets.length ? () => setShowCreateFlow(false) : null}
+          />
         </div>
       ) : null}
 
@@ -685,6 +734,8 @@ export default function PacketsPage() {
               <button
                 type="button"
                 onClick={startPacketWorkflow}
+                aria-controls="create-packet"
+                aria-expanded={showCreateSection}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
               >
                 <Plus size={16} aria-hidden="true" />
@@ -707,6 +758,8 @@ export default function PacketsPage() {
               <button
                 type="button"
                 onClick={startPacketWorkflow}
+                aria-controls="create-packet"
+                aria-expanded={showCreateSection}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
               >
                 <Plus size={16} aria-hidden="true" />
@@ -716,17 +769,6 @@ export default function PacketsPage() {
           />
         </div>
       )}
-
-      {canContribute && showCreateSection ? (
-        <div ref={createPacketRef} id="create-packet" className="scroll-mt-6">
-          <TemplatePicker
-            templates={state.templates}
-            creating={state.creating}
-            onCreate={createPacket}
-            canContribute={canContribute}
-          />
-        </div>
-      ) : null}
 
       <RequestFingerprint fingerprint={state.fingerprint} />
     </div>
