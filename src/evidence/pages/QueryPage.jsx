@@ -36,6 +36,8 @@ import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAtte
 
 const EXAMPLE_QUESTION = 'Which documents mention the parenting schedule?';
 const QUERY_JOB_ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling']);
+const QUERY_JOB_SOCKET_START_TIMEOUT_MS = 6000;
+const QUERY_JOB_SOCKET_IDLE_TIMEOUT_MS = 45000;
 
 function waitFor(milliseconds) {
   return new Promise((resolve) => {
@@ -70,6 +72,40 @@ function queryJobConversationId(job) {
 
 function queryJobFingerprint(job) {
   return job?.result_json?.request_fingerprint_id || job?.request_fingerprint_id || null;
+}
+
+function queryJobFromEvent(event, previousJob = {}) {
+  const payloadJob = event?.job || event?.snapshot || event?.data?.job || {};
+  const eventType = String(event?.type || '').toLowerCase();
+  const status = payloadJob.status
+    || event?.status
+    || (eventType === 'job_complete' ? 'succeeded' : previousJob?.status);
+  const resultJson = {
+    ...(previousJob?.result_json || {}),
+    ...(payloadJob?.result_json || {}),
+  };
+  if (event?.display_message || payloadJob.display_message) {
+    resultJson.display_message = event.display_message || payloadJob.display_message;
+  }
+  if (event?.conversation_id || payloadJob.conversation_id) {
+    resultJson.conversation_id = event.conversation_id || payloadJob.conversation_id;
+  }
+  if (event?.source_reference_count ?? payloadJob.source_reference_count) {
+    resultJson.source_reference_count = event.source_reference_count ?? payloadJob.source_reference_count;
+  }
+  return {
+    ...(previousJob || {}),
+    ...payloadJob,
+    job_id: payloadJob.job_id || event?.job_id || previousJob?.job_id,
+    status,
+    workflow_status: payloadJob.workflow_status || event?.workflow_status || previousJob?.workflow_status,
+    display_status: payloadJob.display_status || event?.display_status || previousJob?.display_status,
+    display_message: payloadJob.display_message || event?.display_message || previousJob?.display_message,
+    current_step: payloadJob.current_step || event?.current_step || previousJob?.current_step,
+    progress_percent: payloadJob.progress_percent ?? event?.progress_percent ?? previousJob?.progress_percent,
+    error_message: payloadJob.error_message || event?.error_message || event?.message || previousJob?.error_message,
+    result_json: resultJson,
+  };
 }
 
 function Panel({ title, children }) {
@@ -1291,6 +1327,125 @@ export default function QueryPage() {
     window.setTimeout(() => setCopiedAnswer(false), 1400);
   }, []);
 
+  const pollQueryJob = useCallback(async ({ initialJob, token, assistantId, fingerprint }) => {
+    let latestJob = initialJob;
+    while (mountedRef.current && latestJob?.job_id && queryJobIsActive(latestJob)) {
+      await waitFor(2500);
+      if (!mountedRef.current) {
+        return latestJob;
+      }
+      const jobResult = await evidenceApi.getJob(caseId, latestJob.job_id, { token });
+      recordFingerprint(jobResult, 'Query job status');
+      latestJob = jobResult.data;
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                running: queryJobIsActive(latestJob),
+                job: latestJob,
+                fingerprint: {
+                  id: jobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
+                  correlationId: jobResult.correlationId,
+                },
+              }
+            : message,
+        ),
+      );
+    }
+    return latestJob;
+  }, [caseId, recordFingerprint]);
+
+  const watchQueryJobWithEvents = useCallback(({ initialJob, token, assistantId, fingerprint }) => new Promise((resolve) => {
+    if (typeof window === 'undefined' || typeof WebSocket === 'undefined' || !initialJob?.job_id) {
+      resolve({ ok: false, job: initialJob });
+      return;
+    }
+
+    let latestJob = initialJob;
+    let opened = false;
+    let settled = false;
+    let socket = null;
+    let startTimer = null;
+    let idleTimer = null;
+
+    const finish = (ok, job = latestJob) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(startTimer);
+      window.clearTimeout(idleTimer);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close(1000, 'done');
+      }
+      resolve({ ok, job });
+    };
+
+    const resetIdleTimer = () => {
+      window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => finish(false, latestJob), QUERY_JOB_SOCKET_IDLE_TIMEOUT_MS);
+    };
+
+    try {
+      socket = new WebSocket(evidenceApi.getJobEventsWebSocketUrl(caseId, initialJob.job_id));
+    } catch {
+      finish(false, latestJob);
+      return;
+    }
+
+    startTimer = window.setTimeout(() => {
+      if (!opened) {
+        finish(false, latestJob);
+      }
+    }, QUERY_JOB_SOCKET_START_TIMEOUT_MS);
+    resetIdleTimer();
+
+    socket.addEventListener('open', () => {
+      opened = true;
+      socket.send(JSON.stringify({ type: 'auth', access_token: token }));
+      resetIdleTimer();
+    });
+
+    socket.addEventListener('message', (event) => {
+      resetIdleTimer();
+      let payload = null;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      const type = String(payload?.type || '').toLowerCase();
+      if (type === 'error') {
+        finish(false, latestJob);
+        return;
+      }
+      latestJob = queryJobFromEvent(payload, latestJob);
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                running: !['job_complete', 'job_stream_timeout'].includes(type) && queryJobIsActive(latestJob),
+                job: latestJob,
+                fingerprint,
+              }
+            : message,
+        ),
+      );
+      if (type === 'job_complete' || type === 'job_stream_timeout') {
+        finish(true, latestJob);
+      }
+    });
+
+    socket.addEventListener('error', () => finish(false, latestJob));
+    socket.addEventListener('close', () => {
+      if (!settled && queryJobIsActive(latestJob)) {
+        finish(false, latestJob);
+      }
+    });
+  }), [caseId]);
+
   const runQuery = useCallback(async () => {
     const trimmed = question.trim();
     if (!trimmed) {
@@ -1356,14 +1511,18 @@ export default function QueryPage() {
       }
 
       let latestJob = queuedJob;
-      while (mountedRef.current && latestJob?.job_id && queryJobIsActive(latestJob)) {
-        await waitFor(2500);
-        if (!mountedRef.current) {
-          return;
+      if (latestJob?.job_id && queryJobIsActive(latestJob)) {
+        const watched = await watchQueryJobWithEvents({ initialJob: latestJob, token, assistantId, fingerprint });
+        latestJob = watched.job || latestJob;
+        if (!watched.ok && mountedRef.current && queryJobIsActive(latestJob)) {
+          latestJob = await pollQueryJob({ initialJob: latestJob, token, assistantId, fingerprint });
         }
-        const jobResult = await evidenceApi.getJob(caseId, latestJob.job_id, { token });
-        recordFingerprint(jobResult, 'Query job status');
-        latestJob = jobResult.data;
+      }
+
+      if (mountedRef.current && latestJob?.job_id) {
+        const finalJobResult = await evidenceApi.getJob(caseId, latestJob.job_id, { token });
+        recordFingerprint(finalJobResult, 'Query job final status');
+        latestJob = finalJobResult.data;
         setMessages((current) =>
           current.map((message) =>
             message.id === assistantId
@@ -1372,8 +1531,8 @@ export default function QueryPage() {
                   running: queryJobIsActive(latestJob),
                   job: latestJob,
                   fingerprint: {
-                    id: jobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
-                    correlationId: jobResult.correlationId,
+                    id: finalJobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
+                    correlationId: finalJobResult.correlationId,
                   },
                 }
               : message,
@@ -1445,7 +1604,7 @@ export default function QueryPage() {
       );
       setState((current) => ({ ...current, running: false, error }));
     }
-  }, [activeConversationId, caseId, currentUserName, getAccessToken, loadConversation, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics]);
+  }, [activeConversationId, caseId, currentUserName, getAccessToken, loadConversation, pollQueryJob, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics, watchQueryJobWithEvents]);
 
   const openCitation = useCallback(
     async (citation) => {
