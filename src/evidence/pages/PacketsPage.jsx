@@ -476,11 +476,14 @@ function PacketDocumentPicker({
   onDriveSearchChange,
   driveLoading,
   driveItems,
+  drivePath,
   driveSelectedIds,
   driveAction,
   onDriveSearch,
   onBrowseDriveRoot,
   onToggleDriveItem,
+  onToggleAllDriveFiles,
+  onPreviewDriveItem,
   onImportDriveItems,
 }) {
   if (!open || !requirement) {
@@ -495,6 +498,10 @@ function PacketDocumentPicker({
   const selectedDriveItems = driveItems.filter((item) => driveSelectedIds.includes(item.id));
   const busy = linking || localUploading || Boolean(driveAction);
   const reconnectDetail = googleDriveReconnectDetail(connectorError);
+  const currentDrivePath = drivePath?.length ? drivePath : [{ id: 'root', name: 'My Drive' }];
+  const parentDriveFolder = currentDrivePath.length > 1 ? currentDrivePath[currentDrivePath.length - 2] : null;
+  const visibleDriveFiles = driveItems.filter((item) => item.mimeType !== GOOGLE_FOLDER_MIME_TYPE);
+  const allVisibleDriveFilesSelected = visibleDriveFiles.length > 0 && visibleDriveFiles.every((item) => driveSelectedIds.includes(item.id));
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
@@ -704,12 +711,67 @@ function PacketDocumentPicker({
                   </button>
                   <button
                     type="button"
-                    onClick={() => onBrowseDriveRoot('root', 'My Drive')}
+                    onClick={() => onBrowseDriveRoot('root', 'My Drive', [{ id: 'root', name: 'My Drive' }])}
                     disabled={driveLoading}
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Folder size={16} aria-hidden="true" />
                     My Drive
+                  </button>
+                </div>
+
+                <div className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <nav aria-label="Google Drive folder path" className="flex min-w-0 flex-wrap items-center gap-1 text-sm">
+                      <span className="mr-1 text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Location</span>
+                      {currentDrivePath.map((crumb, index) => {
+                        const isLast = index === currentDrivePath.length - 1;
+                        const crumbPath = currentDrivePath.slice(0, index + 1);
+                        return (
+                          <span key={`${crumb.id || crumb.name}-${index}`} className="inline-flex min-w-0 items-center gap-1">
+                            {index > 0 ? <span className="text-[var(--lakai-text-muted)]">/</span> : null}
+                            {isLast || crumb.search ? (
+                              <span className="max-w-[14rem] truncate font-semibold text-[var(--lakai-text)]">{crumb.name}</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onBrowseDriveRoot(crumb.id, crumb.name, crumbPath)}
+                                disabled={driveLoading}
+                                className="max-w-[14rem] truncate font-semibold text-[var(--lakai-primary)] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {crumb.name}
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </nav>
+                    <button
+                      type="button"
+                      onClick={() => parentDriveFolder ? onBrowseDriveRoot(parentDriveFolder.id, parentDriveFolder.name, currentDrivePath.slice(0, -1)) : undefined}
+                      disabled={!parentDriveFolder || driveLoading}
+                      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <ArrowLeft size={16} aria-hidden="true" />
+                      Back
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-[var(--lakai-text-muted)]">
+                    {visibleDriveFiles.length
+                      ? `${selectedDriveItems.length} of ${visibleDriveFiles.length} visible file(s) selected.`
+                      : 'Open folders or search Google Drive to choose files.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onToggleAllDriveFiles}
+                    disabled={!canContribute || driveLoading || !visibleDriveFiles.length}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    {allVisibleDriveFilesSelected ? 'Deselect visible files' : 'Select visible files'}
                   </button>
                 </div>
 
@@ -730,15 +792,26 @@ function PacketDocumentPicker({
                             className="mt-1 h-4 w-4 accent-[var(--lakai-primary)]"
                           />
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              {isFolder ? <Folder size={16} className="shrink-0 text-amber-600" aria-hidden="true" /> : <FileText size={16} className="shrink-0 text-[var(--lakai-text-muted)]" aria-hidden="true" />}
-                              <button
-                                type="button"
-                                onClick={() => isFolder ? onBrowseDriveRoot(item.id, item.name) : onToggleDriveItem(item)}
-                                className={`min-w-0 break-words text-left text-sm font-semibold ${isFolder ? 'text-[var(--lakai-primary)] hover:underline' : 'text-[var(--lakai-text)]'}`}
-                              >
-                                {item.name || item.id}
-                              </button>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex min-w-0 items-center gap-2">
+                                {isFolder ? <Folder size={16} className="shrink-0 text-amber-600" aria-hidden="true" /> : <FileText size={16} className="shrink-0 text-[var(--lakai-text-muted)]" aria-hidden="true" />}
+                                <button
+                                  type="button"
+                                  onClick={() => isFolder ? onBrowseDriveRoot(item.id, item.name, [...currentDrivePath.filter((crumb) => !crumb.search), { id: item.id, name: item.name || 'Folder' }]) : onToggleDriveItem(item)}
+                                  className={`min-w-0 break-words text-left text-sm font-semibold ${isFolder ? 'text-[var(--lakai-primary)] hover:underline' : 'text-[var(--lakai-text)]'}`}
+                                >
+                                  {item.name || item.id}
+                                </button>
+                              </div>
+                              {!isFolder ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onPreviewDriveItem(item)}
+                                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                                >
+                                  Preview
+                                </button>
+                              ) : null}
                             </div>
                             <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
                               <span>{isFolder ? 'Folder' : formatBytes(item.size)}</span>
@@ -1093,6 +1166,7 @@ export default function PacketsPage() {
     driveLoading: false,
     driveAction: null,
     driveItems: [],
+    drivePath: [{ id: 'root', name: 'My Drive' }],
     driveSelectedIds: [],
   });
   const [unlinking, setUnlinking] = useState(null);
@@ -1297,6 +1371,7 @@ export default function PacketsPage() {
       driveLoading: false,
       driveAction: null,
       driveItems: [],
+      drivePath: [{ id: 'root', name: 'My Drive' }],
       driveSelectedIds: [],
     });
   }
@@ -1339,7 +1414,7 @@ export default function PacketsPage() {
     }
   }
 
-  async function browseDriveFolder(folderId = 'root') {
+  async function browseDriveFolder(folderId = 'root', folderName = 'My Drive', nextPath = null) {
     if (!activeGoogleConnection?.source_connection_id) {
       await loadPacketConnectors();
       return;
@@ -1358,6 +1433,7 @@ export default function PacketsPage() {
         ...current,
         driveLoading: false,
         driveItems: result.data?.files || [],
+        drivePath: nextPath || [{ id: folderId, name: folderName || 'My Drive' }],
         driveSelectedIds: [],
       }));
     } catch (error) {
@@ -1372,7 +1448,7 @@ export default function PacketsPage() {
     }
     const query = documentPicker.driveSearch.trim();
     if (!query) {
-      await browseDriveFolder('root');
+      await browseDriveFolder('root', 'My Drive', [{ id: 'root', name: 'My Drive' }]);
       return;
     }
     setDocumentPicker((current) => ({ ...current, driveLoading: true, connectorError: null }));
@@ -1389,6 +1465,7 @@ export default function PacketsPage() {
         ...current,
         driveLoading: false,
         driveItems: result.data?.files || [],
+        drivePath: [{ id: 'root', name: 'My Drive' }, { id: `search:${query}`, name: `Search: ${query}`, search: true }],
         driveSelectedIds: [],
       }));
     } catch (error) {
@@ -1586,6 +1663,43 @@ export default function PacketsPage() {
     });
   }
 
+  function toggleAllVisibleDriveFiles() {
+    setDocumentPicker((current) => {
+      const visibleFileIds = current.driveItems
+        .filter((item) => item.mimeType !== GOOGLE_FOLDER_MIME_TYPE)
+        .map((item) => item.id)
+        .filter(Boolean);
+      if (!visibleFileIds.length) {
+        return current;
+      }
+      const visibleSet = new Set(visibleFileIds);
+      const selectedSet = new Set(current.driveSelectedIds);
+      const allSelected = visibleFileIds.every((fileId) => selectedSet.has(fileId));
+      if (allSelected) {
+        return {
+          ...current,
+          driveSelectedIds: current.driveSelectedIds.filter((fileId) => !visibleSet.has(fileId)),
+        };
+      }
+      return {
+        ...current,
+        driveSelectedIds: Array.from(new Set([...current.driveSelectedIds, ...visibleFileIds])),
+      };
+    });
+  }
+
+  function previewDriveItem(item) {
+    const previewUrl = item?.webViewLink || item?.webContentLink || item?.url;
+    if (previewUrl) {
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setState((current) => ({
+      ...current,
+      notice: 'Preview is available after this Drive file is imported into Documents.',
+    }));
+  }
+
   async function importSelectedDriveItems() {
     const requirement = documentPicker.requirement;
     if (!requirement || !selectedPacket?.packet_id || !activeGoogleConnection?.source_connection_id) {
@@ -1736,11 +1850,14 @@ export default function PacketsPage() {
           onDriveSearchChange={(driveSearch) => setDocumentPicker((current) => ({ ...current, driveSearch }))}
           driveLoading={documentPicker.driveLoading}
           driveItems={documentPicker.driveItems}
+          drivePath={documentPicker.drivePath}
           driveSelectedIds={documentPicker.driveSelectedIds}
           driveAction={documentPicker.driveAction}
           onDriveSearch={searchDriveFiles}
           onBrowseDriveRoot={browseDriveFolder}
           onToggleDriveItem={toggleDriveItem}
+          onToggleAllDriveFiles={toggleAllVisibleDriveFiles}
+          onPreviewDriveItem={previewDriveItem}
           onImportDriveItems={importSelectedDriveItems}
         />
 
