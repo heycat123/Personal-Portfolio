@@ -10,8 +10,9 @@ import {
   Plus,
   RefreshCw,
   Save,
+  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 import ErrorPanel from '../components/ErrorPanel';
@@ -162,13 +163,31 @@ function ComingLaterPanel() {
   );
 }
 
-function TemplatePicker({ templates, creating, onCreate, canContribute }) {
+function TemplatePicker({ templates, creating, onCreate, canContribute, templatesLoading, onRefresh }) {
   if (!templates.length) {
     return (
-      <EmptyState
-        title="No packet templates available"
-        description="Packet templates will appear here when they are available for this workspace."
-      />
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold">No packet templates available</h3>
+            <p className="mt-2 text-sm">
+              Packet setup opened, but this workspace is not receiving packet templates yet. Refresh templates and try again.
+              If this keeps happening, use Help & Support so we can check the packet template connection.
+            </p>
+          </div>
+          {onRefresh ? (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={templatesLoading}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100 dark:hover:bg-amber-900/40"
+            >
+              {templatesLoading ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
+              Refresh templates
+            </button>
+          ) : null}
+        </div>
+      </section>
     );
   }
 
@@ -227,35 +246,58 @@ function TemplatePicker({ templates, creating, onCreate, canContribute }) {
   );
 }
 
-function PacketCreatePanel({ templates, creating, onCreate, canContribute, onClose }) {
+function PacketCreateDialog({
+  open,
+  templates,
+  creating,
+  onCreate,
+  canContribute,
+  onClose,
+  onRefresh,
+  templatesLoading,
+}) {
+  if (!open) {
+    return null;
+  }
+
   return (
-    <section className="mb-5 rounded-xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-4 shadow-sm">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Packet setup</p>
-          <h3 className="mt-1 text-lg font-semibold text-[var(--lakai-text)]">Choose a packet template</h3>
-          <p className="mt-1 max-w-3xl text-sm text-[var(--lakai-text-muted)]">
-            Create a packet to organize checklist items, notes, and materials for review. You can start with what you know and
-            update the checklist later.
-          </p>
-        </div>
-        {onClose ? (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="packet-setup-title"
+        className="w-full max-w-4xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
+      >
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Packet setup</p>
+            <h2 id="packet-setup-title" className="mt-1 text-xl font-semibold text-[var(--lakai-text)]">
+              Choose a packet template
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-[var(--lakai-text-muted)]">
+              Create a packet to organize checklist items, notes, and materials for review. You can start with what you know and
+              update the checklist later.
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
           >
-            Close setup
+            <X size={16} aria-hidden="true" />
+            Close
           </button>
-        ) : null}
-      </div>
-      <TemplatePicker
-        templates={templates}
-        creating={creating}
-        onCreate={onCreate}
-        canContribute={canContribute}
-      />
-    </section>
+        </div>
+        <TemplatePicker
+          templates={templates}
+          creating={creating}
+          onCreate={onCreate}
+          canContribute={canContribute}
+          templatesLoading={templatesLoading}
+          onRefresh={onRefresh}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -394,7 +436,6 @@ function RequirementEditor({ requirement, packetId, canContribute, saving, onSav
 export default function PacketsPage() {
   const { caseId, packetId } = useParams();
   const navigate = useNavigate();
-  const createPacketRef = useRef(null);
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { activeCase } = useCaseContext();
@@ -457,16 +498,15 @@ export default function PacketsPage() {
     () => groupRequirements(selectedPacket?.requirements || []),
     [selectedPacket?.requirements],
   );
-  const showCreateSection = canContribute && (showCreateFlow || (!state.loading && !state.packets.length));
-
-  useEffect(() => {
-    if (showCreateFlow) {
-      createPacketRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [showCreateFlow]);
 
   function startPacketWorkflow() {
     setShowCreateFlow(true);
+  }
+
+  function closePacketWorkflow() {
+    if (!state.creating) {
+      setShowCreateFlow(false);
+    }
   }
 
   async function createPacket(template) {
@@ -495,6 +535,7 @@ export default function PacketsPage() {
         notice: result.data?.message || 'Packet checklist created.',
         fingerprint: result.requestFingerprintId,
       }));
+      setShowCreateFlow(false);
       if (packet?.packet_id) {
         navigate(evidenceCasePath(activeCase, `/packets/${packet.packet_id}`));
       } else {
@@ -656,8 +697,8 @@ export default function PacketsPage() {
               <button
                 type="button"
                 onClick={startPacketWorkflow}
-                aria-controls="create-packet"
-                aria-expanded={showCreateSection}
+                aria-haspopup="dialog"
+                aria-expanded={showCreateFlow}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
               >
                 <Plus size={16} aria-hidden="true" />
@@ -676,22 +717,21 @@ export default function PacketsPage() {
         )}
       />
 
+      <PacketCreateDialog
+        open={showCreateFlow && canContribute}
+        templates={state.templates}
+        creating={state.creating}
+        onCreate={createPacket}
+        canContribute={canContribute}
+        onClose={closePacketWorkflow}
+        onRefresh={loadPackets}
+        templatesLoading={state.templatesLoading || state.loading}
+      />
+
       {state.error ? <div className="mb-5"><ErrorPanel title="Packets failed" error={{ message: friendlyError(state.error) }} onRetry={loadPackets} /></div> : null}
       {state.notice ? (
         <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
           {state.notice}
-        </div>
-      ) : null}
-
-      {showCreateSection ? (
-        <div ref={createPacketRef} id="create-packet" className="scroll-mt-6">
-          <PacketCreatePanel
-            templates={state.templates}
-            creating={state.creating}
-            onCreate={createPacket}
-            canContribute={canContribute}
-            onClose={showCreateFlow && state.packets.length ? () => setShowCreateFlow(false) : null}
-          />
         </div>
       ) : null}
 
@@ -734,8 +774,8 @@ export default function PacketsPage() {
               <button
                 type="button"
                 onClick={startPacketWorkflow}
-                aria-controls="create-packet"
-                aria-expanded={showCreateSection}
+                aria-haspopup="dialog"
+                aria-expanded={showCreateFlow}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
               >
                 <Plus size={16} aria-hidden="true" />
@@ -758,8 +798,8 @@ export default function PacketsPage() {
               <button
                 type="button"
                 onClick={startPacketWorkflow}
-                aria-controls="create-packet"
-                aria-expanded={showCreateSection}
+                aria-haspopup="dialog"
+                aria-expanded={showCreateFlow}
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)]"
               >
                 <Plus size={16} aria-hidden="true" />
