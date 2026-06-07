@@ -103,7 +103,7 @@ const ENTITY_COLUMNS = [
   {
     id: 'entity_type',
     label: 'Type',
-    help: 'Promotion audit type. This decides whether an extracted item behaves like a person, place, identifier, topic, or quiet background concept.',
+    help: 'Record type, such as a person, organization, place, contact detail, topic, or other item found in this workspace.',
     filterOptions: ENTITY_TYPE_OPTIONS,
     filterMulti: true,
     headerClassName: 'min-w-[140px]',
@@ -542,9 +542,9 @@ function entityNameCopy(entityType) {
   }
   if (type === 'OTHER') {
     return {
-      label: 'Entity name',
+      label: 'Record name',
       placeholder: 'Example: Parenting plan',
-      helpTitle: 'Entity name',
+      helpTitle: 'Record name',
       helpText: 'The real noun or concept name when it is important enough to track directly.',
     };
   }
@@ -558,6 +558,45 @@ function entityNameCopy(entityType) {
 
 function relationshipDisplay(label, t) {
   return t(String(label || '').trim());
+}
+
+function personInitials(name) {
+  const tokens = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!tokens.length) {
+    return '?';
+  }
+  return tokens.slice(0, 2).map((token) => token.charAt(0).toUpperCase()).join('');
+}
+
+function reviewDisplayLabel(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'confirmed') {
+    return 'Confirmed by you';
+  }
+  if (normalized === 'needs_review') {
+    return 'Needs review';
+  }
+  if (normalized === 'suppressed') {
+    return 'Hidden from review';
+  }
+  if (normalized === 'duplicate') {
+    return 'Possible duplicate';
+  }
+  if (normalized === 'topic_only') {
+    return 'Reference only';
+  }
+  return 'Reviewed';
+}
+
+function relationshipCardLabel(entity) {
+  const roles = [
+    ...(entity?.relationship_labels || []),
+    ...(entity?.roles || []),
+  ].map((item) => String(item?.relationship_label || item?.role || item || '').trim()).filter(Boolean);
+  return roles[0] || humanizeKey(entity?.entity_type || 'person');
 }
 
 function inverseRelationshipLabel(label) {
@@ -3131,6 +3170,42 @@ export default function EntitiesPage() {
     }), 'people-contacts');
   }, [caseId, state.contactStatusCounts, state.suggestions.length]);
 
+  const featuredPeople = useMemo(() => (
+    [...(state.entities || [])]
+      .sort((left, right) => {
+        const leftNeedsReview = entityReviewStatus(left) === 'needs_review' ? 1 : 0;
+        const rightNeedsReview = entityReviewStatus(right) === 'needs_review' ? 1 : 0;
+        if (leftNeedsReview !== rightNeedsReview) {
+          return rightNeedsReview - leftNeedsReview;
+        }
+        return Number(right.effective_review_priority ?? right.review_priority ?? 0)
+          - Number(left.effective_review_priority ?? left.review_priority ?? 0);
+      })
+      .slice(0, 4)
+  ), [state.entities]);
+
+  const focusContactLinks = useMemo(() => (
+    (state.contactLinks || [])
+      .filter((link) => {
+        const status = String(link.link_status || '').toLowerCase();
+        return status && !['confirmed', 'rejected', 'ignored'].includes(status);
+      })
+      .slice(0, 2)
+  ), [state.contactLinks]);
+
+  const focusSuggestions = useMemo(() => (state.suggestions || []).slice(0, 2), [state.suggestions]);
+
+  const jumpToContactReview = useCallback(() => {
+    setContactFilterValue('link_status', 'review_needed');
+    window.setTimeout(() => {
+      document.getElementById('contact-link-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }, [setContactFilterValue]);
+
+  const jumpToDuplicates = useCallback(() => {
+    document.getElementById('possible-duplicates')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
   return (
     <div>
       <PageHeader
@@ -3194,7 +3269,7 @@ export default function EntitiesPage() {
           {t('Phone numbers and emails may be linked from contacts, messages, or manual review. Confirm uncertain matches before using them in summaries or exports.')}
         </p>
         <p className="mt-1">
-          {t('Relationship labels help organize the case. They do not decide legal status or prove a claim.')}
+          {t('Relationship labels help organize the case. They do not decide legal status or whether a legal requirement is satisfied.')}
         </p>
       </section>
 
@@ -3205,6 +3280,155 @@ export default function EntitiesPage() {
           description="Contact links, possible duplicates, and relationship labels that need review."
         />
       ) : null}
+
+      <section className="mb-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-sm">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="font-serif text-2xl font-semibold text-[var(--lakai-heading)]">{t('People and contact records')}</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--lakai-muted)]">
+                {t('Review names, contact details, relationship labels, and where each person or contact appeared in the workspace.')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => openBlankCreateEntityDrawer()}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
+            >
+              <Plus size={16} aria-hidden="true" />
+              {t('Add contact')}
+            </button>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {featuredPeople.map((person) => {
+              const status = entityReviewStatus(person);
+              const isNeedsReview = status === 'needs_review';
+              const mentionCount = Number(person.mention_count || 0);
+              const aliasCount = Number(person.alias_count || 0);
+              const contactCount = Number(person.contact_link_count || person.contact_links_count || person.contact_count || 0);
+              return (
+                <article
+                  key={person.person_id}
+                  className={`rounded-2xl border bg-[var(--lakai-panel)] p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+                    isNeedsReview
+                      ? 'border-amber-300 dark:border-amber-700/80'
+                      : 'border-[var(--lakai-border-soft)]'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] font-serif text-lg font-semibold text-[var(--lakai-primary)]">
+                      {personInitials(person.canonical_name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="min-w-0 truncate font-serif text-xl font-semibold text-[var(--lakai-heading)]">
+                          {person.canonical_name || t('Unnamed person/contact')}
+                        </h3>
+                        <span className="rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-2 py-0.5 text-xs font-semibold text-[var(--lakai-muted)]">
+                          {t(relationshipDisplay(relationshipCardLabel(person), t))}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <StatusBadge status={reviewBadgeStatus(status)} label={t(reviewDisplayLabel(status))} />
+                        {contactCount > 0 ? (
+                          <span className="rounded-full bg-[var(--lakai-accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--lakai-primary)]">
+                            {t('{count} contact link(s)', { count: contactCount })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openEntityDetail(person.person_id)}
+                      className="rounded-full border border-[var(--lakai-border-soft)] px-3 py-1.5 text-sm font-semibold text-[var(--lakai-primary)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
+                    >
+                      {t('View details')}
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-2 text-sm text-[var(--lakai-muted)] sm:grid-cols-3">
+                    <div className="rounded-xl bg-[var(--lakai-surface)] p-3">
+                      <span className="block text-xs font-semibold uppercase tracking-normal">{t('Names used')}</span>
+                      <strong className="mt-1 block text-base text-[var(--lakai-heading)]">{aliasCount}</strong>
+                    </div>
+                    <div className="rounded-xl bg-[var(--lakai-surface)] p-3">
+                      <span className="block text-xs font-semibold uppercase tracking-normal">{t('Mentions')}</span>
+                      <strong className="mt-1 block text-base text-[var(--lakai-heading)]">{mentionCount}</strong>
+                    </div>
+                    <div className="rounded-xl bg-[var(--lakai-surface)] p-3">
+                      <span className="block text-xs font-semibold uppercase tracking-normal">{t('Review')}</span>
+                      <strong className="mt-1 block text-base text-[var(--lakai-heading)]">{t(reviewDisplayLabel(status))}</strong>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+            {!featuredPeople.length ? (
+              <div className="rounded-2xl border border-dashed border-[var(--lakai-border-soft)] p-5 text-sm text-[var(--lakai-muted)] lg:col-span-2">
+                {state.loading ? t('Loading people and contacts...') : t('No people or contact records matched this view.')}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <aside className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--lakai-accent-soft)] text-[var(--lakai-primary)]">
+              <Eye size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="font-serif text-xl font-semibold text-[var(--lakai-heading)]">{t('Review focus')}</h2>
+              <p className="text-xs text-[var(--lakai-muted)]">{t('Start with the items most likely to need a person to confirm them.')}</p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            {focusContactLinks.map((link) => (
+              <button
+                key={link.contact_entity_link_id}
+                type="button"
+                onClick={jumpToContactReview}
+                className="w-full rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-left text-sm hover:border-amber-300 hover:bg-amber-50 dark:border-amber-900/70 dark:bg-amber-950/20"
+              >
+                <span className="block font-semibold text-amber-950 dark:text-amber-100">{contactDisplayLabel(link) || contactPointLabel(link)}</span>
+                <span className="mt-1 block text-xs text-amber-800 dark:text-amber-200">
+                  {t('Review contact link')} · {contactPointLabel(link)}
+                </span>
+              </button>
+            ))}
+            {focusSuggestions.map((suggestion) => (
+              <button
+                key={`${suggestion.suggestion_type}_${suggestion.match_value}`}
+                type="button"
+                onClick={jumpToDuplicates}
+                className="w-full rounded-xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-panel)] p-3 text-left text-sm hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
+              >
+                <span className="block font-semibold text-[var(--lakai-heading)]">{suggestion.match_value || t('Possible duplicate')}</span>
+                <span className="mt-1 block text-xs text-[var(--lakai-muted)]">{t('Review possible duplicate match')}</span>
+              </button>
+            ))}
+            {!focusContactLinks.length && !focusSuggestions.length ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/20 dark:text-emerald-100">
+                {t('No urgent people or contact review items right now.')}
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-2">
+            <button
+              type="button"
+              onClick={jumpToContactReview}
+              className="rounded-full border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-primary)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
+            >
+              {t('Review contact links')}
+            </button>
+            <button
+              type="button"
+              onClick={jumpToDuplicates}
+              className="rounded-full border border-[var(--lakai-border-soft)] px-3 py-2 text-sm font-semibold text-[var(--lakai-primary)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
+            >
+              {t('Review possible duplicates')}
+            </button>
+          </div>
+        </aside>
+      </section>
 
       {roleResolutionReview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -3588,7 +3812,7 @@ export default function EntitiesPage() {
       </div>
 
       <div className="space-y-5">
-        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+        <section id="contact-link-review" className="scroll-mt-24 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
           <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Contact link review')}</h3>
@@ -3744,7 +3968,7 @@ export default function EntitiesPage() {
             }}
           />
 
-          <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+          <section id="possible-duplicates" className="mt-4 scroll-mt-24 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Possible duplicates')}</h3>
               <StatusBadge status={state.suggestionsLoading ? 'running' : 'configured'} label={t('{count} suggestion(s)', { count: state.suggestions.length })} />
