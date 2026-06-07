@@ -62,6 +62,68 @@ const REQUIREMENT_STATUS_OPTIONS = [
 
 const REQUIREMENT_STATUS_MAP = Object.fromEntries(REQUIREMENT_STATUS_OPTIONS.map((item) => [item.value, item]));
 const COVERED_STATUSES = ['added', 'may_not_apply', 'skipped'];
+const REQUIREMENT_UPLOAD_GUIDANCE = {
+  financial_affidavit_draft_form: [
+    'Draft or completed Florida financial affidavit form 12.902(b) or 12.902(c), if you already have one.',
+    'Notes or questions about which financial affidavit form applies.',
+    'Child support worksheet notes if child support is part of the case.',
+  ],
+  income_employment: [
+    'Pay stubs or other earned-income proof for the last 6 months.',
+    'Income from any other source for the last 6 months if it is not already shown on pay stubs.',
+    'Employment changes, bonuses, payouts, cash income, or non-recurring income notes if they apply.',
+  ],
+  tax_returns_documents: [
+    'Complete federal and state personal income tax returns for the past 3 years, with attachments and schedules.',
+    'W-2, 1099, and K-1 forms for the past year if that tax return has not been prepared.',
+    'Gift, foreign, state, business, partnership, corporate, or trust tax returns if they apply.',
+  ],
+  bank_account_statements: [
+    'Periodic statements for all checking accounts for the last 12 months.',
+    'Statements for savings, money market, certificate of deposit, and similar accounts for the last 12 months.',
+    'Canceled checks or registers for accounts with check-writing privileges, if available.',
+  ],
+  digital_wallets_payment_apps: [
+    'Most recent statement and the past 12 months of virtual-currency or digital-asset transaction records, if applicable.',
+    'Payment app transfer history or balance screenshots if those accounts are relevant to income, expenses, debts, or support.',
+    'Notes if you do not use these accounts or they may not apply.',
+  ],
+  debts_liabilities: [
+    'Credit card and charge account statements or other debt records for the last 24 months.',
+    'Promissory notes, loan records, liens, judgments, or other money owed by either party within the last 24 months.',
+    'Current lease agreements and debt balance records if they apply.',
+  ],
+  housing_recurring_expenses: [
+    'Rent, mortgage, lease, property, or housing payment records.',
+    'Utility, transportation, insurance, food, and recurring household expense records used for your affidavit numbers.',
+    'Short notes explaining recurring expenses if documents are not available.',
+  ],
+  insurance_benefits_retirement: [
+    'Insurance declarations page, last periodic statement, and past 12 months of life insurance statements.',
+    'Current health and dental insurance cards covering either party or dependent children.',
+    'Most recent and past 12 months of retirement, pension, deferred compensation, 401(k), IRA, or similar statements.',
+  ],
+  business_self_employment: [
+    'Business, partnership, corporate, or trust tax returns for the last 3 tax years if you have an ownership interest.',
+    'Business bank statements, profit/loss records, invoices, account balances, or self-employment income records.',
+    'Business ownership/status note if this may not apply or documents are incomplete.',
+  ],
+  child_household_support_expenses: [
+    'Childcare, school, medical, dental, insurance, therapy, activity, or household support expense records if they apply.',
+    'Support payments, household support transfers, or reimbursement records.',
+    'Notes for child-related expenses that do not have a document yet.',
+  ],
+  orders_agreements_support_obligations: [
+    'Existing child support, alimony/spousal support, or other financial orders if they apply.',
+    'Written agreements, settlement terms, premarital or marital agreements, or support obligation records.',
+    'Court notices or orders related to financial disclosure.',
+  ],
+  notes_questions: [
+    'Questions for your lawyer, trusted helper, or your own review.',
+    'A missing documents list.',
+    'Items to verify before sharing, serving, or filing anything.',
+  ],
+};
 
 function normalizeStatus(value) {
   return String(value || '').toLowerCase();
@@ -504,6 +566,10 @@ function RequirementEditor({
   const rowSaving = saving === requirementId;
   const linkedDocuments = Array.isArray(requirement.linked_documents) ? requirement.linked_documents : [];
   const links = Array.isArray(requirement.links) ? requirement.links : [];
+  const templateGuidance = requirement.metadata_json?.upload_guidance;
+  const uploadGuidance = Array.isArray(templateGuidance) && templateGuidance.length
+    ? templateGuidance
+    : REQUIREMENT_UPLOAD_GUIDANCE[requirementId] || [];
 
   return (
     <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -522,6 +588,23 @@ function RequirementEditor({
           </div>
         ) : null}
       </div>
+
+      {uploadGuidance.length ? (
+        <section className="mt-4 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+          <p className="text-sm font-semibold text-[var(--lakai-text)]">What to upload</p>
+          <ul className="mt-2 space-y-1.5 text-sm text-[var(--lakai-text-muted)]">
+            {uploadGuidance.map((item) => (
+              <li key={item} className="flex gap-2">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--lakai-primary)]" aria-hidden="true" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-[var(--lakai-text-muted)]">
+            This checklist is for organization and review. Your situation, court order, or lawyer may require different or additional documents.
+          </p>
+        </section>
+      ) : null}
 
       <div className="mt-4 grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
         <label className="block">
@@ -678,6 +761,39 @@ export default function PacketsPage() {
   });
   const [unlinking, setUnlinking] = useState(null);
 
+  useEffect(() => {
+    if (!documentPicker.open) {
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(async () => {
+      setDocumentPicker((current) => ({ ...current, loading: true }));
+      try {
+        const token = await getAccessToken();
+        const result = await evidenceApi.getDocuments(
+          caseId,
+          {
+            limit: 50,
+            offset: 0,
+            q: documentPicker.search || undefined,
+            sort_by: 'updated_at',
+            sort_dir: 'desc',
+          },
+          { token },
+        );
+        recordFingerprint(result, 'Packet document picker');
+        setDocumentPicker((current) => ({
+          ...current,
+          loading: false,
+          documents: result.data?.documents || [],
+        }));
+      } catch (error) {
+        setDocumentPicker((current) => ({ ...current, loading: false }));
+        setState((current) => ({ ...current, error }));
+      }
+    }, 350);
+    return () => window.clearTimeout(timeoutId);
+  }, [caseId, documentPicker.open, documentPicker.search, getAccessToken, recordFingerprint]);
+
   const loadPackets = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
@@ -822,15 +938,12 @@ export default function PacketsPage() {
     setDocumentPicker({
       open: true,
       requirement,
-      loading: true,
+      loading: false,
       linking: false,
       search: '',
       documents: [],
       selectedFileIds: [],
     });
-    setTimeout(() => {
-      loadPickerDocuments('');
-    }, 0);
   }
 
   function closeDocumentPicker() {
