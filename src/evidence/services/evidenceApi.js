@@ -264,6 +264,27 @@ export const evidenceApi = {
     request('/api/v1/invitations/accept', { ...options, method: 'POST', body: payload }),
   updateCase: (caseId, payload, options) =>
     request(casePath(caseId), { ...options, method: 'PATCH', body: payload }),
+  getPacketTemplates: (params = {}, options = {}) =>
+    request('/api/v1/packet-templates', { ...options, query: params }),
+  getPacketTemplate: (templateId, params = {}, options = {}) =>
+    request(`/api/v1/packet-templates/${encodeURIComponent(templateId)}`, { ...options, query: params }),
+  getPackets: (caseId, options) => request(casePath(caseId, '/packets'), options),
+  createPacket: (caseId, payload, options) =>
+    request(casePath(caseId, '/packets'), { ...options, method: 'POST', body: payload }),
+  getPacket: (caseId, packetId, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}`), options),
+  updatePacket: (caseId, packetId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}`), {
+      ...options,
+      method: 'PATCH',
+      body: payload,
+    }),
+  updatePacketRequirement: (caseId, packetId, requirementId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}`), {
+      ...options,
+      method: 'PATCH',
+      body: payload,
+    }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getReadinessResolvePlan: (caseId, options) =>
     request(casePath(caseId, '/readiness/resolve-plan'), options),
