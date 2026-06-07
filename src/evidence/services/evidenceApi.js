@@ -285,6 +285,17 @@ export const evidenceApi = {
       method: 'PATCH',
       body: payload,
     }),
+  linkPacketRequirementDocuments: (caseId, packetId, requirementId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/links`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
+  unlinkPacketRequirementDocument: (caseId, packetId, requirementId, linkId, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/links/${encodeURIComponent(linkId)}`), {
+      ...options,
+      method: 'DELETE',
+    }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getReadinessResolvePlan: (caseId, options) =>
     request(casePath(caseId, '/readiness/resolve-plan'), options),

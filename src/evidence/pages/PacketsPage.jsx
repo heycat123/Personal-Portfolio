@@ -7,9 +7,13 @@ import {
   Loader2,
   NotepadText,
   PackageCheck,
+  Paperclip,
   Plus,
   RefreshCw,
   Save,
+  Search,
+  Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -127,6 +131,14 @@ function friendlyError(error) {
   return error?.message || 'Packet request failed.';
 }
 
+function documentDisplayName(document) {
+  return document?.filename || document?.original_filename || document?.file_name || document?.document_id || document?.file_id || 'Document';
+}
+
+function documentFileId(document) {
+  return document?.file_id || document?.document_id || document?.upload_id || document?.matched_s3_upload_id || '';
+}
+
 function GuardrailPanel({ guardrails, completionDefinition }) {
   const message = guardrails?.user_message ||
     'This packet helps organize documents and notes for review. It does not decide what must be filed, served, exchanged, or omitted.';
@@ -154,8 +166,8 @@ function ComingLaterPanel() {
         <div>
           <p className="font-semibold">Checklist planning is available now</p>
           <p className="mt-1">
-            Document linking, packet export, sharing, and draft affidavit generation are coming later. For now, use statuses and notes
-            to plan what belongs in this packet.
+            Link existing case documents to checklist items, or upload new files through Documents. Packet export, sharing, and draft
+            affidavit generation are coming later.
           </p>
         </div>
       </div>
@@ -301,6 +313,133 @@ function PacketCreateDialog({
   );
 }
 
+function PacketDocumentPicker({
+  open,
+  requirement,
+  documents,
+  loading,
+  selectedFileIds,
+  search,
+  onSearchChange,
+  onRefresh,
+  onToggle,
+  onClose,
+  onLink,
+  linking,
+  canContribute,
+}) {
+  if (!open || !requirement) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="packet-document-picker-title"
+        className="w-full max-w-5xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Add documents</p>
+            <h2 id="packet-document-picker-title" className="mt-1 text-xl font-semibold text-[var(--lakai-text)]">
+              Choose documents for this checklist item
+            </h2>
+            <p className="mt-1 max-w-3xl text-sm text-[var(--lakai-text-muted)]">
+              Selected files stay in the case Documents library and are linked to <span className="font-semibold text-[var(--lakai-text)]">{requirement.label}</span>.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+          >
+            <X size={16} aria-hidden="true" />
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
+          Upload new files through Documents so they enter the normal processing, search, and Q&A readiness pipeline.
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--lakai-text-muted)]" size={16} aria-hidden="true" />
+            <span className="sr-only">Search documents</span>
+            <input
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search Documents"
+              className="min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] py-2 pl-10 pr-3 text-sm text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />}
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-4 max-h-[48vh] space-y-2 overflow-y-auto pr-1">
+          {loading ? (
+            <EmptyState title="Loading documents" description="Checking the case Documents library." />
+          ) : documents.length ? (
+            documents.map((document) => {
+              const fileId = documentFileId(document);
+              const checked = selectedFileIds.includes(fileId);
+              return (
+                <label
+                  key={fileId || document.content_hash || documentDisplayName(document)}
+                  className="flex cursor-pointer gap-3 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 transition hover:border-[var(--lakai-primary)]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(fileId)}
+                    disabled={!fileId || !canContribute}
+                    className="mt-1 h-4 w-4 accent-[var(--lakai-primary)]"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+                      <span>{document.origin_label || document.source_provider || 'Documents'}</span>
+                      {document.canonical_storage_label ? <span>{document.canonical_storage_label}</span> : null}
+                      {document.page_rows || document.page_count ? <span>Ready for search</span> : <span>Processing</span>}
+                    </div>
+                  </div>
+                </label>
+              );
+            })
+          ) : (
+            <EmptyState title="No matching documents" description="Try a different search, or upload a new document through Documents." />
+          )}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 border-t border-[var(--lakai-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-[var(--lakai-text-muted)]">
+            {selectedFileIds.length ? `${selectedFileIds.length} document(s) selected.` : 'Select one or more documents to link.'}
+          </p>
+          <button
+            type="button"
+            onClick={onLink}
+            disabled={!canContribute || !selectedFileIds.length || linking}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {linking ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Paperclip size={16} aria-hidden="true" />}
+            Link selected documents
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PacketCard({ packet, caseId }) {
   const coverage = coverageFromPacket(packet);
   return (
@@ -341,7 +480,17 @@ function PacketCard({ packet, caseId }) {
   );
 }
 
-function RequirementEditor({ requirement, packetId, canContribute, saving, onSave }) {
+function RequirementEditor({
+  requirement,
+  packetId,
+  canContribute,
+  saving,
+  unlinking,
+  onSave,
+  onOpenDocumentPicker,
+  onUnlinkDocument,
+  uploadPath,
+}) {
   const [status, setStatus] = useState(requirement.status || 'needed');
   const [note, setNote] = useState(requirement.user_note || '');
   const [attentionReason, setAttentionReason] = useState(requirement.attention_reason || '');
@@ -353,6 +502,8 @@ function RequirementEditor({ requirement, packetId, canContribute, saving, onSav
 
   const requirementId = requirement.requirement_id;
   const rowSaving = saving === requirementId;
+  const linkedDocuments = Array.isArray(requirement.linked_documents) ? requirement.linked_documents : [];
+  const links = Array.isArray(requirement.links) ? requirement.links : [];
 
   return (
     <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -415,9 +566,72 @@ function RequirementEditor({ requirement, packetId, canContribute, saving, onSav
         </label>
       ) : null}
 
+      <section className="mt-4 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[var(--lakai-text)]">
+              {linkedDocuments.length ? `${linkedDocuments.length} document(s) linked` : 'No documents linked yet'}
+            </p>
+            <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
+              Packet links organize case documents under this checklist item. Removing a link does not delete the document.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenDocumentPicker(requirement)}
+              disabled={!canContribute}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+            >
+              <Paperclip size={16} aria-hidden="true" />
+              Choose from Documents
+            </button>
+            <Link
+              to={uploadPath}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
+            >
+              <Upload size={16} aria-hidden="true" />
+              Upload new documents
+            </Link>
+          </div>
+        </div>
+
+        {links.length ? (
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {links.map((link) => {
+              const document = link.document || linkedDocuments.find((item) => documentFileId(item) === link.file_id) || {};
+              const linkId = link.packet_requirement_link_id;
+              return (
+                <div key={linkId || documentFileId(document)} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+                        <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
+                        {document.readiness_label ? <span>{document.readiness_label}</span> : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onUnlinkDocument(requirement, link)}
+                      disabled={!canContribute || unlinking === linkId}
+                      className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                      title="Remove from this packet item"
+                    >
+                      {unlinking === linkId ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                      Remove link
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
+
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Document linking for packet items is coming next. Use the note field to describe what belongs here for now.
+          Financial packets may contain sensitive personal and financial information. Review carefully before sharing, serving, or filing.
         </p>
         <button
           type="button"
@@ -453,6 +667,16 @@ export default function PacketsPage() {
     fingerprint: null,
   });
   const [showCreateFlow, setShowCreateFlow] = useState(false);
+  const [documentPicker, setDocumentPicker] = useState({
+    open: false,
+    requirement: null,
+    loading: false,
+    linking: false,
+    search: '',
+    documents: [],
+    selectedFileIds: [],
+  });
+  const [unlinking, setUnlinking] = useState(null);
 
   const loadPackets = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -567,6 +791,128 @@ export default function PacketsPage() {
     }
   }
 
+  async function loadPickerDocuments(nextSearch = documentPicker.search) {
+    setDocumentPicker((current) => ({ ...current, loading: true }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getDocuments(
+        caseId,
+        {
+          limit: 50,
+          offset: 0,
+          q: nextSearch || undefined,
+          sort_by: 'updated_at',
+          sort_dir: 'desc',
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Packet document picker');
+      setDocumentPicker((current) => ({
+        ...current,
+        loading: false,
+        documents: result.data?.documents || [],
+      }));
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, loading: false }));
+      setState((current) => ({ ...current, error }));
+    }
+  }
+
+  function openDocumentPicker(requirement) {
+    setDocumentPicker({
+      open: true,
+      requirement,
+      loading: true,
+      linking: false,
+      search: '',
+      documents: [],
+      selectedFileIds: [],
+    });
+    setTimeout(() => {
+      loadPickerDocuments('');
+    }, 0);
+  }
+
+  function closeDocumentPicker() {
+    if (!documentPicker.linking) {
+      setDocumentPicker((current) => ({ ...current, open: false, requirement: null, selectedFileIds: [] }));
+    }
+  }
+
+  function updatePickerSearch(search) {
+    setDocumentPicker((current) => ({ ...current, search }));
+  }
+
+  function togglePickerDocument(fileId) {
+    if (!fileId) {
+      return;
+    }
+    setDocumentPicker((current) => {
+      const selected = current.selectedFileIds.includes(fileId)
+        ? current.selectedFileIds.filter((item) => item !== fileId)
+        : [...current.selectedFileIds, fileId];
+      return { ...current, selectedFileIds: selected };
+    });
+  }
+
+  async function linkSelectedDocuments() {
+    const requirement = documentPicker.requirement;
+    if (!requirement || !documentPicker.selectedFileIds.length) {
+      return;
+    }
+    setDocumentPicker((current) => ({ ...current, linking: true }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.linkPacketRequirementDocuments(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        { file_ids: documentPicker.selectedFileIds },
+        { token },
+      );
+      recordFingerprint(result, 'Link packet documents');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || 'Selected documents linked to this checklist item.',
+        fingerprint: result.requestFingerprintId,
+      }));
+      setDocumentPicker((current) => ({ ...current, open: false, requirement: null, linking: false, selectedFileIds: [] }));
+    } catch (error) {
+      setDocumentPicker((current) => ({ ...current, linking: false }));
+      setState((current) => ({ ...current, error }));
+    }
+  }
+
+  async function unlinkDocument(requirement, link) {
+    const linkId = link?.packet_requirement_link_id;
+    if (!requirement?.requirement_id || !linkId) {
+      return;
+    }
+    setUnlinking(linkId);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.unlinkPacketRequirementDocument(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        linkId,
+        { token },
+      );
+      recordFingerprint(result, 'Unlink packet document');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || 'Document removed from this packet item. It stayed in your case Documents library.',
+        fingerprint: result.requestFingerprintId,
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+    } finally {
+      setUnlinking(null);
+    }
+  }
+
   if (selectedPacket) {
     return (
       <div>
@@ -601,6 +947,22 @@ export default function PacketsPage() {
             {state.notice}
           </div>
         ) : null}
+
+        <PacketDocumentPicker
+          open={documentPicker.open}
+          requirement={documentPicker.requirement}
+          documents={documentPicker.documents}
+          loading={documentPicker.loading}
+          selectedFileIds={documentPicker.selectedFileIds}
+          search={documentPicker.search}
+          onSearchChange={updatePickerSearch}
+          onRefresh={() => loadPickerDocuments(documentPicker.search)}
+          onToggle={togglePickerDocument}
+          onClose={closeDocumentPicker}
+          onLink={linkSelectedDocuments}
+          linking={documentPicker.linking}
+          canContribute={canContribute}
+        />
 
         <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <GuardrailPanel
@@ -660,7 +1022,14 @@ export default function PacketsPage() {
                   packetId={selectedPacket.packet_id}
                   canContribute={canContribute}
                   saving={state.savingRequirement}
+                  unlinking={unlinking}
                   onSave={saveRequirement}
+                  onOpenDocumentPicker={openDocumentPicker}
+                  onUnlinkDocument={unlinkDocument}
+                  uploadPath={evidenceCasePath(
+                    activeCase,
+                    `/documents?packet_id=${encodeURIComponent(selectedPacket.packet_id)}&requirement_id=${encodeURIComponent(requirement.requirement_id)}`,
+                  )}
                 />
               ))}
             </section>
