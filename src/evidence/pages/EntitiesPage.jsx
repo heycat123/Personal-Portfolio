@@ -10,6 +10,7 @@ import StatusBadge from '../components/StatusBadge';
 import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
+import { useOperatorMode } from '../context/OperatorModeContext';
 import useJobStatusPolling from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
@@ -804,6 +805,8 @@ export default function EntitiesPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
+  const { debugEnabled, canSeeOperations } = useOperatorMode();
+  const showDiagnostics = debugEnabled || canSeeOperations;
   const [columnFilters, setColumnFilters] = useState([]);
   const [sorting, setSorting] = useState(DEFAULT_SORTING);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: PAGE_SIZE });
@@ -3141,28 +3144,32 @@ export default function EntitiesPage() {
             <button
               type="button"
               onClick={openBlankCreateEntityDrawer}
-              className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-800 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/40"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-[var(--lakai-primary-text)] shadow-sm hover:bg-[var(--lakai-primary-strong)]"
             >
               <Plus size={16} aria-hidden="true" />
-              {t('New person or contact')}
+              {t('Add contact')}
             </button>
             <Link
               to={`/evidence/cases/${caseId}/intake#contacts`}
-              className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-[#101820] dark:text-emerald-100 dark:hover:bg-emerald-950/40"
+              aria-label={t('Manage contact sources')}
+              title={t('Manage contact sources')}
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-accent-soft)]"
             >
               <Users size={16} aria-hidden="true" />
-              {t('Contact Syncs')}
+              {t('Manage contact sources')}
             </Link>
-            <button
-              type="button"
-              onClick={runEntityReviewAudit}
-              disabled={state.actionId === 'audit_entities'}
-              className="inline-flex items-center gap-2 rounded-md border border-violet-300 bg-white px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-60 dark:border-violet-800 dark:bg-[#101820] dark:text-violet-100 dark:hover:bg-violet-950/40"
-              title={t('Rebuild review buckets from current names, contact links, mentions, relationship labels, and confirmations.')}
-            >
-              <GitMerge size={16} aria-hidden="true" />
-              {state.actionId === 'audit_entities' ? t('Updating...') : t('Update review buckets')}
-            </button>
+            {showDiagnostics ? (
+              <button
+                type="button"
+                onClick={runEntityReviewAudit}
+                disabled={state.actionId === 'audit_entities'}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-60 dark:border-violet-800 dark:bg-[#101820] dark:text-violet-100 dark:hover:bg-violet-950/40"
+                title={t('Rebuild review buckets from current names, contact links, mentions, relationship labels, and confirmations.')}
+              >
+                <GitMerge size={16} aria-hidden="true" />
+                {state.actionId === 'audit_entities' ? t('Updating...') : t('Update review buckets')}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => {
@@ -3191,13 +3198,13 @@ export default function EntitiesPage() {
         </p>
       </section>
 
-      <NeedsAttentionPanel
-        items={peopleAttentionItems}
-        title="People & contact attention"
-        description="Contact links, possible duplicates, and relationship labels that need review."
-        emptyTitle="No people or contact attention items right now"
-        emptyDetail="Contact links and possible duplicates do not show open review items."
-      />
+      {peopleAttentionItems.length ? (
+        <NeedsAttentionPanel
+          items={peopleAttentionItems}
+          title="People & contact attention"
+          description="Contact links, possible duplicates, and relationship labels that need review."
+        />
+      ) : null}
 
       {roleResolutionReview ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -3558,22 +3565,26 @@ export default function EntitiesPage() {
       </section>
 
       <div className="mb-4 flex flex-col gap-3">
-        <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
-          {t('Use each column header menu to sort or filter. Numeric filters are minimum thresholds, and the people/contact filter searches names used in documents, alternate names, and record ids.')}
-        </div>
+        {showDiagnostics ? (
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-300">
+            {t('Use each column header menu to sort or filter. Numeric filters are minimum thresholds, and the people/contact filter searches names used in documents, alternate names, and record ids.')}
+          </div>
+        ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
-            {t('Live jobs: {count} active', { count: liveJobs.activeCount })}
-          </span>
-          {liveJobs.lastFinishedJob ? (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
-              {t('Updated after {jobType}', { jobType: humanizeKey(liveJobs.lastFinishedJob.job_type) })}
+        {showDiagnostics ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
+              {t('Live jobs: {count} active', { count: liveJobs.activeCount })}
             </span>
-          ) : null}
-          {state.fingerprint?.id ? <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" /> : null}
-          {state.actionFingerprint?.id ? <RequestFingerprint fingerprintId={state.actionFingerprint.id} correlationId={state.actionFingerprint.correlationId} label="Action fingerprint" /> : null}
-        </div>
+            {liveJobs.lastFinishedJob ? (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
+                {t('Updated after {jobType}', { jobType: humanizeKey(liveJobs.lastFinishedJob.job_type) })}
+              </span>
+            ) : null}
+            {state.fingerprint?.id ? <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" /> : null}
+            {state.actionFingerprint?.id ? <RequestFingerprint fingerprintId={state.actionFingerprint.id} correlationId={state.actionFingerprint.correlationId} label="Action fingerprint" /> : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-5">
