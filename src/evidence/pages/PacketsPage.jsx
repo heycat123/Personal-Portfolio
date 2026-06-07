@@ -199,6 +199,23 @@ function friendlyError(error) {
   return error?.message || 'Packet request failed.';
 }
 
+function googleDriveReconnectDetail(error) {
+  const detail = error?.payload?.detail;
+  if (!detail || typeof detail !== 'object') {
+    return null;
+  }
+  const issueState = String(detail.issue_state || detail.status || '').toLowerCase();
+  const actionLabel = String(detail.action_label || '').toLowerCase();
+  if (
+    issueState === 'google_drive_reconnect_required' ||
+    issueState === 'needs_reconnect' ||
+    actionLabel.includes('reconnect google drive')
+  ) {
+    return detail;
+  }
+  return null;
+}
+
 function documentDisplayName(document) {
   return document?.filename || document?.original_filename || document?.file_name || document?.document_id || document?.file_id || 'Document';
 }
@@ -477,6 +494,7 @@ function PacketDocumentPicker({
   ];
   const selectedDriveItems = driveItems.filter((item) => driveSelectedIds.includes(item.id));
   const busy = linking || localUploading || Boolean(driveAction);
+  const reconnectDetail = googleDriveReconnectDetail(connectorError);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
@@ -610,7 +628,32 @@ function PacketDocumentPicker({
 
         {mode === 'google_drive' ? (
           <div className="mt-4 space-y-4">
-            {connectorError ? <ErrorPanel title="Google Drive connection needs attention" error={{ message: friendlyError(connectorError) }} /> : null}
+            {reconnectDetail ? (
+              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-semibold">{reconnectDetail.display_status || 'Reconnect Google Drive'}</p>
+                    <p className="mt-1">
+                      {reconnectDetail.user_message || reconnectDetail.display_message || friendlyError(connectorError)}
+                    </p>
+                    {reconnectDetail.preserves_source_selections ? (
+                      <p className="mt-2 text-xs">Your selected Drive folders stay saved after you reconnect.</p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onConnectGoogleDrive}
+                    disabled={Boolean(connectorAction)}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {connectorAction ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Link2 size={16} aria-hidden="true" />}
+                    {reconnectDetail.action_label || 'Reconnect Google Drive'}
+                  </button>
+                </div>
+              </section>
+            ) : connectorError ? (
+              <ErrorPanel title="Google Drive connection needs attention" error={{ message: friendlyError(connectorError) }} />
+            ) : null}
             {connectorsLoading ? (
               <EmptyState title="Checking Google Drive" description="Looking for a connected Google Drive account." />
             ) : !activeGoogleConnection ? (
