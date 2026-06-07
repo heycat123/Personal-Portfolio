@@ -882,7 +882,7 @@ export default function IntakePage() {
     <div>
       <PageHeader
         title="Add Documents"
-        description="Connect file sources, select folders or files, and upload new documents into this case. Source files keep their original language; only the interface translates."
+        description="Upload or connect files, watch them move through secure copy and processing, then use Ask Documents once search is ready."
         actions={state.step !== 'ready' ? (
           <StatusBadge
             status={['complete', 'propagation_queued', 'already_registered', 'already_uploaded'].includes(state.step) ? 'succeeded' : state.step === 'failed' ? 'failed' : 'pending'}
@@ -921,11 +921,12 @@ export default function IntakePage() {
               : t('No connected document account yet')}
           </div>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
           {[
-            ['1', 'Choose source', 'Connect Google Drive or select a local file upload.'],
-            ['2', 'Select files', 'Include folders/files and exclude anything that should not enter the case.'],
-            ['3', 'Sync and process', 'Copy selected files into the secure workspace, then prepare text, search, and relationship links.'],
+            ['1', 'Choose files', 'Select files from this computer or choose files and folders from Google Drive.'],
+            ['2', 'Upload securely', 'Evidence AI creates one secure workspace copy and skips exact duplicates.'],
+            ['3', 'Wait for processing', 'Text, search, and relationship-map processing start automatically after upload.'],
+            ['4', 'Ask Documents', 'When search is ready, open Ask Documents and ask questions about the uploaded material.'],
           ].map(([number, title, detail]) => (
             <div key={number} className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
               <div className="flex items-start gap-3">
@@ -1578,7 +1579,7 @@ export default function IntakePage() {
               </div>
               <div>
                 <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Upload From This Computer')}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Uploaded files are copied into the secure workspace first. Processing can be started after registration.')}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{t('Uploaded files are copied into the secure workspace first. Processing starts automatically after registration.')}</p>
               </div>
             </div>
 
@@ -1632,7 +1633,7 @@ export default function IntakePage() {
                     <div>
                       <p className="text-sm font-semibold text-gray-950 dark:text-white">{t('Upload queue')}</p>
                       <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {t('Files are copied to secure cloud storage first, then propagation is queued automatically.')}
+                        {t('Files are copied to secure cloud storage first, then propagation is queued automatically. Keep this page open or use Open processing status to follow progress.')}
                       </p>
                     </div>
                     <span className="rounded-full border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">
@@ -1675,6 +1676,21 @@ export default function IntakePage() {
                       </div>
                     ))}
                   </div>
+                  {uploadItems.some((item) => ['propagation_queued', 'already_registered', 'already_uploaded'].includes(item.status)) ? (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                      <p className="font-semibold">{t('Next step: wait for search readiness.')}</p>
+                      <p className="mt-1 leading-5">
+                        {t('Ask Documents can use this file after processing finishes. Open processing status for the current job, then return to Ask Documents when the file is search ready.')}
+                      </p>
+                      <Link
+                        to={`/evidence/cases/${caseId}/query`}
+                        className="mt-2 inline-flex items-center gap-1 font-semibold text-emerald-800 hover:text-emerald-950 dark:text-emerald-200 dark:hover:text-white"
+                      >
+                        {t('Go to Ask Documents')}
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
