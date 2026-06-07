@@ -1682,40 +1682,42 @@ export default function QueryPage() {
 
   return (
     <div className="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden">
-      <div className="fixed left-3 right-3 top-3 z-[70] flex items-center justify-between gap-2 lg:hidden">
-        <button
-          type="button"
-          onClick={handleOpenMobileNavigation}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
-          aria-label={t('Open navigation')}
-          title={t('Open navigation')}
-        >
-          <Menu size={18} aria-hidden="true" />
-        </button>
-        <div className="min-w-0 flex-1 rounded-full border border-gray-200 bg-white/95 px-3 py-2 text-center text-sm font-semibold text-gray-950 shadow-lg backdrop-blur dark:border-gray-800 dark:bg-[#101820]/95 dark:text-white">
-          {t('Ask Documents')}
+      <div className="shrink-0 border-b border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-3 shadow-sm lg:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={handleOpenMobileNavigation}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:bg-[var(--lakai-accent-soft)]"
+            aria-label={t('Open navigation')}
+            title={t('Open navigation')}
+          >
+            <Menu size={18} aria-hidden="true" />
+          </button>
+          <div className="min-w-0 flex-1 rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-center text-sm font-semibold text-[var(--lakai-text)]">
+            {t('Ask Documents')}
+          </div>
+          <button
+            type="button"
+            onClick={() => setConversationMenuOpen(true)}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:bg-[var(--lakai-accent-soft)]"
+            aria-label={t('Open conversations')}
+            title={t('Open conversations')}
+          >
+            <History size={18} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setChatSettingsOpen(true)}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:bg-[var(--lakai-accent-soft)]"
+            aria-label={t('Chat settings')}
+            title={t('Chat settings')}
+          >
+            <SlidersHorizontal size={18} aria-hidden="true" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setConversationMenuOpen(true)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
-          aria-label={t('Open conversations')}
-          title={t('Open conversations')}
-        >
-          <History size={18} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setChatSettingsOpen(true)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-lg backdrop-blur hover:bg-gray-50 dark:border-gray-800 dark:bg-[#101820]/95 dark:text-gray-100"
-          aria-label={t('Chat settings')}
-          title={t('Chat settings')}
-        >
-          <SlidersHorizontal size={18} aria-hidden="true" />
-        </button>
       </div>
 
-      <div className="flex h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden lg:h-full">
+      <div className="flex min-h-0 w-full min-w-0 max-w-full flex-1 overflow-hidden lg:h-full">
         <div className={`${historyCollapsed ? 'hidden' : 'hidden w-80 shrink-0 min-h-0 border-r border-[var(--lakai-border-soft)] bg-[var(--lakai-bg)] p-3 xl:block'}`}>
           <ConversationList
             conversations={conversationState.conversations}
@@ -1731,7 +1733,7 @@ export default function QueryPage() {
         </div>
 
         <section className="flex h-full min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden bg-[var(--lakai-surface-muted)]">
-        <div className="shrink-0 border-b border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-3 shadow-sm sm:px-4 lg:px-6">
+        <div className="hidden shrink-0 border-b border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] px-3 py-3 shadow-sm sm:px-4 lg:block lg:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -1776,7 +1778,7 @@ export default function QueryPage() {
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain px-3 pb-3 pt-20 sm:p-4 lg:px-6 lg:pt-4">
+        <div className="min-h-0 min-w-0 max-w-full flex-1 space-y-4 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 sm:p-4 lg:px-6 lg:py-4">
           <section className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-accent-soft)] p-4 text-sm leading-6 text-[var(--lakai-text)]">
             <div className="flex items-start gap-3">
               <Info className="mt-0.5 shrink-0 text-[var(--lakai-primary-strong)]" size={18} aria-hidden="true" />
