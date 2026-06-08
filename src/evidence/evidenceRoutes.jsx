@@ -13,6 +13,7 @@ import AccessSharingPage from './pages/AccessSharingPage';
 import AdminPage from './pages/AdminPage';
 import CaseSelectorPage from './pages/CaseSelectorPage';
 import DocumentDetailPage from './pages/DocumentDetailPage';
+import DocumentCategoriesPage from './pages/DocumentCategoriesPage';
 import DocumentsPage from './pages/DocumentsPage';
 import EntityDetailPage from './pages/EntityDetailPage';
 import EntitiesPage from './pages/EntitiesPage';
@@ -310,6 +311,7 @@ export default function EvidenceRoutes({ darkTheme, setDarkTheme }) {
             <Route path="jobs" element={<OperationsRoute><JobsPage /></OperationsRoute>} />
             <Route path="jobs/:jobId" element={<OperationsRoute><JobDetailPage /></OperationsRoute>} />
             <Route path="query" element={<QueryPage />} />
+            <Route path="document-categories" element={<ContributorRoute><DocumentCategoriesPage /></ContributorRoute>} />
             <Route path="packets" element={<PacketsPage />} />
             <Route path="packets/:packetId" element={<PacketsPage />} />
             <Route path="system-query" element={<OperationsRoute><SystemQueryPage /></OperationsRoute>} />

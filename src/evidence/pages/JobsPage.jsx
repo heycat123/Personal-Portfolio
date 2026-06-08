@@ -1,4 +1,4 @@
-import { Archive, Ban, Play, RefreshCw, RotateCcw } from 'lucide-react';
+import { Archive, Ban, RefreshCw, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -21,8 +21,6 @@ import {
   jobProcessingRequestedCount,
   jobProgressModel,
 } from '../utils/jobProgress';
-
-const OPERATOR_QUEUE_JOB_TYPES = ['noop', 's3_storage_smoke', 'source_alignment_audit'];
 
 function CompactProgress({ progress, t }) {
   const percentLabel = progress.progressPercentLabel || `${progress.progressPercent}%`;
@@ -74,15 +72,13 @@ export default function JobsPage() {
   const { canSeeOperations, debugEnabled } = useOperatorMode();
   const [state, setState] = useState({
     loading: true,
-    creatingJobType: null,
     actionJobId: null,
     error: null,
-    createError: null,
     actionError: null,
     jobs: [],
     total: 0,
+    jobsPageContract: null,
     fingerprint: null,
-    createdFingerprint: null,
   });
   const [showJobHistory, setShowJobHistory] = useState(false);
 
@@ -100,6 +96,7 @@ export default function JobsPage() {
         error: null,
         jobs: result.data?.jobs || [],
         total: result.data?.total || 0,
+        jobsPageContract: result.data?.jobs_page_contract || null,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -117,6 +114,7 @@ export default function JobsPage() {
       error: null,
       jobs,
       total: payload?.total || jobs.length,
+      jobsPageContract: payload?.jobs_page_contract || current.jobsPageContract,
       fingerprint: {
         id: result.requestFingerprintId,
         correlationId: result.correlationId,
@@ -129,36 +127,6 @@ export default function JobsPage() {
     intervalMs: 2000,
     onJobsChange: handleLiveJobs,
   });
-
-  const createSafeJob = useCallback(async (jobType) => {
-    setState((current) => ({ ...current, creatingJobType: jobType, createError: null, actionError: null }));
-    try {
-      const token = await getAccessToken();
-      const result = await evidenceApi.createJob(
-        caseId,
-        {
-          job_type: jobType,
-          input_json: {
-            requested_from: 'phase7_web',
-          },
-          priority: 0,
-        },
-        { token },
-      );
-      recordFingerprint(result, `Create ${jobType} job`);
-      setState((current) => ({
-        ...current,
-        creatingJobType: null,
-        createdFingerprint: {
-          id: result.requestFingerprintId,
-          correlationId: result.correlationId,
-        },
-      }));
-      await loadJobs({ quiet: true });
-    } catch (error) {
-      setState((current) => ({ ...current, creatingJobType: null, createError: error }));
-    }
-  }, [caseId, getAccessToken, loadJobs, recordFingerprint]);
 
   const cancelJob = useCallback(async (jobId) => {
     setState((current) => ({ ...current, actionJobId: jobId, actionError: null }));
@@ -223,8 +191,10 @@ export default function JobsPage() {
   }, [loadJobs]);
 
   const processingJobs = [...state.jobs]
-    .filter(isDocumentProcessingRequest)
+    .filter((job) => job.normal_user_visible === true || isDocumentProcessingRequest(job))
     .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+  const failedProcessingJobs = processingJobs.filter((job) => ['failed', 'cancelled', 'canceled'].includes(String(job.status || '').toLowerCase()));
+  const failedJobsAlert = state.jobsPageContract?.failed_jobs_alert || {};
   const activeProcessingJob = processingJobs.find((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
   const latestProcessingJob = activeProcessingJob || processingJobs[0] || null;
   const latestProcessingProgress = latestProcessingJob ? jobProgressModel(latestProcessingJob) : null;
@@ -337,7 +307,7 @@ export default function JobsPage() {
       render: renderJobActions,
     },
   ];
-  const allVisibleJobs = canSeeOperations ? state.jobs : processingJobs;
+  const allVisibleJobs = processingJobs.filter((job) => job.normal_user_visible !== false);
   const currentJobs = allVisibleJobs.filter((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
   const displayJobs = showJobHistory ? allVisibleJobs : currentJobs;
   const displayActiveJobCount = displayJobs.filter(isActiveJob).length;
@@ -345,12 +315,10 @@ export default function JobsPage() {
   return (
     <div>
       <PageHeader
-        title={canSeeOperations ? 'Jobs' : 'Processing status'}
-        description={canSeeOperations
-          ? t('{count} job records returned for this case.', { count: state.total })
-          : t('Document processing records for this case. Use this page to see what is happening with text extraction, search indexing, and source citations.')}
+        title="Jobs"
+        description={t(state.jobsPageContract?.helper || 'Document and batch processing records for this case. Use this page to see what is happening with text extraction, search indexing, and source citations.')}
         actions={
-          <>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => loadJobs()}
@@ -359,44 +327,24 @@ export default function JobsPage() {
               <RefreshCw size={16} aria-hidden="true" />
               {t('Refresh')}
             </button>
-            {canSeeOperations ? OPERATOR_QUEUE_JOB_TYPES.map((jobType) => (
-              <button
-                key={jobType}
-                type="button"
-                onClick={() => createSafeJob(jobType)}
-                disabled={Boolean(state.creatingJobType)}
-                className="inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Play size={16} aria-hidden="true" />
-                {state.creatingJobType === jobType ? t('Queueing') : t('Queue {jobType}', { jobType })}
-              </button>
-            )) : null}
-          </>
+          </div>
         }
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadJobs} /></div> : null}
-      {state.createError ? <div className="mb-5"><ErrorPanel title="Job creation failed" error={state.createError} /></div> : null}
       {state.actionError ? <div className="mb-5"><ErrorPanel title="Job action failed" error={state.actionError} /></div> : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
           {t('Live updates:')} <AnimatedCount value={displayActiveJobCount || (canSeeOperations ? liveJobs.activeCount : activeProcessingJobs)} /> {t('active')}
         </span>
-        {liveJobs.lastFinishedJob ? (
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100">
-            {t('Last finished: {jobType}', { jobType: liveJobs.lastFinishedJob.job_type })}
+        {failedJobsAlert.show || failedProcessingJobs.length ? (
+          <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-900 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-100">
+            <AnimatedCount value={Number(failedJobsAlert.count ?? failedJobsAlert.failed_job_count ?? failedProcessingJobs.length)} /> {t(failedJobsAlert.label || 'failed processing job(s) need attention')}
           </span>
         ) : null}
         {debugEnabled && state.fingerprint?.id ? (
           <RequestFingerprint fingerprintId={state.fingerprint.id} correlationId={state.fingerprint.correlationId} label="List fingerprint" />
-        ) : null}
-        {debugEnabled && state.createdFingerprint?.id ? (
-          <RequestFingerprint
-            fingerprintId={state.createdFingerprint.id}
-            correlationId={state.createdFingerprint.correlationId}
-            label="Create fingerprint"
-          />
         ) : null}
         <button
           type="button"

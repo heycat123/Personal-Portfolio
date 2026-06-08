@@ -565,6 +565,8 @@ export function jobProgressModel(job) {
   const result = resultPayload(job);
   const input = inputPayload(job);
   const display = displayWrapper(job);
+  const userJobStatus = job?.user_job_status || {};
+  const userStatus = String(userJobStatus.user_status || job?.user_status || '').toLowerCase();
   const resolution = resolutionPayload(job, result, display);
   const recorded = requestRecorded(job, status, result);
   const documentSummary = documentProgressSummary(job);
@@ -591,6 +593,8 @@ export function jobProgressModel(job) {
   const progressEstimated = Boolean(estimatedProgress);
   const progressPercentLabel = estimatedProgress?.progressPercentLabel || `${progressPercent}%`;
   const displayStatusLabel = userFacingProcessingText(firstString(
+    userJobStatus.display_label,
+    userJobStatus.status_label,
     job?.display_status,
     display.display_status,
     display.status_label,
@@ -602,6 +606,8 @@ export function jobProgressModel(job) {
     fallbackStatusLabel(status),
   ));
   const currentStep = userFacingProcessingText(firstString(
+    userJobStatus.stage_label,
+    userJobStatus.current_step,
     job?.current_step,
     result.current_step,
     display.current_step,
@@ -611,6 +617,8 @@ export function jobProgressModel(job) {
     fallbackCurrentStep(cancelRequested ? 'cancelling' : status),
   ));
   const progressText = userFacingProcessingText(firstString(
+    userJobStatus.user_message,
+    userJobStatus.message,
     job?.progress_text,
     result.progress_text,
     display.progress_text,
@@ -636,6 +644,8 @@ export function jobProgressModel(job) {
     || 0,
   );
   const userMessage = userFacingProcessingText(firstString(
+    userJobStatus.user_message,
+    userJobStatus.message,
     resolution.user_message,
     job?.user_message,
     job?.display_message,
@@ -661,11 +671,24 @@ export function jobProgressModel(job) {
                 : 'Refresh status or contact support if this does not change.');
 
   const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
-  const badgeStatus = workflowStatus === 'needs_attention'
+  const userBadgeStatus = userStatus === 'ready'
+    ? 'succeeded'
+    : userStatus === 'ready_with_review_needed'
+      ? 'needs_review'
+      : userStatus === 'failed'
+        ? 'failed'
+        : userStatus === 'processing'
+          ? 'running'
+          : userStatus === 'queued'
+            ? 'queued'
+            : userStatus === 'canceled' || userStatus === 'cancelled'
+              ? 'unknown'
+              : null;
+  const badgeStatus = userBadgeStatus || (workflowStatus === 'needs_attention'
     ? 'failed'
     : workflowStatus === 'needs_review'
       ? 'pending'
-    : documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status);
+    : documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status));
   const statusLabel = badgeStatus === 'failed' && String(displayStatusLabel).toLowerCase() === 'needs review'
     ? 'Needs attention'
     : displayStatusLabel;
