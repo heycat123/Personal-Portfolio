@@ -84,6 +84,7 @@ export default function JobsPage() {
     fingerprint: null,
     createdFingerprint: null,
   });
+  const [showJobHistory, setShowJobHistory] = useState(false);
 
   const loadJobs = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) {
@@ -336,7 +337,9 @@ export default function JobsPage() {
       render: renderJobActions,
     },
   ];
-  const displayJobs = canSeeOperations ? state.jobs : processingJobs;
+  const allVisibleJobs = canSeeOperations ? state.jobs : processingJobs;
+  const currentJobs = allVisibleJobs.filter((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
+  const displayJobs = showJobHistory ? allVisibleJobs : currentJobs;
   const displayActiveJobCount = displayJobs.filter(isActiveJob).length;
 
   return (
@@ -395,6 +398,13 @@ export default function JobsPage() {
             label="Create fingerprint"
           />
         ) : null}
+        <button
+          type="button"
+          onClick={() => setShowJobHistory((current) => !current)}
+          className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200 dark:hover:bg-white/10"
+        >
+          {showJobHistory ? t('Show current jobs') : t('Show job history')}
+        </button>
       </div>
 
       {latestProcessingJob && latestProcessingProgress ? (
@@ -450,7 +460,7 @@ export default function JobsPage() {
         rows={displayJobs}
         rowKey={(job) => job.job_id}
         loading={state.loading}
-        emptyTitle={state.loading ? t('Loading jobs') : t(canSeeOperations ? 'No jobs returned' : 'No processing jobs returned')}
+        emptyTitle={state.loading ? t('Loading jobs') : t(showJobHistory ? (canSeeOperations ? 'No jobs returned' : 'No processing jobs returned') : 'No current jobs running')}
         onRowSelect={(job) => navigate(`/evidence/cases/${caseId}/jobs/${job.job_id}`)}
         mobileTitle={(job) => (
           <Link to={`/evidence/cases/${caseId}/jobs/${job.job_id}`} className="font-semibold text-gray-950 hover:text-sky-700 dark:text-white dark:hover:text-sky-300">

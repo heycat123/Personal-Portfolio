@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, ExternalLink, FileText, ListChecks, Plus, Search, Settings2, ShieldAlert, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, FileText, ListChecks, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -8,6 +8,7 @@ import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
 import ErrorPanel from '../components/ErrorPanel';
 import NeedsAttentionPanel from '../components/NeedsAttentionPanel';
 import PageHeader from '../components/PageHeader';
+import PipelineReadinessDonut from '../components/PipelineReadinessDonut';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import TranscriptPanel from '../components/TranscriptPanel';
@@ -31,6 +32,7 @@ import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
+const DEFAULT_PROCESSING_FILTER = 'not_processed';
 const DEFAULT_CATEGORY_QA_LENS_ID = 'florida_relocation_best_interest';
 const STATUTE_FACTOR_OPTIONS = [
   { value: '7a', label: '61.13001(7)(a) - relationship and involvement' },
@@ -168,6 +170,7 @@ function readUrlDocumentsTableState(searchParams) {
   const storageStatus = String(searchParams.get('storage_status') || '').trim();
   const factorCode = String(searchParams.get('factor_code') || '').trim();
   const pipelineStatus = String(searchParams.get('pipeline_status') || '').trim();
+  const processingStatus = String(searchParams.get('processing_status') || '').trim();
   if (query) {
     next.appliedQuery = query;
   }
@@ -191,6 +194,9 @@ function readUrlDocumentsTableState(searchParams) {
   }
   if (pipelineStatus) {
     filterValues.pipeline_status = pipelineStatus;
+  }
+  if (processingStatus) {
+    filterValues.processing_status = processingStatus;
   }
   if (Object.keys(filterValues).length) {
     next.filterValues = filterValues;
@@ -292,19 +298,6 @@ function StorageSyncBadge({ document, t }) {
   return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
 }
 
-function PipelineDot({ label, status, colorClass }) {
-  const active = status === 'complete';
-  const partial = status === 'partial';
-  const className = active || partial ? colorClass : 'bg-gray-300 dark:bg-gray-700';
-  const opacity = partial ? 'opacity-70' : '';
-  return (
-    <span className="inline-flex items-center gap-1" title={`${label}: ${statusText(status)}`}>
-      <span className={`h-3 w-3 rounded-full ${className} ${opacity} ring-1 ring-black/10 dark:ring-white/10`} aria-hidden="true" />
-      <span className="sr-only">{`${label}: ${statusText(status)}`}</span>
-    </span>
-  );
-}
-
 function pipelineReadinessItems(document) {
   const statuses = document?.pipeline_status || {};
   const display = document?.pipeline_display || {};
@@ -314,38 +307,30 @@ function pipelineReadinessItems(document) {
       label: display.indexed?.label || 'Indexed for review',
       shortLabel: 'Indexed',
       status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending',
-      colorClass: 'bg-sky-500',
+      color: '#0ea5e9',
     },
     {
       key: 'vector',
       label: display.search?.label || 'Search ready',
       shortLabel: 'Search',
       status: display.search?.status || statuses.vector || document?.vector_status || 'pending',
-      colorClass: 'bg-sky-500',
+      color: '#2563eb',
     },
     {
       key: 'graph',
       label: display.relationship_map?.label || 'Relationship map ready',
       shortLabel: 'Relationship map',
       status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending',
-      colorClass: 'bg-violet-500',
+      color: '#7c3aed',
     },
   ];
 }
 
-function PipelineDots({ document, showLabels = false }) {
+function PipelineDots({ document, showLabels = false, t = (value) => value }) {
   const items = pipelineReadinessItems(document);
   if (!showLabels) {
     return (
-      <div className="grid gap-1">
-        {items.map((item) => (
-          <div key={item.key} className="flex min-w-0 items-center gap-2 text-xs" title={`${item.label}: ${statusText(item.status)}`}>
-            <PipelineDot {...item} />
-            <span className="min-w-0 truncate text-gray-700 dark:text-gray-300">{item.shortLabel}</span>
-            <span className="ml-auto shrink-0 capitalize text-gray-500 dark:text-gray-400">{statusText(item.status)}</span>
-          </div>
-        ))}
-      </div>
+      <PipelineReadinessDonut items={items} size={28} t={t} />
     );
   }
   return (
@@ -353,7 +338,7 @@ function PipelineDots({ document, showLabels = false }) {
       {items.map((item) => (
         <div key={item.key} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2 text-sm dark:bg-black/20">
           <span className="inline-flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
-            <PipelineDot {...item} />
+            <PipelineReadinessDonut items={[item]} size={20} t={t} />
             {item.label}
           </span>
           <span className="capitalize text-gray-600 dark:text-gray-300">{statusText(item.status)}</span>
@@ -506,12 +491,15 @@ export default function DocumentsPage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { canContribute, canSeeAdmin, canSeeOperations, debugEnabled } = useOperatorMode();
+  const { canContribute, canSeeOperations, debugEnabled } = useOperatorMode();
   const showDiagnostics = canSeeOperations || debugEnabled;
   const canReviewDocuments = canContribute || canSeeOperations;
   const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
   const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
-  const [filterValues, setFilterValues] = useState(initialTableState.filterValues || {});
+  const [filterValues, setFilterValues] = useState({
+    processing_status: DEFAULT_PROCESSING_FILTER,
+    ...(initialTableState.filterValues || {}),
+  });
   const [sort, setSort] = useState(initialTableState.sort || DEFAULT_SORT);
   const [offset, setOffset] = useState(Number(initialTableState.offset || 0));
   const [state, setState] = useState({
@@ -582,6 +570,7 @@ export default function DocumentsPage() {
     require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
     require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
     require_graph: selectedPipelineDomains(filterValues.pipeline_status).includes('graph'),
+    processing_status: filterValues.processing_status,
     file_ids: filterValues.file_ids,
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
@@ -851,8 +840,11 @@ export default function DocumentsPage() {
     }
   }, [caseId, categoryLensId, getAccessToken, loadCategoryQa, loadCategoryResolvePlan, loadDocuments, recordFingerprint]);
 
-  const requestPendingDocumentProcessing = useCallback(async () => {
-    setProcessingRequest({ busy: true, error: null, result: null });
+  const requestPendingDocumentProcessing = useCallback(async ({ quiet = false } = {}) => {
+    if (!canContribute) {
+      return null;
+    }
+    setProcessingRequest((current) => ({ ...current, busy: true, error: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.requestDocumentProcessing(
@@ -860,18 +852,39 @@ export default function DocumentsPage() {
         {
           scope: 'copied_not_extracted',
           requested_action: 'text_extraction_and_search_indexing',
-          reason: 'Need Ask Documents search readiness for copied files',
+          reason: 'Automatically start processing after documents were added to the workspace',
           max_documents: 250,
         },
         { token },
       );
       recordFingerprint(result, 'Document text/search processing');
       setProcessingRequest({ busy: false, error: null, result: result.data || {} });
-      await loadDocuments();
+      if (!quiet) {
+        await loadDocuments();
+      }
+      return result.data || {};
     } catch (error) {
+      const detail = error?.data || error?.detail;
+      const noProcessingNeeded = error?.status === 409 && (
+        String(detail?.error || '').toLowerCase().includes('no copied documents') ||
+        String(detail?.user_status || '').toLowerCase().includes('no self-service processing')
+      );
+      if (noProcessingNeeded) {
+        setProcessingRequest({
+          busy: false,
+          error: null,
+          result: {
+            display_message: detail?.user_status || 'No self-service processing is needed right now.',
+            can_start_processing: false,
+            already_started: false,
+          },
+        });
+        return null;
+      }
       setProcessingRequest({ busy: false, error, result: null });
+      return null;
     }
-  }, [caseId, getAccessToken, loadDocuments, recordFingerprint]);
+  }, [canContribute, caseId, getAccessToken, loadDocuments, recordFingerprint]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -888,7 +901,7 @@ export default function DocumentsPage() {
   const resetTable = () => {
     setQueryDraft('');
     setAppliedQuery('');
-    setFilterValues({});
+    setFilterValues({ processing_status: DEFAULT_PROCESSING_FILTER });
     setSort(DEFAULT_SORT);
     setOffset(0);
   };
@@ -1146,7 +1159,7 @@ export default function DocumentsPage() {
       filterLabel: t('Require completed steps'),
       filterHint: t('Selected processing filters are combined with AND.'),
       help: t('Shows the same readiness steps used in the document drawer: indexed for review, search ready, and relationship map ready.'),
-      render: (document) => <PipelineDots document={documentDetails[document.file_id]?.document || document} />,
+      render: (document) => <PipelineDots document={documentDetails[document.file_id]?.document || document} t={t} />,
     },
     { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
     { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[10%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
@@ -1166,6 +1179,9 @@ export default function DocumentsPage() {
             .map((domain) => (column?.filterOptions || []).find((option) => option.value === domain)?.label || domain)
             .join(` ${t('AND')} `);
           return { id: key, label: `${column?.header || key}: ${labels}` };
+        }
+        if (key === 'processing_status') {
+          return { id: key, label: t(value === 'not_processed' ? 'Showing documents still processing' : 'Showing search-ready documents') };
         }
         const optionLabel = (column?.filterOptions || []).find((option) => option.value === value)?.label || value;
         return { id: key, label: `${column?.header || key}: ${optionLabel}` };
@@ -1202,11 +1218,11 @@ export default function DocumentsPage() {
     && processingRequestCount
     && processingBatchDocumentCount !== processingRequestCount,
   );
-  const processingStartFinished = Boolean(processingRequest.result && processingRequestData.can_start_processing === false);
   const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
     ? 'Processing already started. Check Jobs for per-document progress.'
     : 'Processing started. Check Jobs for per-document progress.');
+  const autoProcessingReady = canContribute && s3OnlyFiles > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
   const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
     caseId,
     counts: inventorySummary,
@@ -1223,6 +1239,13 @@ export default function DocumentsPage() {
     }, 5000);
     return () => window.clearInterval(timerId);
   }, [loadDocuments, processingRequest.busy]);
+
+  useEffect(() => {
+    if (!autoProcessingReady) {
+      return;
+    }
+    void requestPendingDocumentProcessing({ quiet: true });
+  }, [autoProcessingReady, requestPendingDocumentProcessing]);
 
   const applyColumnFilter = (columnId, value) => {
     setOffset(0);
@@ -1360,7 +1383,7 @@ export default function DocumentsPage() {
         <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
+              <FileText className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
               <div>
                 <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
                 <p className="mt-1">
@@ -1373,38 +1396,30 @@ export default function DocumentsPage() {
                   {t('Why this happened: these files were copied from Google Drive after the last full processing run, so the secure source copy exists but search indexing has not caught up yet.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {showDiagnostics
-                    ? t('Use Start processing here so the batch can move through extraction, search indexing, and a final alignment check.')
-                    : t('If this stays here, ask a workspace admin or support to start document processing.')}
+                  {canContribute
+                    ? t('Processing starts automatically when files are added. You can keep working while extraction, search indexing, and source checks run in the background.')
+                    : t('Processing starts automatically when files are added by someone with upload access. You can keep reviewing uploaded files while processing finishes.')}
                 </p>
               </div>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-              {canSeeAdmin ? (
+              {processingRequest.error && canContribute ? (
                 <button
                   type="button"
-                  onClick={requestPendingDocumentProcessing}
-                  disabled={processingRequest.busy || processingStartFinished}
+                  onClick={() => requestPendingDocumentProcessing()}
+                  disabled={processingRequest.busy}
                   className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                 >
-                  {processingStartFinished ? t(processingStartTitle) : processingRequest.busy ? t('Starting processing') : t('Start processing')}
+                  {processingRequest.busy ? t('Starting automatically') : t('Try processing again')}
                 </button>
               ) : (
                 <Link
-                  to={showDiagnostics ? `/evidence/cases/${caseId}/health` : `/evidence/cases/${caseId}/intake`}
+                  to={processingRequestJobId ? `/evidence/cases/${caseId}/jobs/${processingRequestJobId}` : `/evidence/cases/${caseId}/jobs#processing-status`}
                   className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
                 >
-                  {showDiagnostics ? t('Open operations metrics') : t('Review Add Documents')}
+                  {processingRequest.busy ? t('Starting automatically') : t('See processing status')}
                 </Link>
               )}
-              {showDiagnostics ? (
-                <Link
-                  to={`/evidence/cases/${caseId}/health`}
-                  className="text-xs font-semibold text-amber-900 hover:text-amber-950 dark:text-amber-100 dark:hover:text-white"
-                >
-                  {t('Open operations metrics')}
-                </Link>
-              ) : null}
             </div>
           </div>
           {processingRequest.error ? (
@@ -1565,7 +1580,7 @@ export default function DocumentsPage() {
                         : t('No page text is available yet.')}
                   </div>
                 </div>
-                <PipelineDots document={detail || document} />
+                <PipelineDots document={detail || document} t={t} />
               </div>
               {rowIsMedia && hasTranscript(rowDocument) ? (
                 <TranscriptPanel document={rowDocument} compact />
@@ -1690,7 +1705,7 @@ export default function DocumentsPage() {
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
-                    <div className="mt-2"><PipelineDots document={drawer.document} /></div>
+                    <div className="mt-2"><PipelineDots document={drawer.document} t={t} /></div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
                     <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Language')}</div>
@@ -1737,7 +1752,7 @@ export default function DocumentsPage() {
 
                 <div className="mt-4">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
-                  <PipelineDots document={drawer.document} showLabels />
+                  <PipelineDots document={drawer.document} showLabels t={t} />
                 </div>
 
                 <div className="mt-4">
