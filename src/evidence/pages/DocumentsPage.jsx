@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, PlayCircle, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Loader2, PlayCircle, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -613,7 +613,9 @@ export default function DocumentsPage() {
     busy: false,
     error: null,
     result: null,
+    phase: null,
   });
+  const processingRequestInFlightRef = useRef(false);
   const [expandedStatusTiles, setExpandedStatusTiles] = useState({});
   const [categoryLensId, setCategoryLensId] = useState(DEFAULT_CATEGORY_QA_LENS_ID);
   const [categoryQa, setCategoryQa] = useState({
@@ -1055,7 +1057,7 @@ export default function DocumentsPage() {
     if (!canContribute) {
       return null;
     }
-    setProcessingRequest((current) => ({ ...current, busy: true, error: null }));
+    setProcessingRequest((current) => ({ ...current, busy: true, error: null, phase: 'starting_processing' }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.requestDocumentProcessing(
@@ -1069,7 +1071,7 @@ export default function DocumentsPage() {
         { token },
       );
       recordFingerprint(result, 'Document text/search processing');
-      setProcessingRequest({ busy: false, error: null, result: result.data || {} });
+      setProcessingRequest({ busy: false, error: null, result: result.data || {}, phase: null });
       if (!quiet) {
         await loadDocuments();
       }
@@ -1084,6 +1086,7 @@ export default function DocumentsPage() {
         setProcessingRequest({
           busy: false,
           error: null,
+          phase: null,
           result: {
             display_message: detail?.user_status || 'No self-service processing is needed right now.',
             can_start_processing: false,
@@ -1092,7 +1095,7 @@ export default function DocumentsPage() {
         });
         return null;
       }
-      setProcessingRequest({ busy: false, error, result: null });
+      setProcessingRequest({ busy: false, error, result: null, phase: null });
       return null;
     }
   }, [canContribute, caseId, getAccessToken, loadDocuments, recordFingerprint]);
@@ -1101,7 +1104,20 @@ export default function DocumentsPage() {
     if (!canContribute) {
       return null;
     }
-    setProcessingRequest((current) => ({ ...current, busy: true, error: null }));
+    if (processingRequestInFlightRef.current) {
+      return null;
+    }
+    processingRequestInFlightRef.current = true;
+    setProcessingRequest({
+      busy: true,
+      error: null,
+      phase: 'starting_full_propagation',
+      result: {
+        label: 'Sync Drive files',
+        status: 'starting',
+        display_message: 'Propagation request sent. The app is creating or reusing the background job now; this can take a moment.',
+      },
+    });
     try {
       const token = await getAccessToken();
       const result = canSeeOperations
@@ -1132,7 +1148,7 @@ export default function DocumentsPage() {
       recordFingerprint(result, canSeeOperations ? 'Full propagation repair' : 'Document text/search processing');
       const resultData = result.data || {};
       const startedJob = resultData.job || resultData.existing_job || null;
-      setProcessingRequest({ busy: false, error: null, result: resultData });
+      setProcessingRequest({ busy: false, error: null, result: resultData, phase: null });
       if (startedJob?.job_id) {
         setState((current) => ({ ...current, activePropagationJob: startedJob }));
       }
@@ -1142,8 +1158,10 @@ export default function DocumentsPage() {
       ]);
       return resultData;
     } catch (error) {
-      setProcessingRequest({ busy: false, error, result: null });
+      setProcessingRequest({ busy: false, error, result: null, phase: null });
       return null;
+    } finally {
+      processingRequestInFlightRef.current = false;
     }
   }, [canContribute, canSeeOperations, caseId, getAccessToken, loadDocumentRollups, loadDocuments, recordFingerprint]);
 
@@ -1565,12 +1583,18 @@ export default function DocumentsPage() {
     || processingRequestData.job_type
     || '',
   );
-  const processingIsFullPropagation = processingResultJobType === 'source_sync_full_propagation'
+  const processingIsStartingFullPropagation = processingRequest.phase === 'starting_full_propagation';
+  const processingIsFullPropagation = processingIsStartingFullPropagation
+    || processingResultJobType === 'source_sync_full_propagation'
     || String(processingRequestData.label || '').toLowerCase().includes('sync drive');
-  const processingStartTitle = processingRequestData.already_started
+  const processingStartTitle = processingIsStartingFullPropagation
+    ? 'Starting full propagation'
+    : processingRequestData.already_started
     ? (processingIsFullPropagation ? 'Full propagation already started' : 'Processing already started')
     : (processingIsFullPropagation ? 'Full propagation started' : 'Processing started');
-  const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
+  const processingStartMessage = processingRequestData.display_message || (processingIsStartingFullPropagation
+    ? 'Propagation request sent. The button is locked while the background job is created or reused.'
+    : processingRequestData.already_started
     ? (processingIsFullPropagation ? 'Full propagation is already queued or running. Check Jobs for progress.' : 'Processing already started. Check Jobs for per-document progress.')
     : (processingIsFullPropagation ? 'Full propagation started. Check Jobs for Drive scan, extraction, search, relationship-map, and source checks.' : 'Processing started. Check Jobs for per-document progress.'));
   const autoProcessingReady = canContribute && s3OnlyFiles > 0 && effectiveProcessingCount > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
@@ -2039,7 +2063,11 @@ export default function DocumentsPage() {
                   disabled={processingRequest.busy}
                   className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <PlayCircle size={16} aria-hidden="true" />
+                  {processingRequest.busy ? (
+                    <Loader2 className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <PlayCircle size={16} aria-hidden="true" />
+                  )}
                   {processingRequest.busy ? t('Starting propagation') : t('Finish propagation')}
                 </button>
               ) : null}
@@ -2106,13 +2134,24 @@ export default function DocumentsPage() {
             </div>
           ) : null}
           {processingRequest.result ? (
-            <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
+            <div
+              className={`mt-4 rounded-md border p-3 ${
+                processingRequest.busy
+                  ? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/25 dark:text-sky-100'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100'
+              }`}
+              aria-live="polite"
+            >
               <p className="font-semibold">{t(processingStartTitle)}</p>
               <p className="mt-1 text-xs">{t(processingStartMessage)}</p>
               {processingRequestJobId ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${processingRequestJobId}`}
-                  className="mt-2 inline-flex text-xs font-semibold text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white"
+                  className={`mt-2 inline-flex text-xs font-semibold ${
+                    processingRequest.busy
+                      ? 'text-sky-900 hover:text-sky-950 dark:text-sky-100 dark:hover:text-white'
+                      : 'text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white'
+                  }`}
                 >
                   {t('Open propagation details')}
                 </Link>
