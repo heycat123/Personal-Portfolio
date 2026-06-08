@@ -1416,6 +1416,37 @@ export default function PacketsPage() {
     });
   }
 
+  async function startProcessingAfterPacketDocuments(token) {
+    if (!canContribute) {
+      return null;
+    }
+    try {
+      const result = await evidenceApi.requestDocumentProcessing(
+        caseId,
+        {
+          scope: 'copied_not_extracted',
+          requested_action: 'text_extraction_and_search_indexing',
+          reason: 'Automatically start processing after packet documents were added',
+          max_documents: 250,
+        },
+        { token },
+      );
+      recordFingerprint(result, 'Packet document processing');
+      return result.data || {};
+    } catch (error) {
+      const detail = error?.data || error?.detail;
+      const noProcessingNeeded = error?.status === 409 && (
+        String(detail?.error || '').toLowerCase().includes('no copied documents') ||
+        String(detail?.user_status || '').toLowerCase().includes('no self-service processing')
+      );
+      if (noProcessingNeeded) {
+        return null;
+      }
+      setState((current) => ({ ...current, error }));
+      return null;
+    }
+  }
+
   function closeDocumentPicker() {
     if (!documentPicker.linking && !documentPicker.localUploading && !documentPicker.driveAction) {
       setDocumentPicker((current) => ({ ...current, open: false, requirement: null, selectedFileIds: [] }));
@@ -1668,10 +1699,13 @@ export default function PacketsPage() {
           { token },
         );
         recordFingerprint(linkResult, 'Link packet uploads');
+        const processingResult = await startProcessingAfterPacketDocuments(token);
         setState((current) => ({
           ...current,
           packet: linkResult.data?.packet || current.packet,
-          notice: 'Uploaded files were added to Documents and linked to this packet item. Processing may continue in the background.',
+          notice: processingResult?.job?.job_id || processingResult?.existing_job?.job_id
+            ? 'Uploaded files were added to Documents, linked to this packet item, and processing started automatically.'
+            : 'Uploaded files were added to Documents and linked to this packet item. Processing may continue in the background.',
           fingerprint: linkResult.requestFingerprintId,
         }));
         setDocumentPicker((current) => ({
@@ -1801,6 +1835,7 @@ export default function PacketsPage() {
           { token },
         );
         recordFingerprint(linkResult, 'Link packet Drive imports');
+        const processingResult = await startProcessingAfterPacketDocuments(token);
         setState((current) => ({
           ...current,
           packet: linkResult.data?.packet || current.packet,
@@ -1809,7 +1844,11 @@ export default function PacketsPage() {
             alreadyInDocumentsCount
               ? `${alreadyInDocumentsCount} file(s) were already in Documents, so Evidence AI linked the existing workspace copy instead of adding a duplicate.`
               : 'New Drive imports were added to Documents first.',
-            importFailures.length ? `${importFailures.length} file(s) still need attention.` : 'Processing may continue in the background.',
+            importFailures.length
+              ? `${importFailures.length} file(s) still need attention.`
+              : processingResult?.job?.job_id || processingResult?.existing_job?.job_id
+                ? 'Processing started automatically.'
+                : 'Processing may continue in the background.',
           ].join(' '),
           fingerprint: linkResult.requestFingerprintId,
         }));

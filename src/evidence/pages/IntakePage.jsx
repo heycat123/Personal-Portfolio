@@ -90,7 +90,7 @@ export default function IntakePage() {
   const { getAccessToken } = useEvidenceAuth();
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
-  const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const { canContribute, canSeeOperations, debugEnabled } = useOperatorMode();
   const showDiagnostics = canSeeOperations || debugEnabled;
   const [file, setFile] = useState(null);
   const [uploadItems, setUploadItems] = useState([]);
@@ -254,6 +254,37 @@ export default function IntakePage() {
       ].slice(0, 4),
     }));
   }, [recordFingerprint]);
+
+  const startDocumentProcessing = useCallback(async (token, label = 'Document processing') => {
+    if (!canContribute) {
+      return null;
+    }
+    try {
+      const result = await evidenceApi.requestDocumentProcessing(
+        caseId,
+        {
+          scope: 'copied_not_extracted',
+          requested_action: 'text_extraction_and_search_indexing',
+          reason: 'Automatically start processing after documents were added to the workspace',
+          max_documents: 250,
+        },
+        { token },
+      );
+      addFingerprint(result, label);
+      return result.data || {};
+    } catch (error) {
+      const detail = error?.data || error?.detail;
+      const noProcessingNeeded = error?.status === 409 && (
+        String(detail?.error || '').toLowerCase().includes('no copied documents') ||
+        String(detail?.user_status || '').toLowerCase().includes('no self-service processing')
+      );
+      if (noProcessingNeeded) {
+        return null;
+      }
+      setState((current) => ({ ...current, connectorError: error }));
+      return null;
+    }
+  }, [addFingerprint, canContribute, caseId]);
 
   const loadConnectors = useCallback(async () => {
     setState((current) => ({ ...current, connectorLoading: true, connectorError: null }));
@@ -522,12 +553,16 @@ export default function IntakePage() {
         { token },
       );
       addFingerprint(result, 'Import Google Drive file');
+      const processingResult = await startDocumentProcessing(token, 'Process Google Drive import');
       setState((current) => ({
         ...current,
         step: 'registered',
         presign: { upload: result.data?.upload, presign: { key: result.data?.storage?.key } },
         upload: { ok: Boolean(result.data?.storage?.ok), status: result.status },
         register: result.data?.registration,
+        connectorMessage: processingResult?.job?.job_id || processingResult?.existing_job?.job_id
+          ? 'Google Drive file imported and processing started automatically.'
+          : 'Google Drive file imported. Processing may continue in the background.',
       }));
       if (isGoogleWorkspaceFile(driveItem)) {
         setDriveReview((current) => {
@@ -554,7 +589,7 @@ export default function IntakePage() {
     } finally {
       setDriveBrowser((current) => ({ ...current, action: null }));
     }
-  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken, loadDriveWatchItems]);
+  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken, loadDriveWatchItems, startDocumentProcessing]);
 
   const reviewGoogleWorkspaceFiles = useCallback(async () => {
     if (!activeGoogleConnection?.source_connection_id) {
@@ -850,16 +885,20 @@ export default function IntakePage() {
           register: registerResult.data,
         }));
       }
+      const processingResult = await startDocumentProcessing(token, 'Process uploaded documents');
       setState((current) => ({
         ...current,
         busy: false,
         step: 'complete',
+        connectorMessage: processingResult?.job?.job_id || processingResult?.existing_job?.job_id
+          ? 'Files uploaded and processing started automatically.'
+          : 'Files uploaded. Processing may continue in the background.',
       }));
     } catch (error) {
       setState((current) => ({ ...current, busy: false, error, step: 'failed' }));
       setUploadItems((current) => current.map((item) => (item.status && item.status !== 'ready' && item.progress < 100 ? { ...item, status: 'failed', message: error.message || 'Upload failed.' } : item)));
     }
-  }, [addFingerprint, caseId, file, getAccessToken, sourceMode, updateUploadItem, uploadItems, watchUploadJob]);
+  }, [addFingerprint, caseId, file, getAccessToken, sourceMode, startDocumentProcessing, updateUploadItem, uploadItems, watchUploadJob]);
 
   const job = state.register?.job;
   const upload = state.presign?.upload;

@@ -7,6 +7,7 @@ import DocumentRemovalDialog from '../components/DocumentRemovalDialog';
 import ErrorPanel from '../components/ErrorPanel';
 import MetricTile from '../components/MetricTile';
 import PageHeader from '../components/PageHeader';
+import PipelineReadinessDonut from '../components/PipelineReadinessDonut';
 import RequestFingerprint from '../components/RequestFingerprint';
 import StatusBadge from '../components/StatusBadge';
 import TranscriptPanel from '../components/TranscriptPanel';
@@ -101,6 +102,31 @@ function issueTagReviewState(document, t) {
     label: t('Issue tags pending'),
     description: t('Search and people/contact processing has not finished for this document yet. This is not a manual legal review task.'),
   };
+}
+
+function documentPipelineItems(document) {
+  const statuses = document?.pipeline_status || {};
+  const display = document?.pipeline_display || {};
+  return [
+    {
+      key: 'postgres',
+      label: display.indexed?.label || 'Indexed for review',
+      status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending',
+      color: '#0ea5e9',
+    },
+    {
+      key: 'vector',
+      label: display.search?.label || 'Search ready',
+      status: display.search?.status || statuses.vector || document?.vector_status || 'pending',
+      color: '#2563eb',
+    },
+    {
+      key: 'graph',
+      label: display.relationship_map?.label || 'Relationship map ready',
+      status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending',
+      color: '#7c3aed',
+    },
+  ];
 }
 
 function FactorTags({ document, t }) {
@@ -511,7 +537,10 @@ export default function DocumentDetailPage() {
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Review status')}</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Review status')}</h3>
+                <PipelineReadinessDonut items={documentPipelineItems(document)} size={30} t={t} />
+              </div>
               <div className="mt-4 space-y-3 text-sm">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages needing text review')}</p>
