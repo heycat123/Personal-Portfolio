@@ -47,6 +47,111 @@ function documentsLibraryCount(summary, key) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function CanonicalDocumentRollupPanel({ rollup, librarySummary, caseId, t }) {
+  const canonicalDocuments = rollup?.canonical_documents || {};
+  const sourceInventory = rollup?.source_inventory || {};
+  const googleDrive = rollup?.google_drive || {};
+  const sourceContributions = Array.isArray(rollup?.source_contributions) ? rollup.source_contributions : [];
+  const tiles = Array.isArray(librarySummary?.tiles) ? librarySummary.tiles : [];
+  const tileByKey = Object.fromEntries(
+    tiles.map((tile) => [String(tile.key || tile.id || '').toLowerCase(), tile]).filter(([key]) => key),
+  );
+  const totalUnique = Number(canonicalDocuments.total_unique_hashes || librarySummary?.counts?.all || 0);
+  if (!totalUnique && !sourceInventory.active_source_rows) {
+    return null;
+  }
+  const statusTiles = ['ready', 'processing', 'partial', 'failed']
+    .map((key) => tileByKey[key] || { key, label: key.replace(/_/g, ' '), count: librarySummary?.counts?.[key] || 0 })
+    .filter((tile) => tile);
+  return (
+    <section className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Canonical document rollup')}</h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            {t('Documents are counted by unique file hash. Source rows can be higher when Google Drive or another source contains duplicate copies, repeated paths, or revisions.')}
+          </p>
+        </div>
+        <Link
+          to={`/evidence/cases/${caseId}/documents`}
+          className="inline-flex shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
+        >
+          {t('Open Documents')}
+        </Link>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Canonical documents')}</div>
+          <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{totalUnique}</div>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{t('Unique hashes across active sources')}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Google Drive files')}</div>
+          <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{Number(googleDrive.source_rows || 0)}</div>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {t('{count} unique hash(es)', { count: Number(googleDrive.unique_hashes || 0) })}
+          </p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Duplicate hash groups')}</div>
+          <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{Number(sourceInventory.duplicate_hash_groups || googleDrive.duplicate_hash_groups || 0)}</div>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {t('{count} duplicate source row(s)', { count: Number(sourceInventory.duplicate_source_rows || googleDrive.duplicate_source_rows || 0) })}
+          </p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+          <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source rows')}</div>
+          <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{Number(sourceInventory.active_source_rows || canonicalDocuments.source_rows || 0)}</div>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{t('Raw active records before hash collapse')}</p>
+        </div>
+      </div>
+
+      {rollup?.duplicate_hash_group_explanation ? (
+        <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950 dark:border-sky-900/70 dark:bg-sky-950/25 dark:text-sky-100">
+          {t(rollup.duplicate_hash_group_explanation)}
+        </p>
+      ) : null}
+
+      {sourceContributions.length ? (
+        <div className="mt-4">
+          <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Source contribution')}</h3>
+          <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {sourceContributions.map((source) => (
+              <div key={source.source_provider || source.source_label} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-800 dark:bg-black/20">
+                <div className="font-semibold text-gray-950 dark:text-white">{t(source.source_label || source.source_provider || 'Source')}</div>
+                <div className="mt-1 text-gray-600 dark:text-gray-400">
+                  {t('{unique} unique hash(es) from {rows} source row(s)', {
+                    unique: Number(source.unique_hashes || 0),
+                    rows: Number(source.source_rows || 0),
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4">
+        <h3 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Propagation buckets')}</h3>
+        <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {statusTiles.map((tile) => (
+            <Link
+              key={tile.key}
+              to={`/evidence/cases/${caseId}/documents${tile.key === 'all' ? '' : `?propagation_bucket=${tile.key}`}`}
+              className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm hover:border-sky-400 hover:bg-sky-50 dark:border-gray-800 dark:bg-black/20 dark:hover:border-sky-800 dark:hover:bg-sky-950/25"
+            >
+              <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t(tile.label || tile.key)}</div>
+              <div className="mt-1 text-2xl font-semibold text-gray-950 dark:text-white">{Number(tile.count || 0)}</div>
+              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{t(tile.helper || tile.description || 'Open matching documents')}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function firstJob(...values) {
   return values.find((value) => value && typeof value === 'object' && !Array.isArray(value) && (value.job_id || value.id)) || null;
 }
@@ -744,6 +849,7 @@ export default function HealthPage() {
   const rawTables = state.rawParity?.tables || [];
   const counts = state.caseHealth?.summary?.counts || {};
   const documentProcessingReadiness = state.caseHealth?.document_processing_readiness || {};
+  const canonicalDocumentRollup = state.caseHealth?.canonical_document_rollup || {};
   const documentsPropagationSummary = state.caseHealth?.documents_propagation_summary || {};
   const healthLibrarySummary = documentsPropagationSummary.documents_library_summary || state.caseHealth?.documents_library_summary || {};
   const propagationCauseBreakdown = documentsPropagationSummary.cause_breakdown || documentsPropagationSummary.breakdown || documentsPropagationSummary.buckets || {};
@@ -817,6 +923,7 @@ export default function HealthPage() {
   const processingSnapshotRows = Array.isArray(processingDocumentsSnapshot.documents) ? processingDocumentsSnapshot.documents : [];
   const failedSnapshotRows = Array.isArray(failedDocumentsSnapshot.documents) ? failedDocumentsSnapshot.documents : [];
   const summaryProcessingCount = documentsLibraryCount(healthLibrarySummary, 'processing');
+  const summaryPartialCount = documentsLibraryCount(healthLibrarySummary, 'partial');
   const summaryFailedCount = documentsLibraryCount(healthLibrarySummary, 'failed');
   const snapshotProcessingRawCount = Number(
     documentsLibraryTile(processingDocumentsSnapshot.documents_library_summary, 'processing')?.count
@@ -833,12 +940,11 @@ export default function HealthPage() {
   const snapshotProcessingCount = Number.isFinite(snapshotProcessingRawCount) ? snapshotProcessingRawCount : 0;
   const snapshotFailedCount = Number.isFinite(snapshotFailedRawCount) ? snapshotFailedRawCount : 0;
   const rawHealthProcessingDocumentCount = summaryProcessingCount || snapshotProcessingCount || copiedFilesPendingProcessing || 0;
-  const idlePropagationDocumentCount = rawHealthProcessingDocumentCount > 0 && !hasActiveDocumentPropagationJob
-    ? rawHealthProcessingDocumentCount
-    : 0;
-  const activeProcessingDocumentCount = hasActiveDocumentPropagationJob ? rawHealthProcessingDocumentCount : 0;
-  const healthFailedDocumentCount = (summaryFailedCount || snapshotFailedCount) + idlePropagationDocumentCount;
-  const healthDocumentGapCount = (activeProcessingDocumentCount + healthFailedDocumentCount) || copiedFilesPendingProcessing || driveExtraHashCount || recommendationPendingHashCount;
+  const idlePropagationDocumentCount = 0;
+  const activeProcessingDocumentCount = rawHealthProcessingDocumentCount;
+  const healthPartialDocumentCount = summaryPartialCount || 0;
+  const healthFailedDocumentCount = summaryFailedCount || snapshotFailedCount || 0;
+  const healthDocumentGapCount = (activeProcessingDocumentCount + healthPartialDocumentCount + healthFailedDocumentCount) || copiedFilesPendingProcessing || driveExtraHashCount || recommendationPendingHashCount;
   const showHealthDocumentResolution = healthDocumentGapCount > 0;
   const propagationCauseItems = Array.isArray(propagationCauseBreakdown)
     ? propagationCauseBreakdown
@@ -859,11 +965,16 @@ export default function HealthPage() {
   const processingStatusAction = latestDocumentProcessingJob?.job_id
     ? { label: t('Open latest processing job'), to: `/evidence/cases/${caseId}/jobs/${latestDocumentProcessingJob.job_id}` }
     : { label: t('Open Jobs'), to: `/evidence/cases/${caseId}/jobs#processing-status` };
+  const unresolvedIdleDocumentCount = healthPartialDocumentCount + healthFailedDocumentCount;
+  const partialOnlyDocumentGap = healthPartialDocumentCount > 0 && !activeProcessingDocumentCount && !healthFailedDocumentCount;
+  const failedOnlyDocumentGap = healthFailedDocumentCount > 0 && !activeProcessingDocumentCount;
   const alignmentBlockedByProcessing = hasActiveDocumentPropagationJob || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0) || Boolean(activeSourceStabilityJob);
-  const sourceCoveragePausedByDocumentGap = alignmentBlockedByProcessing || idlePropagationDocumentCount > 0;
-  const alignmentWaitMessage = idlePropagationDocumentCount > 0
-    ? t('Restart document processing before running source coverage so the check reads fully propagated files.')
-    : activeSourceStabilityJob || hasActiveDocumentPropagationJob
+  const sourceCoveragePausedByDocumentGap = alignmentBlockedByProcessing || unresolvedIdleDocumentCount > 0;
+  const alignmentWaitMessage = healthFailedDocumentCount > 0
+    ? t('Retry or inspect failed documents before running source coverage so the check reads fully propagated files.')
+    : healthPartialDocumentCount > 0
+      ? t('Finish partial propagation before running source coverage so the check reads complete text, search, and relationship-map records.')
+      : activeSourceStabilityJob || hasActiveDocumentPropagationJob
       ? t('Document processing or source sync is active. Run source coverage after that work finishes so the check reads stable records.')
       : t('Run source coverage after document processing finishes so the check reads stable records.');
   const processingStartTitle = processingRequestData.already_started ? 'Processing already in progress' : 'Processing is being tracked';
@@ -1043,7 +1154,7 @@ export default function HealthPage() {
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Play size={16} aria-hidden="true" />
-              {idlePropagationDocumentCount > 0 ? t('Restart processing first') : alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
+              {failedOnlyDocumentGap ? t('Review failed first') : partialOnlyDocumentGap ? t('Finish partial first') : alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
             </button>
           </>
         }
@@ -1075,6 +1186,13 @@ export default function HealthPage() {
           </div>
         </div>
       ) : null}
+
+      <CanonicalDocumentRollupPanel
+        rollup={canonicalDocumentRollup}
+        librarySummary={healthLibrarySummary}
+        caseId={caseId}
+        t={t}
+      />
 
       <div id="propagation-blockers">
         <PropagationIssueReport
@@ -1203,33 +1321,37 @@ export default function HealthPage() {
 
       {showHealthDocumentResolution ? (
         <section id="search-readiness-resolution" className={`mt-6 scroll-mt-4 rounded-lg border p-4 text-sm shadow-sm ${
-          idlePropagationDocumentCount > 0
+          failedOnlyDocumentGap
             ? 'border-red-200 bg-red-50 text-red-950 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
             : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100'
         }`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <h3 className="text-base font-semibold">
-                {idlePropagationDocumentCount > 0 ? t('Document propagation needs restart') : t('Documents are still processing')}
+                {failedOnlyDocumentGap ? t('Document propagation failed') : partialOnlyDocumentGap ? t('Partial propagation remains') : t('Documents are still processing')}
               </h3>
               <p>
-                {idlePropagationDocumentCount > 0
-                  ? t('{count} document row(s) are not fully propagated and no processing job is active.', { count: idlePropagationDocumentCount })
+                {failedOnlyDocumentGap
+                  ? t('{count} document row(s) have no usable propagation yet and need retry or inspection.', { count: healthFailedDocumentCount })
+                  : partialOnlyDocumentGap
+                    ? t('{count} document row(s) have partial propagation. Finish the missing stage before treating the case as fully propagated.', { count: healthPartialDocumentCount })
                   : activeProcessingDocumentCount > 0
                     ? t('{count} document row(s) are actively moving through processing before they are fully available in Documents and Ask Documents.', { count: activeProcessingDocumentCount })
                     : t('Source coverage found copied Google Drive files that still need processing before full propagation is ready.')}
               </p>
               {(copiedFileHashesPendingProcessing || driveExtraHashCount) > 0 ? (
-                <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                <p className={`text-xs ${failedOnlyDocumentGap ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                   {t('Health counts {count} unique file hash(es). Documents may show a larger number because multiple document rows can share the same underlying file content.', { count: copiedFileHashesPendingProcessing || driveExtraHashCount })}
                 </p>
               ) : null}
-              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
-                {idlePropagationDocumentCount > 0
-                  ? t('Why this is marked Failed: full propagation is not complete, and there is no active job that will finish it.')
+              <p className={`text-xs ${failedOnlyDocumentGap ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                {failedOnlyDocumentGap
+                  ? t('Why this is marked Failed: no usable text/search/relationship propagation is complete yet.')
+                  : partialOnlyDocumentGap
+                    ? t('Why this is marked Partial: the file has some durable propagation, but search or relationship-map coverage is still missing.')
                   : t('Why this happened: files were copied or imported, and extraction, search indexing, relationship-map updates, or source coverage is still catching up.')}
               </p>
-              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+              <p className={`text-xs ${failedOnlyDocumentGap ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                 {t('What it affects: Ask Documents may not include these files yet, and source coverage will keep showing a gap until processing finishes.')}
               </p>
               {visiblePropagationCauses.length ? (
@@ -1238,7 +1360,7 @@ export default function HealthPage() {
                     <span
                       key={item.id || item.label}
                       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                        idlePropagationDocumentCount > 0
+                        failedOnlyDocumentGap
                           ? 'border-red-200 bg-white text-red-950 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100'
                           : 'border-amber-200 bg-white text-amber-950 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100'
                       }`}
@@ -1249,28 +1371,35 @@ export default function HealthPage() {
                   ))}
                 </div>
               ) : null}
-              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
-                {idlePropagationDocumentCount > 0
-                  ? t('Next step: restart processing or open Jobs to retry the failed batch if a retry is available.')
+              <p className={`text-xs ${failedOnlyDocumentGap ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                {failedOnlyDocumentGap
+                  ? t('Next step: open failed documents, then retry processing or inspect the source files.')
+                  : partialOnlyDocumentGap
+                    ? t('Next step: open partial documents and finish the missing propagation stage shown in the breakdown.')
                   : t('Next step: open the active processing job to watch progress. Run source coverage after processing finishes.')}
               </p>
-              <p className={`text-xs font-semibold ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+              <p className={`text-xs font-semibold ${failedOnlyDocumentGap ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                 {alignmentWaitMessage}
               </p>
-              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+              <p className={`text-xs ${failedOnlyDocumentGap ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                 {t('You can keep working in other parts of the workspace.')}
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
-              {idlePropagationDocumentCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={requestPendingDocumentProcessing}
-                  disabled={state.processingRequestRunning || processingRequestStarted}
-                  className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-950 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100 dark:hover:bg-red-950/40"
+              {failedOnlyDocumentGap ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/documents?propagation_bucket=failed`}
+                  className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-950 hover:bg-red-100 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100 dark:hover:bg-red-950/40"
                 >
-                  {state.processingRequestRunning ? t('Restarting processing') : t('Restart processing')}
-                </button>
+                  {t('Review failed documents')}
+                </Link>
+              ) : partialOnlyDocumentGap ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/documents?propagation_bucket=partial`}
+                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {t('Review partial documents')}
+                </Link>
               ) : latestDocumentProcessingJob?.job_id ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${latestDocumentProcessingJob.job_id}`}

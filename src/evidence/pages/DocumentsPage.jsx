@@ -64,10 +64,17 @@ function normalizeDocumentStatusFilter(value) {
   if (['processing', 'not_processed', 'pending', 'queued', 'running', 'in_progress'].includes(status)) {
     return 'processing';
   }
+  if (['partial', 'partially_ready', 'needs_finish', 'needs_follow_up'].includes(status)) {
+    return 'partial';
+  }
   if (['failed', 'error', 'needs_attention', 'blocked'].includes(status)) {
     return 'failed';
   }
   return '';
+}
+
+function normalizePropagationSubstageFilter(value) {
+  return String(value || '').toLowerCase().trim().replace(/\s+/g, '_');
 }
 
 function factorLabel(code, t) {
@@ -187,7 +194,13 @@ function readUrlDocumentsTableState(searchParams) {
   const storageStatus = String(searchParams.get('storage_status') || '').trim();
   const factorCode = String(searchParams.get('factor_code') || '').trim();
   const pipelineStatus = String(searchParams.get('pipeline_status') || '').trim();
-  const processingStatus = normalizeDocumentStatusFilter(searchParams.get('status') || searchParams.get('user_status') || searchParams.get('processing_status'));
+  const processingStatus = normalizeDocumentStatusFilter(
+    searchParams.get('propagation_bucket')
+    || searchParams.get('status')
+    || searchParams.get('user_status')
+    || searchParams.get('processing_status'),
+  );
+  const propagationSubstage = normalizePropagationSubstageFilter(searchParams.get('propagation_substage'));
   if (query) {
     next.appliedQuery = query;
   }
@@ -214,6 +227,9 @@ function readUrlDocumentsTableState(searchParams) {
   }
   if (processingStatus) {
     filterValues.processing_status = processingStatus;
+  }
+  if (propagationSubstage) {
+    filterValues.propagation_substage = propagationSubstage;
   }
   if (Object.keys(filterValues).length) {
     next.filterValues = filterValues;
@@ -477,6 +493,7 @@ export default function DocumentsPage() {
     error: null,
     result: null,
   });
+  const [showStatusBreakdown, setShowStatusBreakdown] = useState(false);
   const [categoryLensId, setCategoryLensId] = useState(DEFAULT_CATEGORY_QA_LENS_ID);
   const [categoryQa, setCategoryQa] = useState({
     loading: true,
@@ -499,6 +516,7 @@ export default function DocumentsPage() {
     : true;
   const documentStatusHasActiveJob = !jobStatusKnown || hasActiveDocumentProcessingJob;
   const activeDocumentStatusFilter = normalizeDocumentStatusFilter(filterValues.processing_status);
+  const activePropagationSubstageFilter = normalizePropagationSubstageFilter(filterValues.propagation_substage);
 
   const documentQuery = useMemo(() => ({
     limit: PAGE_SIZE,
@@ -513,11 +531,12 @@ export default function DocumentsPage() {
     require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
     require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
     require_graph: selectedPipelineDomains(filterValues.pipeline_status).includes('graph'),
-    user_status: activeDocumentStatusFilter,
+    propagation_bucket: activeDocumentStatusFilter,
+    propagation_substage: activePropagationSubstageFilter,
     file_ids: filterValues.file_ids,
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
-  }), [activeDocumentStatusFilter, appliedQuery, filterValues, offset, sort]);
+  }), [activeDocumentStatusFilter, activePropagationSubstageFilter, appliedQuery, filterValues, offset, sort]);
   const exactAffectedDocumentFilterActive = Boolean(String(filterValues.file_ids || '').trim());
   const attentionFilterActive = exactAffectedDocumentFilterActive || Boolean(attentionContext);
   const setDocumentsView = useCallback((view) => {
@@ -872,6 +891,27 @@ export default function DocumentsPage() {
       } else {
         delete next.processing_status;
       }
+      delete next.propagation_substage;
+      return next;
+    });
+  };
+
+  const setPropagationBreakdownFilter = (bucket, substage) => {
+    setOffset(0);
+    setFilterValues((current) => {
+      const next = { ...current };
+      const normalizedBucket = normalizeDocumentStatusFilter(bucket);
+      const normalizedSubstage = normalizePropagationSubstageFilter(substage);
+      if (normalizedBucket) {
+        next.processing_status = normalizedBucket;
+      } else {
+        delete next.processing_status;
+      }
+      if (normalizedSubstage) {
+        next.propagation_substage = normalizedSubstage;
+      } else {
+        delete next.propagation_substage;
+      }
       return next;
     });
   };
@@ -1098,10 +1138,11 @@ export default function DocumentsPage() {
       filterOptions: [
         { value: 'ready', label: t('Ready') },
         { value: 'processing', label: t('Processing') },
+        { value: 'partial', label: t('Partial') },
         { value: 'failed', label: t('Failed') },
       ],
-      filterPlaceholder: t('Ready, processing, failed'),
-      help: t('A simple rollup of whether this document is ready, still processing, or needs attention.'),
+      filterPlaceholder: t('Ready, processing, partial, failed'),
+      help: t('A simple rollup of whether this document is ready, actively processing, partially propagated, or failed.'),
       render: (document) => <DocumentRowStatus document={documentDetails[document.file_id]?.document || document} hasActiveProcessingJob={documentStatusHasActiveJob} t={t} />,
     },
   ]), [caseId, documentDetails, documentStatusHasActiveJob, state.facets, t]);
@@ -1125,10 +1166,17 @@ export default function DocumentsPage() {
           const labels = {
             ready: 'Ready',
             processing: 'Processing',
+            partial: 'Partial',
             failed: 'Failed',
           };
           const normalizedValue = normalizeDocumentStatusFilter(value);
           return { id: key, label: `${t('Status')}: ${t(labels[normalizedValue] || value)}` };
+        }
+        if (key === 'propagation_substage') {
+          return {
+            id: key,
+            label: `${t('Stage')}: ${t(String(value || '').replace(/_/g, ' '))}`,
+          };
         }
         const optionLabel = (column?.filterOptions || []).find((option) => option.value === value)?.label || value;
         return { id: key, label: `${column?.header || key}: ${optionLabel}` };
@@ -1139,6 +1187,9 @@ export default function DocumentsPage() {
     setFilterValues((current) => {
       const next = { ...current };
       delete next[columnId];
+      if (columnId === 'processing_status') {
+        delete next.propagation_substage;
+      }
       return next;
     });
   };
@@ -1156,20 +1207,31 @@ export default function DocumentsPage() {
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
   const rawReadyCount = Number(libraryTileById.ready?.count ?? extractedFiles ?? 0);
   const rawProcessingCount = Number(libraryTileById.processing?.count ?? s3OnlyFiles ?? 0);
+  const rawPartialCount = Number(libraryTileById.partial?.count ?? librarySummary.counts?.partial ?? 0);
   const rawFailedCount = Number(libraryTileById.failed?.count ?? inventorySummary.failed_documents ?? inventorySummary.failed_document_rows ?? 0);
-  const idlePropagationCount = jobStatusKnown && !hasActiveDocumentProcessingJob ? rawProcessingCount : 0;
-  const effectiveProcessingCount = Math.max(0, rawProcessingCount - idlePropagationCount);
-  const effectiveFailedCount = rawFailedCount + idlePropagationCount;
+  const idlePropagationCount = 0;
+  const effectiveProcessingCount = rawProcessingCount;
+  const effectiveFailedCount = rawFailedCount;
   const effectiveTileCountByStatus = {
     ready: rawReadyCount,
     processing: effectiveProcessingCount,
+    partial: rawPartialCount,
     failed: effectiveFailedCount,
   };
   const visibleDocuments = activeDocumentStatusFilter
-    ? state.documents.filter((document) => normalizeDocumentStatusFilter(displayDocumentStatus(documentDetails[document.file_id]?.document || document).key) === activeDocumentStatusFilter)
+    ? state.documents.filter((document) => {
+      const rowDocument = documentDetails[document.file_id]?.document || document;
+      const statusMatches = normalizeDocumentStatusFilter(displayDocumentStatus(rowDocument).key) === activeDocumentStatusFilter;
+      const substageMatches = !activePropagationSubstageFilter
+        || normalizePropagationSubstageFilter(rowDocument?.propagation_status?.propagation_substage) === activePropagationSubstageFilter;
+      return statusMatches && substageMatches;
+    })
     : state.documents;
+  const activeBreakdownCount = activeDocumentStatusFilter && activePropagationSubstageFilter
+    ? Number((librarySummary.breakdown?.[activeDocumentStatusFilter] || []).find((item) => item.key === activePropagationSubstageFilter)?.count ?? visibleDocuments.length)
+    : null;
   const displayedTotal = activeDocumentStatusFilter
-    ? Number(effectiveTileCountByStatus[activeDocumentStatusFilter] ?? visibleDocuments.length)
+    ? Number(activeBreakdownCount ?? effectiveTileCountByStatus[activeDocumentStatusFilter] ?? visibleDocuments.length)
     : state.total;
   const firstVisibleRow = displayedTotal && visibleDocuments.length ? offset + 1 : 0;
   const lastVisibleRow = Math.min(displayedTotal || 0, offset + visibleDocuments.length);
@@ -1446,13 +1508,29 @@ export default function DocumentsPage() {
         </section>
       ) : null}
 
-      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label={t('Document status filters')}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Propagation status')}</h2>
+          <p className="text-sm text-[var(--lakai-text-muted)]">
+            {t('Canonical document counts are based on unique file hashes, so duplicate source rows are counted once.')}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowStatusBreakdown((current) => !current)}
+          className="shrink-0 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] hover:bg-[var(--lakai-surface-muted)]"
+        >
+          {showStatusBreakdown ? t('Hide breakdown') : t('Show breakdown')}
+        </button>
+      </div>
+
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5" aria-label={t('Document status filters')}>
         {[
           {
             id: 'all',
-            label: libraryTileById.all_documents?.label || 'All documents',
-            value: libraryTileById.all_documents?.count ?? inventorySummary.total_documents ?? inventorySummary.document_rows ?? state.total,
-            detail: libraryTileById.all_documents?.helper || libraryTileById.all_documents?.description || 'Every file in this case library',
+            label: libraryTileById.all?.label || libraryTileById.all_documents?.label || 'Document total',
+            value: libraryTileById.all?.count ?? libraryTileById.all_documents?.count ?? inventorySummary.total_documents ?? inventorySummary.document_rows ?? state.total,
+            detail: libraryTileById.all?.helper || libraryTileById.all_documents?.helper || libraryTileById.all_documents?.description || 'Canonical documents counted once by unique file hash',
             filter: '',
           },
           {
@@ -1470,14 +1548,21 @@ export default function DocumentsPage() {
             filter: 'processing',
           },
           {
+            id: 'partial',
+            label: libraryTileById.partial?.label || 'Partial',
+            value: rawPartialCount,
+            detail: libraryTileById.partial?.helper || libraryTileById.partial?.description || 'Some propagation exists, but a required stage is missing',
+            filter: 'partial',
+          },
+          {
             id: 'failed',
             label: libraryTileById.failed?.label || 'Failed',
             value: effectiveFailedCount,
-            detail: libraryTileById.failed?.helper || libraryTileById.failed?.description || 'Documents that need attention',
+            detail: libraryTileById.failed?.helper || libraryTileById.failed?.description || 'No usable propagation is complete',
             filter: 'failed',
           },
         ].map((tile) => {
-          const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === tile.filter;
+          const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === tile.filter && !activePropagationSubstageFilter;
           return (
             <button
               key={tile.id}
@@ -1497,6 +1582,67 @@ export default function DocumentsPage() {
           );
         })}
       </div>
+
+      {showStatusBreakdown ? (
+        <div className="mb-5 grid gap-3 lg:grid-cols-2">
+          {['processing', 'partial', 'failed'].map((bucket) => {
+            const items = Array.isArray(librarySummary.breakdown?.[bucket]) ? librarySummary.breakdown[bucket] : [];
+            if (!items.length) {
+              return null;
+            }
+            const bucketLabels = {
+              processing: 'Processing breakdown',
+              partial: 'Partial breakdown',
+              failed: 'Failed breakdown',
+            };
+            return (
+              <section key={bucket} className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-[var(--lakai-text)]">{t(bucketLabels[bucket])}</h3>
+                  {libraryTileById[bucket]?.next_action?.label ? (
+                    <span className="text-xs font-semibold text-[var(--lakai-text-muted)]">{t(libraryTileById[bucket].next_action.label)}</span>
+                  ) : null}
+                </div>
+                <div className="grid gap-2">
+                  {items.map((item) => {
+                    const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === bucket
+                      && activePropagationSubstageFilter === normalizePropagationSubstageFilter(item.key);
+                    return (
+                      <button
+                        key={`${bucket}-${item.key}`}
+                        type="button"
+                        onClick={() => setPropagationBreakdownFilter(bucket, item.key)}
+                        className={`rounded-xl border p-3 text-left text-sm transition ${
+                          selected
+                            ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
+                            : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)]'
+                        }`}
+                        aria-pressed={selected}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-semibold">{t(item.label)}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            selected
+                              ? 'bg-white/20 text-[var(--lakai-primary-text)]'
+                              : 'bg-[var(--lakai-surface)] text-[var(--lakai-text)]'
+                          }`}>
+                            {item.count}
+                          </span>
+                        </div>
+                        {item.next_action?.user_message ? (
+                          <p className={`mt-1 text-xs ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>
+                            {t(item.next_action.user_message)}
+                          </p>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
@@ -1545,7 +1691,13 @@ export default function DocumentsPage() {
         sort={sort}
         onFilterChange={(columnId, value) => {
           setOffset(0);
-          setFilterValues((current) => ({ ...current, [columnId]: value }));
+          setFilterValues((current) => {
+            const next = { ...current, [columnId]: value };
+            if (columnId === 'processing_status') {
+              delete next.propagation_substage;
+            }
+            return next;
+          });
         }}
         onClearFilter={clearColumnFilter}
         onClearAllFilters={resetTable}
