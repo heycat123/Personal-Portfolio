@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, ExternalLink, FileText, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -501,7 +501,7 @@ export default function DocumentsPage() {
     error: null,
     result: null,
   });
-  const [showStatusBreakdown, setShowStatusBreakdown] = useState(false);
+  const [expandedStatusTiles, setExpandedStatusTiles] = useState({});
   const [categoryLensId, setCategoryLensId] = useState(DEFAULT_CATEGORY_QA_LENS_ID);
   const [categoryQa, setCategoryQa] = useState({
     loading: true,
@@ -1651,13 +1651,6 @@ export default function DocumentsPage() {
             </p>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => setShowStatusBreakdown((current) => !current)}
-          className="shrink-0 rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] hover:bg-[var(--lakai-surface-muted)]"
-        >
-          {showStatusBreakdown ? t('Hide breakdown') : t('Show breakdown')}
-        </button>
       </div>
 
       <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5" aria-label={t('Document status filters')}>
@@ -1699,86 +1692,137 @@ export default function DocumentsPage() {
           },
         ].map((tile) => {
           const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === tile.filter && !activePropagationSubstageFilter;
+          const expanded = Boolean(expandedStatusTiles[tile.id]);
+          const totalComposition = [
+            {
+              key: 'ready',
+              label: libraryTileById.ready?.label || 'Ready',
+              count: rawReadyCount,
+              filter: 'ready',
+              userMessage: libraryTileById.ready?.helper || libraryTileById.ready?.description,
+            },
+            {
+              key: 'processing',
+              label: libraryTileById.processing?.label || 'Processing',
+              count: effectiveProcessingCount,
+              filter: 'processing',
+              userMessage: libraryTileById.processing?.helper || libraryTileById.processing?.description,
+            },
+            {
+              key: 'partial',
+              label: libraryTileById.partial?.label || 'Partial',
+              count: rawPartialCount,
+              filter: 'partial',
+              userMessage: libraryTileById.partial?.helper || libraryTileById.partial?.description,
+            },
+            {
+              key: 'failed',
+              label: libraryTileById.failed?.label || 'Failed',
+              count: effectiveFailedCount,
+              filter: 'failed',
+              userMessage: libraryTileById.failed?.helper || libraryTileById.failed?.description,
+            },
+          ];
+          const subcategoryItems = tile.id === 'all'
+            ? totalComposition
+            : (Array.isArray(librarySummary.breakdown?.[tile.id]) ? librarySummary.breakdown[tile.id] : []);
+          const hasSubcategories = subcategoryItems.length > 0;
           return (
-            <button
+            <section
               key={tile.id}
-              type="button"
-              onClick={() => setDocumentStatusFilter(tile.filter)}
-              className={`rounded-2xl border p-4 text-left shadow-[var(--lakai-shadow-panel)] transition ${
+              className={`overflow-hidden rounded-2xl border shadow-[var(--lakai-shadow-panel)] transition ${
                 selected
                   ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
                   : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface-muted)]'
               }`}
-              aria-pressed={selected}
             >
-              <div className={`text-xs font-semibold uppercase tracking-normal ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.label)}</div>
-              <div className="mt-1 text-2xl font-semibold">{tile.value}</div>
-              <div className={`mt-1 text-sm ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.detail)}</div>
-            </button>
+              <button
+                type="button"
+                onClick={() => setDocumentStatusFilter(tile.filter)}
+                className="block w-full p-4 text-left"
+                aria-pressed={selected}
+              >
+                <div className={`text-xs font-semibold uppercase tracking-normal ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.label)}</div>
+                <div className="mt-1 text-2xl font-semibold">{tile.value}</div>
+                <div className={`mt-1 text-sm ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.detail)}</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpandedStatusTiles((current) => ({ ...current, [tile.id]: !current[tile.id] }))}
+                className={`flex min-h-10 w-full items-center justify-center border-t px-3 py-2 text-xs font-semibold transition ${
+                  selected
+                    ? 'border-white/20 text-[var(--lakai-primary-text)]/85 hover:bg-white/10'
+                    : 'border-[var(--lakai-border-soft)] text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-text)]'
+                }`}
+                aria-expanded={expanded}
+                aria-label={expanded ? t('Collapse {label} breakdown', { label: t(tile.label) }) : t('Expand {label} breakdown', { label: t(tile.label) })}
+              >
+                <ChevronDown
+                  size={18}
+                  aria-hidden="true"
+                  className={`transition-transform ${expanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+              {expanded ? (
+                <div className={`border-t p-3 ${selected ? 'border-white/20 bg-black/5' : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)]'}`}>
+                  {hasSubcategories ? (
+                    <div className="grid gap-2">
+                      {subcategoryItems.map((item) => {
+                        const itemBucket = tile.id === 'all'
+                          ? normalizeDocumentStatusFilter(item.filter || item.key)
+                          : tile.id;
+                        const itemSubstage = tile.id === 'all' ? '' : normalizePropagationSubstageFilter(item.key);
+                        const itemSelected = normalizeDocumentStatusFilter(filterValues.processing_status) === itemBucket
+                          && (!itemSubstage || activePropagationSubstageFilter === itemSubstage);
+                        const handleSubcategoryClick = () => {
+                          if (tile.id === 'all') {
+                            setDocumentStatusFilter(itemBucket);
+                          } else {
+                            setPropagationBreakdownFilter(tile.id, item.key);
+                          }
+                        };
+                        return (
+                          <button
+                            key={`${tile.id}-${item.key}`}
+                            type="button"
+                            onClick={handleSubcategoryClick}
+                            className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                              itemSelected
+                                ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
+                                : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)]'
+                            }`}
+                            aria-pressed={itemSelected}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="font-semibold">{t(item.label)}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                itemSelected
+                                  ? 'bg-white/20 text-[var(--lakai-primary-text)]'
+                                  : 'bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)]'
+                              }`}>
+                                {rollupsReady ? item.count : '...'}
+                              </span>
+                            </div>
+                            {(item.next_action?.user_message || item.userMessage) ? (
+                              <p className={`mt-1 text-xs ${itemSelected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>
+                                {t(item.next_action?.user_message || item.userMessage)}
+                              </p>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className={`text-sm ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>
+                      {rollupsReady ? t('No subcategories reported for this status.') : t('Status subcategories are loading.')}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </section>
           );
         })}
       </div>
-
-      {showStatusBreakdown ? (
-        <div className="mb-5 grid gap-3 lg:grid-cols-2">
-          {['processing', 'partial', 'failed'].map((bucket) => {
-            const items = Array.isArray(librarySummary.breakdown?.[bucket]) ? librarySummary.breakdown[bucket] : [];
-            if (!items.length) {
-              return null;
-            }
-            const bucketLabels = {
-              processing: 'Processing breakdown',
-              partial: 'Partial breakdown',
-              failed: 'Failed breakdown',
-            };
-            return (
-              <section key={bucket} className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="font-semibold text-[var(--lakai-text)]">{t(bucketLabels[bucket])}</h3>
-                  {libraryTileById[bucket]?.next_action?.label ? (
-                    <span className="text-xs font-semibold text-[var(--lakai-text-muted)]">{t(libraryTileById[bucket].next_action.label)}</span>
-                  ) : null}
-                </div>
-                <div className="grid gap-2">
-                  {items.map((item) => {
-                    const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === bucket
-                      && activePropagationSubstageFilter === normalizePropagationSubstageFilter(item.key);
-                    return (
-                      <button
-                        key={`${bucket}-${item.key}`}
-                        type="button"
-                        onClick={() => setPropagationBreakdownFilter(bucket, item.key)}
-                        className={`rounded-xl border p-3 text-left text-sm transition ${
-                          selected
-                            ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
-                            : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)]'
-                        }`}
-                        aria-pressed={selected}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="font-semibold">{t(item.label)}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            selected
-                              ? 'bg-white/20 text-[var(--lakai-primary-text)]'
-                              : 'bg-[var(--lakai-surface)] text-[var(--lakai-text)]'
-                          }`}>
-                            {item.count}
-                          </span>
-                        </div>
-                        {item.next_action?.user_message ? (
-                          <p className={`mt-1 text-xs ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>
-                            {t(item.next_action.user_message)}
-                          </p>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      ) : null}
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
