@@ -355,8 +355,121 @@ function originCount(facets, matcher) {
   ), 0);
 }
 
+function readableSourceLabel(value) {
+  const raw = String(value || '').trim();
+  const normalized = raw.toLowerCase().replace(/[_-]+/g, ' ');
+  if (!normalized) {
+    return 'Unknown source';
+  }
+  if (normalized.includes('one drive') || normalized.includes('onedrive')) {
+    return 'OneDrive';
+  }
+  if (normalized.includes('google') || normalized === 'drive') {
+    return 'Google Drive';
+  }
+  if (normalized.includes('dropbox')) {
+    return 'Dropbox';
+  }
+  if (normalized.includes('web upload')) {
+    return 'Web upload';
+  }
+  if (normalized.includes('upload')) {
+    return 'Upload';
+  }
+  return normalized.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function sourceItemCount(item) {
+  if (typeof item === 'number') {
+    return item;
+  }
+  return Number(
+    item?.unique_hashes
+    ?? item?.unique_documents
+    ?? item?.canonical_documents
+    ?? item?.document_count
+    ?? item?.documents
+    ?? item?.count
+    ?? item?.total
+    ?? 0,
+  );
+}
+
+function documentSourceComposition(facets, canonicalDocumentRollup = null) {
+  const byLabel = new Map();
+  const addSource = ({ key, label, count, filterValue }) => {
+    const numericCount = Number(count || 0);
+    if (!numericCount) {
+      return;
+    }
+    const displayLabel = readableSourceLabel(label || key || filterValue);
+    const id = displayLabel.toLowerCase();
+    if (byLabel.has(id)) {
+      return;
+    }
+    byLabel.set(id, {
+      key: key || id,
+      label: displayLabel,
+      count: numericCount,
+      filterValue: filterValue || label || displayLabel,
+    });
+  };
+
+  const rollupSources = canonicalDocumentRollup?.source_composition
+    || canonicalDocumentRollup?.sources
+    || canonicalDocumentRollup?.by_source
+    || canonicalDocumentRollup?.source_counts
+    || canonicalDocumentRollup?.providers;
+  if (Array.isArray(rollupSources)) {
+    rollupSources.forEach((item, index) => {
+      const key = item?.key || item?.source || item?.provider || item?.origin || item?.id || `source_${index}`;
+      addSource({
+        key,
+        label: item?.label || item?.source_label || item?.provider_label || item?.origin_label || key,
+        count: sourceItemCount(item),
+        filterValue: item?.filter_value || item?.origin_label || item?.value || item?.source || item?.provider,
+      });
+    });
+  } else if (rollupSources && typeof rollupSources === 'object') {
+    Object.entries(rollupSources).forEach(([key, value]) => {
+      addSource({
+        key,
+        label: value?.label || value?.source_label || value?.provider_label || value?.origin_label || key,
+        count: sourceItemCount(value),
+        filterValue: value?.filter_value || value?.origin_label || value?.value || key,
+      });
+    });
+  }
+
+  [
+    ['google_drive', canonicalDocumentRollup?.google_drive],
+    ['web_upload', canonicalDocumentRollup?.web_upload],
+    ['upload', canonicalDocumentRollup?.upload],
+    ['one_drive', canonicalDocumentRollup?.one_drive],
+    ['dropbox', canonicalDocumentRollup?.dropbox],
+  ].forEach(([key, value]) => {
+    addSource({
+      key,
+      label: key,
+      count: sourceItemCount(value),
+      filterValue: readableSourceLabel(key),
+    });
+  });
+
+  facetOptions(facets, 'origin_label').forEach((option) => {
+    addSource({
+      key: option.value || option.label,
+      label: option.label || option.value,
+      count: option.count,
+      filterValue: option.value || option.label,
+    });
+  });
+
+  return Array.from(byLabel.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
 function DocumentSourcesStrip({ caseId, facets, canonicalDocumentRollup = null, t, canManageSources = false }) {
-  const googleDriveCount = originCount(facets, (label) => label.includes('google') || label.includes('drive'))
+  const googleDriveCount = originCount(facets, (label) => label.includes('google') || label === 'drive')
     || Number(canonicalDocumentRollup?.google_drive?.unique_hashes || 0);
 
   return (
@@ -1019,6 +1132,21 @@ export default function DocumentsPage() {
     });
   };
 
+  const setDocumentSourceFilter = (origin) => {
+    setOffset(0);
+    setFilterValues((current) => {
+      const next = { ...current };
+      delete next.processing_status;
+      delete next.propagation_substage;
+      if (origin) {
+        next.origin_label = origin;
+      } else {
+        delete next.origin_label;
+      }
+      return next;
+    });
+  };
+
   const setPropagationBreakdownFilter = (bucket, substage) => {
     setOffset(0);
     setFilterValues((current) => {
@@ -1327,6 +1455,10 @@ export default function DocumentsPage() {
       .filter(([key]) => key);
     return Object.fromEntries(entries);
   }, [librarySummary.tiles]);
+  const sourceComposition = useMemo(
+    () => documentSourceComposition(state.facets, state.canonicalDocumentRollup),
+    [state.canonicalDocumentRollup, state.facets],
+  );
   const extractedFiles = inventorySummary.extracted_files || 0;
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
   const rawReadyCount = Number(libraryTileById.ready?.count ?? extractedFiles ?? 0);
@@ -1692,39 +1824,10 @@ export default function DocumentsPage() {
           },
         ].map((tile) => {
           const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === tile.filter && !activePropagationSubstageFilter;
-          const expanded = Boolean(expandedStatusTiles[tile.id]);
-          const totalComposition = [
-            {
-              key: 'ready',
-              label: libraryTileById.ready?.label || 'Ready',
-              count: rawReadyCount,
-              filter: 'ready',
-              userMessage: libraryTileById.ready?.helper || libraryTileById.ready?.description,
-            },
-            {
-              key: 'processing',
-              label: libraryTileById.processing?.label || 'Processing',
-              count: effectiveProcessingCount,
-              filter: 'processing',
-              userMessage: libraryTileById.processing?.helper || libraryTileById.processing?.description,
-            },
-            {
-              key: 'partial',
-              label: libraryTileById.partial?.label || 'Partial',
-              count: rawPartialCount,
-              filter: 'partial',
-              userMessage: libraryTileById.partial?.helper || libraryTileById.partial?.description,
-            },
-            {
-              key: 'failed',
-              label: libraryTileById.failed?.label || 'Failed',
-              count: effectiveFailedCount,
-              filter: 'failed',
-              userMessage: libraryTileById.failed?.helper || libraryTileById.failed?.description,
-            },
-          ];
+          const expandable = tile.id === 'all' || tile.id === 'partial';
+          const expanded = expandable && Boolean(expandedStatusTiles[tile.id]);
           const subcategoryItems = tile.id === 'all'
-            ? totalComposition
+            ? sourceComposition
             : (Array.isArray(librarySummary.breakdown?.[tile.id]) ? librarySummary.breakdown[tile.id] : []);
           const hasSubcategories = subcategoryItems.length > 0;
           return (
@@ -1746,37 +1849,39 @@ export default function DocumentsPage() {
                 <div className="mt-1 text-2xl font-semibold">{tile.value}</div>
                 <div className={`mt-1 text-sm ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.detail)}</div>
               </button>
-              <button
-                type="button"
-                onClick={() => setExpandedStatusTiles((current) => ({ ...current, [tile.id]: !current[tile.id] }))}
-                className={`flex min-h-10 w-full items-center justify-center border-t px-3 py-2 text-xs font-semibold transition ${
-                  selected
-                    ? 'border-white/20 text-[var(--lakai-primary-text)]/85 hover:bg-white/10'
-                    : 'border-[var(--lakai-border-soft)] text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-text)]'
-                }`}
-                aria-expanded={expanded}
-                aria-label={expanded ? t('Collapse {label} breakdown', { label: t(tile.label) }) : t('Expand {label} breakdown', { label: t(tile.label) })}
-              >
-                <ChevronDown
-                  size={18}
-                  aria-hidden="true"
-                  className={`transition-transform ${expanded ? 'rotate-180' : ''}`}
-                />
-              </button>
+              {expandable ? (
+                <button
+                  type="button"
+                  onClick={() => setExpandedStatusTiles((current) => ({ ...current, [tile.id]: !current[tile.id] }))}
+                  className={`flex min-h-10 w-full items-center justify-center border-t px-3 py-2 text-xs font-semibold transition ${
+                    selected
+                      ? 'border-white/20 text-[var(--lakai-primary-text)]/85 hover:bg-white/10'
+                      : 'border-[var(--lakai-border-soft)] text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-text)]'
+                  }`}
+                  aria-expanded={expanded}
+                  aria-label={expanded ? t('Collapse {label} breakdown', { label: t(tile.label) }) : t('Expand {label} breakdown', { label: t(tile.label) })}
+                >
+                  <ChevronDown
+                    size={18}
+                    aria-hidden="true"
+                    className={`transition-transform ${expanded ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              ) : null}
               {expanded ? (
                 <div className={`border-t p-3 ${selected ? 'border-white/20 bg-black/5' : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)]'}`}>
                   {hasSubcategories ? (
                     <div className="grid gap-2">
                       {subcategoryItems.map((item) => {
-                        const itemBucket = tile.id === 'all'
-                          ? normalizeDocumentStatusFilter(item.filter || item.key)
-                          : tile.id;
-                        const itemSubstage = tile.id === 'all' ? '' : normalizePropagationSubstageFilter(item.key);
-                        const itemSelected = normalizeDocumentStatusFilter(filterValues.processing_status) === itemBucket
-                          && (!itemSubstage || activePropagationSubstageFilter === itemSubstage);
+                        const itemBucket = tile.id;
+                        const itemSubstage = tile.id === 'partial' ? normalizePropagationSubstageFilter(item.key) : '';
+                        const itemSelected = tile.id === 'all'
+                          ? String(filterValues.origin_label || '') === String(item.filterValue || item.label || '')
+                          : normalizeDocumentStatusFilter(filterValues.processing_status) === itemBucket
+                            && (!itemSubstage || activePropagationSubstageFilter === itemSubstage);
                         const handleSubcategoryClick = () => {
                           if (tile.id === 'all') {
-                            setDocumentStatusFilter(itemBucket);
+                            setDocumentSourceFilter(item.filterValue || item.label);
                           } else {
                             setPropagationBreakdownFilter(tile.id, item.key);
                           }
@@ -1800,7 +1905,7 @@ export default function DocumentsPage() {
                                   ? 'bg-white/20 text-[var(--lakai-primary-text)]'
                                   : 'bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)]'
                               }`}>
-                                {rollupsReady ? item.count : '...'}
+                                {tile.id === 'all' || rollupsReady ? item.count : '...'}
                               </span>
                             </div>
                             {(item.next_action?.user_message || item.userMessage) ? (
@@ -1814,7 +1919,9 @@ export default function DocumentsPage() {
                     </div>
                   ) : (
                     <p className={`text-sm ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>
-                      {rollupsReady ? t('No subcategories reported for this status.') : t('Status subcategories are loading.')}
+                      {rollupsReady
+                        ? t(tile.id === 'all' ? 'No document sources reported yet.' : 'No subcategories reported for this status.')
+                        : t(tile.id === 'all' ? 'Document sources are loading.' : 'Status subcategories are loading.')}
                     </p>
                   )}
                 </div>
