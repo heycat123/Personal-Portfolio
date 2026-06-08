@@ -16,10 +16,11 @@ import { useApiStatus } from '../context/ApiStatusContext';
 import { useEvidenceAuth } from '../context/AuthContext';
 import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
+import { isActiveJob } from '../hooks/useJobStatusPolling';
 import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { removalResultDetail } from '../utils/documentRemoval';
-import { documentPipelineItems, documentUserStatus } from '../utils/documentStatus';
+import { documentPipelineItems, documentUserStatusForJobState } from '../utils/documentStatus';
 import {
   detectedLanguageLabel,
   hasTranscript,
@@ -30,6 +31,7 @@ import {
   transcriptPages,
 } from '../utils/documentMedia';
 import { formatDateTime } from '../utils/formatters';
+import { isDocumentProcessingRequest } from '../utils/jobProgress';
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
@@ -310,8 +312,8 @@ function PipelineDots({ document, showLabels = false, t = (value) => value }) {
   );
 }
 
-function DocumentRowStatus({ document, t }) {
-  const status = documentUserStatus(document);
+function DocumentRowStatus({ document, hasActiveProcessingJob, t }) {
+  const status = documentUserStatusForJobState(document, { hasActiveProcessingJob });
   return (
     <div className="flex min-w-[9rem] items-center gap-2" title={t(status.description)} aria-label={t(status.accessibilityLabel || status.description)}>
       <span className={`h-10 w-1.5 rounded-full ${status.barClassName}`} aria-hidden="true" />
@@ -443,6 +445,8 @@ export default function DocumentsPage() {
     documentsPanelStatus: null,
     documentProcessingReadiness: null,
     documentsLibrarySummary: null,
+    jobs: null,
+    jobsError: null,
     fingerprint: null,
   });
   const [drawer, setDrawer] = useState({
@@ -489,6 +493,13 @@ export default function DocumentsPage() {
     fingerprint: null,
   });
 
+  const jobStatusKnown = Array.isArray(state.jobs);
+  const hasActiveDocumentProcessingJob = jobStatusKnown
+    ? state.jobs.some((job) => (job.normal_user_visible === true || isDocumentProcessingRequest(job)) && isActiveJob(job))
+    : true;
+  const documentStatusHasActiveJob = !jobStatusKnown || hasActiveDocumentProcessingJob;
+  const activeDocumentStatusFilter = normalizeDocumentStatusFilter(filterValues.processing_status);
+
   const documentQuery = useMemo(() => ({
     limit: PAGE_SIZE,
     offset,
@@ -502,11 +513,11 @@ export default function DocumentsPage() {
     require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
     require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
     require_graph: selectedPipelineDomains(filterValues.pipeline_status).includes('graph'),
-    user_status: normalizeDocumentStatusFilter(filterValues.processing_status),
+    user_status: activeDocumentStatusFilter,
     file_ids: filterValues.file_ids,
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
-  }), [appliedQuery, filterValues, offset, sort]);
+  }), [activeDocumentStatusFilter, appliedQuery, filterValues, offset, sort]);
   const exactAffectedDocumentFilterActive = Boolean(String(filterValues.file_ids || '').trim());
   const attentionFilterActive = exactAffectedDocumentFilterActive || Boolean(attentionContext);
   const setDocumentsView = useCallback((view) => {
@@ -541,12 +552,22 @@ export default function DocumentsPage() {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const result = await evidenceApi.getDocuments(
-        caseId,
-        documentQuery,
-        { token },
-      );
+      const results = await Promise.allSettled([
+        evidenceApi.getDocuments(
+          caseId,
+          documentQuery,
+          { token },
+        ),
+        evidenceApi.getJobs(caseId, { limit: 50, offset: 0 }, { token }),
+      ]);
+      const result = results[0].status === 'fulfilled' ? results[0].value : null;
+      if (!result) {
+        throw results[0].reason;
+      }
       recordFingerprint(result, 'Documents list');
+      if (results[1].status === 'fulfilled') {
+        recordFingerprint(results[1].value, 'Jobs list');
+      }
       const nextDocuments = result.data?.documents || [];
       setState({
         loading: false,
@@ -558,6 +579,8 @@ export default function DocumentsPage() {
         documentsPanelStatus: result.data?.documents_panel_status || null,
         documentProcessingReadiness: result.data?.document_processing_readiness || null,
         documentsLibrarySummary: result.data?.documents_library_summary || null,
+        jobs: results[1].status === 'fulfilled' ? results[1].value.data?.jobs || [] : null,
+        jobsError: results[1].status === 'rejected' ? results[1].reason : null,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -1034,6 +1057,10 @@ export default function DocumentsPage() {
     }
   }, [documentDetails, loadDocumentDetail]);
 
+  const displayDocumentStatus = useCallback((document) => (
+    documentUserStatusForJobState(document, { hasActiveProcessingJob: documentStatusHasActiveJob })
+  ), [documentStatusHasActiveJob]);
+
   const documentColumns = useMemo(() => ([
     {
       key: 'original_filename',
@@ -1075,9 +1102,9 @@ export default function DocumentsPage() {
       ],
       filterPlaceholder: t('Ready, processing, failed'),
       help: t('A simple rollup of whether this document is ready, still processing, or needs attention.'),
-      render: (document) => <DocumentRowStatus document={documentDetails[document.file_id]?.document || document} t={t} />,
+      render: (document) => <DocumentRowStatus document={documentDetails[document.file_id]?.document || document} hasActiveProcessingJob={documentStatusHasActiveJob} t={t} />,
     },
-  ]), [caseId, documentDetails, state.facets, t]);
+  ]), [caseId, documentDetails, documentStatusHasActiveJob, state.facets, t]);
 
   const appliedFilters = useMemo(() =>
     Object.entries(filterValues || {})
@@ -1127,12 +1154,22 @@ export default function DocumentsPage() {
   }, [librarySummary.tiles]);
   const extractedFiles = inventorySummary.extracted_files || 0;
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
-  const activeDocumentStatusFilter = normalizeDocumentStatusFilter(filterValues.processing_status);
+  const rawReadyCount = Number(libraryTileById.ready?.count ?? extractedFiles ?? 0);
+  const rawProcessingCount = Number(libraryTileById.processing?.count ?? s3OnlyFiles ?? 0);
+  const rawFailedCount = Number(libraryTileById.failed?.count ?? inventorySummary.failed_documents ?? inventorySummary.failed_document_rows ?? 0);
+  const idlePropagationCount = jobStatusKnown && !hasActiveDocumentProcessingJob ? rawProcessingCount : 0;
+  const effectiveProcessingCount = Math.max(0, rawProcessingCount - idlePropagationCount);
+  const effectiveFailedCount = rawFailedCount + idlePropagationCount;
+  const effectiveTileCountByStatus = {
+    ready: rawReadyCount,
+    processing: effectiveProcessingCount,
+    failed: effectiveFailedCount,
+  };
   const visibleDocuments = activeDocumentStatusFilter
-    ? state.documents.filter((document) => normalizeDocumentStatusFilter(documentUserStatus(documentDetails[document.file_id]?.document || document).key) === activeDocumentStatusFilter)
+    ? state.documents.filter((document) => normalizeDocumentStatusFilter(displayDocumentStatus(documentDetails[document.file_id]?.document || document).key) === activeDocumentStatusFilter)
     : state.documents;
   const displayedTotal = activeDocumentStatusFilter
-    ? Number(libraryTileById[activeDocumentStatusFilter]?.count ?? visibleDocuments.length)
+    ? Number(effectiveTileCountByStatus[activeDocumentStatusFilter] ?? visibleDocuments.length)
     : state.total;
   const firstVisibleRow = displayedTotal && visibleDocuments.length ? offset + 1 : 0;
   const lastVisibleRow = Math.min(displayedTotal || 0, offset + visibleDocuments.length);
@@ -1148,7 +1185,7 @@ export default function DocumentsPage() {
     || processingRequestData.existing_job?.requested_document_count
     || 0,
   );
-  const processingRequestCount = s3OnlyFiles;
+  const processingRequestCount = idlePropagationCount || rawProcessingCount || s3OnlyFiles;
   const processingBatchDiffers = Boolean(
     processingBatchDocumentCount
     && processingRequestCount
@@ -1158,7 +1195,7 @@ export default function DocumentsPage() {
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
     ? 'Processing already started. Check Jobs for per-document progress.'
     : 'Processing started. Check Jobs for per-document progress.');
-  const autoProcessingReady = canContribute && s3OnlyFiles > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
+  const autoProcessingReady = canContribute && s3OnlyFiles > 0 && effectiveProcessingCount > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
   const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
     caseId,
     counts: inventorySummary,
@@ -1220,7 +1257,7 @@ export default function DocumentsPage() {
   const filterUncategorizedDocuments = () => {
     applyColumnFilter('evidence_type_label', 'Uncategorized');
   };
-  const drawerStatus = documentUserStatus(drawer.document || {});
+  const drawerStatus = displayDocumentStatus(drawer.document || {});
 
   return (
     <div>
@@ -1313,43 +1350,63 @@ export default function DocumentsPage() {
         />
       ) : null}
 
-      {s3OnlyFiles > 0 ? (
-        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+      {rawProcessingCount > 0 ? (
+        <section className={`mb-5 rounded-lg border p-4 text-sm ${
+          idlePropagationCount > 0
+            ? 'border-red-200 bg-red-50 text-red-950 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
+            : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100'
+        }`}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div className="flex items-start gap-3">
               <FileText className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
               <div>
-                <h2 className="font-semibold">{t('Document processing is not complete')}</h2>
+                <h2 className="font-semibold">{idlePropagationCount > 0 ? t('Document processing needs restart') : t('Documents are processing')}</h2>
                 <p className="mt-1">
-                  {t('{count} document row(s) are still moving through processing before they are fully available in Documents and Ask Documents.', { count: s3OnlyFiles })}
+                  {idlePropagationCount > 0
+                    ? t('{count} document row(s) are not fully propagated and no processing job is active.', { count: idlePropagationCount })
+                    : t('{count} document row(s) are still moving through processing before they are fully available in Documents and Ask Documents.', { count: effectiveProcessingCount })}
                 </p>
-                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('This is not a legal review task. It means the source file is saved, but processing and propagation have not finished yet.')}
+                <p className={`mt-1 text-xs ${idlePropagationCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                  {idlePropagationCount > 0
+                    ? t('These files are shown as Failed because full propagation is not complete and there is no active job moving them forward.')
+                    : t('This is not a legal review task. It means the source file is saved, but processing and propagation have not finished yet.')}
                 </p>
-                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('Why this happened: these files were copied or imported after the last full processing run, so extraction, search indexing, or relationship/source propagation is still catching up.')}
+                <p className={`mt-1 text-xs ${idlePropagationCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                  {idlePropagationCount > 0
+                    ? t('What it affects: Ask Documents may miss these files until processing is restarted and full propagation finishes.')
+                    : t('Why this happened: these files were copied or imported after the last full processing run, so extraction, search indexing, or relationship/source propagation is still catching up.')}
                 </p>
-                <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {canContribute
-                    ? t('Processing starts automatically when files are added. You can keep working while extraction, search indexing, and source checks run in the background.')
-                    : t('Processing starts automatically when files are added by someone with upload access. You can keep reviewing uploaded files while processing finishes.')}
+                <p className={`mt-1 text-xs ${idlePropagationCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                  {idlePropagationCount > 0
+                    ? t('Next step: restart processing or open Jobs to retry the failed batch if a retry is available.')
+                    : canContribute
+                      ? t('Processing starts automatically when files are added. You can keep working while extraction, search indexing, and source checks run in the background.')
+                      : t('Processing starts automatically when files are added by someone with upload access. You can keep reviewing uploaded files while processing finishes.')}
                 </p>
               </div>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-              {processingRequest.error && canContribute ? (
+              {(idlePropagationCount > 0 || processingRequest.error) && canContribute ? (
                 <button
                   type="button"
                   onClick={() => requestPendingDocumentProcessing()}
                   disabled={processingRequest.busy}
-                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                  className={`inline-flex items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#101820] ${
+                    idlePropagationCount > 0
+                      ? 'border-red-300 text-red-950 hover:bg-red-100 dark:border-red-900/70 dark:text-red-100 dark:hover:bg-red-950/40'
+                      : 'border-amber-300 text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:text-amber-100 dark:hover:bg-amber-950/40'
+                  }`}
                 >
-                  {processingRequest.busy ? t('Starting automatically') : t('Try processing again')}
+                  {processingRequest.busy ? t('Restarting processing') : t('Restart processing')}
                 </button>
               ) : (
                 <Link
                   to={processingRequestJobId ? `/evidence/cases/${caseId}/jobs/${processingRequestJobId}` : `/evidence/cases/${caseId}/jobs#processing-status`}
-                  className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                  className={`inline-flex items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold dark:bg-[#101820] ${
+                    idlePropagationCount > 0
+                      ? 'border-red-300 text-red-950 hover:bg-red-100 dark:border-red-900/70 dark:text-red-100 dark:hover:bg-red-950/40'
+                      : 'border-amber-300 text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:text-amber-100 dark:hover:bg-amber-950/40'
+                  }`}
                 >
                   {processingRequest.busy ? t('Starting automatically') : t('See processing status')}
                 </Link>
@@ -1401,21 +1458,21 @@ export default function DocumentsPage() {
           {
             id: 'ready',
             label: libraryTileById.ready?.label || 'Ready',
-            value: libraryTileById.ready?.count ?? extractedFiles,
+            value: rawReadyCount,
             detail: libraryTileById.ready?.helper || libraryTileById.ready?.description || 'Documents ready for review and Ask Documents',
             filter: 'ready',
           },
           {
             id: 'processing',
             label: libraryTileById.processing?.label || 'Processing',
-            value: libraryTileById.processing?.count ?? s3OnlyFiles,
+            value: effectiveProcessingCount,
             detail: libraryTileById.processing?.helper || libraryTileById.processing?.description || 'Documents still being prepared',
             filter: 'processing',
           },
           {
             id: 'failed',
             label: libraryTileById.failed?.label || 'Failed',
-            value: libraryTileById.failed?.count ?? inventorySummary.failed_documents ?? inventorySummary.failed_document_rows ?? 0,
+            value: effectiveFailedCount,
             detail: libraryTileById.failed?.helper || libraryTileById.failed?.description || 'Documents that need attention',
             filter: 'failed',
           },

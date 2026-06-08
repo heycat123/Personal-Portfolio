@@ -107,3 +107,42 @@ export function documentUserStatus(document = {}) {
     userMessage: 'This document is still being prepared for review and Ask Documents.',
   };
 }
+
+export function documentUserStatusForJobState(document = {}, { hasActiveProcessingJob = true } = {}) {
+  const status = documentUserStatus(document);
+  const statusKey = normalizeStatusValue(status.key);
+  const propagation = document?.propagation_status || document?.library_status || {};
+  const propagationStatus = typeof propagation === 'object' && propagation !== null ? propagation : {};
+  const backendNeedsRestart = Boolean(propagationStatus.needs_restart || propagationStatus.resolution?.needs_restart || propagationStatus.next_action?.action_id === 'restart_processing');
+  const backendHasActiveJob = Boolean(propagationStatus.active_job || propagationStatus.active_job_id || propagationStatus.job_id);
+
+  if (statusKey === 'review') {
+    return {
+      ...status,
+      key: 'failed',
+      label: 'Failed',
+      stageLabel: 'Needs attention',
+      badgeStatus: 'failed',
+      barClassName: 'bg-red-500',
+      description: 'This document needs attention before full propagation can finish.',
+      accessibilityLabel: 'Document needs attention before full propagation can finish.',
+      userMessage: 'This document needs attention before full propagation can finish.',
+    };
+  }
+
+  if (statusKey === 'processing' && (backendNeedsRestart || (!backendHasActiveJob && !hasActiveProcessingJob))) {
+    return {
+      ...status,
+      key: 'failed',
+      label: 'Failed',
+      stageLabel: 'Restart needed',
+      badgeStatus: 'failed',
+      barClassName: 'bg-red-500',
+      description: 'Full propagation is not complete and no processing job is active. Restart processing to finish this file.',
+      accessibilityLabel: 'Full propagation is not complete and no processing job is active. Restart processing to finish this file.',
+      userMessage: 'Full propagation is not complete and no processing job is active. Restart processing to finish this file.',
+    };
+  }
+
+  return status;
+}
