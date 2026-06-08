@@ -28,6 +28,29 @@ function extractGoogleDrivePendingHashCount(recommendations = []) {
   return Number.isFinite(count) ? count : 0;
 }
 
+function documentsLibraryTile(summary, tileId) {
+  const tiles = Array.isArray(summary?.tiles) ? summary.tiles : [];
+  const normalizedTileId = String(tileId || '').toLowerCase().replace(/\s+/g, '_');
+  return tiles.find((tile) => String(tile.id || tile.key || tile.label || '').toLowerCase().replace(/\s+/g, '_') === normalizedTileId) || null;
+}
+
+function documentsLibraryCount(summary, key) {
+  const normalizedKey = String(key || '').toLowerCase().replace(/\s+/g, '_');
+  const counts = summary?.counts || summary?.status_counts || summary?.tile_counts || {};
+  const count = counts[normalizedKey] ?? counts[key];
+  if (count !== undefined && count !== null && count !== '') {
+    const number = Number(count);
+    return Number.isFinite(number) ? number : 0;
+  }
+  const tileCount = documentsLibraryTile(summary, key)?.count;
+  const number = Number(tileCount);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function firstJob(...values) {
+  return values.find((value) => value && typeof value === 'object' && !Array.isArray(value) && (value.job_id || value.id)) || null;
+}
+
 function normalizeSourceCoverageText(value) {
   return String(value || '')
     .replace(/queue a document processing request/gi, 'start document processing')
@@ -365,6 +388,8 @@ export default function HealthPage() {
     processingRequestRunning: false,
     propagationAction: null,
     jobs: [],
+    documentStatusSnapshot: null,
+    documentStatusError: null,
     fingerprints: [],
   });
 
@@ -378,17 +403,21 @@ export default function HealthPage() {
       }),
       evidenceApi.getRawParity(caseId, { token }),
       evidenceApi.getJobs(caseId, { limit: 25, offset: 0 }, { token }),
+      evidenceApi.getDocuments(caseId, { limit: 250, offset: 0, user_status: 'processing' }, { token }),
+      evidenceApi.getDocuments(caseId, { limit: 250, offset: 0, user_status: 'failed' }, { token }),
     ]);
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        const labels = ['Case health', 'Raw parity', 'Jobs'];
+        const labels = ['Case health', 'Raw parity', 'Jobs', 'Processing documents', 'Failed documents'];
         recordFingerprint(result.value, labels[index]);
       }
     });
 
     const firstError = results.find((result) => result.status === 'rejected')?.reason || null;
     const caseHealth = fulfilledValue(results[0])?.data || null;
+    const processingDocumentsPayload = fulfilledValue(results[3])?.data || null;
+    const failedDocumentsPayload = fulfilledValue(results[4])?.data || null;
     setState((current) => ({
       ...current,
       loading: false,
@@ -400,6 +429,11 @@ export default function HealthPage() {
       queueHealth: caseHealth?.queue || null,
       sourceAlignment: caseHealth?.source_alignment || null,
       jobs: fulfilledValue(results[2])?.data?.jobs || [],
+      documentStatusSnapshot: {
+        processing: processingDocumentsPayload,
+        failed: failedDocumentsPayload,
+      },
+      documentStatusError: results[3].status === 'rejected' ? results[3].reason : results[4].status === 'rejected' ? results[4].reason : null,
       fingerprints: results
         .filter((result) => result.status === 'fulfilled' && result.value.requestFingerprintId)
         .map((result) => ({
@@ -710,6 +744,9 @@ export default function HealthPage() {
   const rawTables = state.rawParity?.tables || [];
   const counts = state.caseHealth?.summary?.counts || {};
   const documentProcessingReadiness = state.caseHealth?.document_processing_readiness || {};
+  const documentsPropagationSummary = state.caseHealth?.documents_propagation_summary || {};
+  const healthLibrarySummary = documentsPropagationSummary.documents_library_summary || state.caseHealth?.documents_library_summary || {};
+  const propagationCauseBreakdown = documentsPropagationSummary.cause_breakdown || documentsPropagationSummary.breakdown || documentsPropagationSummary.buckets || {};
   const copiedFilesPendingProcessing = documentProcessingReadiness.copied_not_extracted_records || counts.s3_files_not_extracted || 0;
   const copiedFileHashesPendingProcessing = documentProcessingReadiness.copied_not_extracted_hashes || 0;
   const sourceAlignment = state.sourceAlignment;
@@ -725,7 +762,6 @@ export default function HealthPage() {
     String(row.label || row.name || '').toLowerCase().includes('extracted')
   ));
   const driveExtraHashCount = Number(driveExtraHashRow?.extra_count || 0) || recommendationPendingHashCount;
-  const showPropagationResolution = copiedFilesPendingProcessing > 0 || driveExtraHashCount > 0 || recommendationPendingHashCount > 0;
   const alignmentRecommendations = sourceAlignmentRecommendations.slice(0, 4).map((item) => {
     const text = String(item || '');
     if (text.includes('mirrored to intake') && text.includes('not extracted')) {
@@ -764,27 +800,87 @@ export default function HealthPage() {
     .filter((job) => DOCUMENT_PROCESSING_JOB_TYPES.has(job.job_type))
     .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
   const activeDocumentProcessingJob = documentProcessingJobs.find((job) => ACTIVE_JOB_STATUSES.has(String(job.status || '').toLowerCase()));
-  const latestDocumentProcessingJob = activeDocumentProcessingJob || documentProcessingJobs[0] || null;
+  const activeUserProcessingJob = state.jobs.find((job) => (
+    ACTIVE_JOB_STATUSES.has(String(job.status || '').toLowerCase()) &&
+    (job.normal_user_visible === true || SOURCE_STABILITY_JOB_TYPES.has(job.job_type) || DOCUMENT_PROCESSING_JOB_TYPES.has(job.job_type))
+  ));
+  const summaryActiveJob = firstJob(
+    documentsPropagationSummary.active_job,
+    documentsPropagationSummary.processing_job,
+    documentsPropagationSummary.current_job,
+    documentsPropagationSummary.active_jobs?.[0],
+  );
+  const latestDocumentProcessingJob = activeDocumentProcessingJob || summaryActiveJob || documentProcessingJobs[0] || null;
+  const hasActiveDocumentPropagationJob = Boolean(summaryActiveJob || activeUserProcessingJob || activeSourceStabilityJob || activeDocumentProcessingJob);
+  const processingDocumentsSnapshot = state.documentStatusSnapshot?.processing || {};
+  const failedDocumentsSnapshot = state.documentStatusSnapshot?.failed || {};
+  const processingSnapshotRows = Array.isArray(processingDocumentsSnapshot.documents) ? processingDocumentsSnapshot.documents : [];
+  const failedSnapshotRows = Array.isArray(failedDocumentsSnapshot.documents) ? failedDocumentsSnapshot.documents : [];
+  const summaryProcessingCount = documentsLibraryCount(healthLibrarySummary, 'processing');
+  const summaryFailedCount = documentsLibraryCount(healthLibrarySummary, 'failed');
+  const snapshotProcessingRawCount = Number(
+    documentsLibraryTile(processingDocumentsSnapshot.documents_library_summary, 'processing')?.count
+    ?? processingDocumentsSnapshot.total
+    ?? processingSnapshotRows.length
+    ?? 0,
+  );
+  const snapshotFailedRawCount = Number(
+    documentsLibraryTile(failedDocumentsSnapshot.documents_library_summary, 'failed')?.count
+    ?? failedDocumentsSnapshot.total
+    ?? failedSnapshotRows.length
+    ?? 0,
+  );
+  const snapshotProcessingCount = Number.isFinite(snapshotProcessingRawCount) ? snapshotProcessingRawCount : 0;
+  const snapshotFailedCount = Number.isFinite(snapshotFailedRawCount) ? snapshotFailedRawCount : 0;
+  const rawHealthProcessingDocumentCount = summaryProcessingCount || snapshotProcessingCount || copiedFilesPendingProcessing || 0;
+  const idlePropagationDocumentCount = rawHealthProcessingDocumentCount > 0 && !hasActiveDocumentPropagationJob
+    ? rawHealthProcessingDocumentCount
+    : 0;
+  const activeProcessingDocumentCount = hasActiveDocumentPropagationJob ? rawHealthProcessingDocumentCount : 0;
+  const healthFailedDocumentCount = (summaryFailedCount || snapshotFailedCount) + idlePropagationDocumentCount;
+  const healthDocumentGapCount = (activeProcessingDocumentCount + healthFailedDocumentCount) || copiedFilesPendingProcessing || driveExtraHashCount || recommendationPendingHashCount;
+  const showHealthDocumentResolution = healthDocumentGapCount > 0;
+  const propagationCauseItems = Array.isArray(propagationCauseBreakdown)
+    ? propagationCauseBreakdown
+    : Object.entries(propagationCauseBreakdown || {}).map(([key, value]) => (
+      value && typeof value === 'object'
+        ? { id: key, ...value }
+        : { id: key, count: value }
+    ));
+  const visiblePropagationCauses = propagationCauseItems
+    .map((item) => ({
+      ...item,
+      id: item.id || item.key || item.cause || item.bucket_id,
+      label: item.label || item.display_label || item.stage_label || item.cause_label || String(item.id || item.key || item.cause || '').replaceAll('_', ' '),
+      count: Number(item.count ?? item.document_rows ?? item.documents ?? item.total ?? 0),
+    }))
+    .filter((item) => item.count > 0)
+    .slice(0, 4);
   const processingStatusAction = latestDocumentProcessingJob?.job_id
     ? { label: t('Open latest processing job'), to: `/evidence/cases/${caseId}/jobs/${latestDocumentProcessingJob.job_id}` }
     : { label: t('Open Jobs'), to: `/evidence/cases/${caseId}/jobs#processing-status` };
-  const alignmentBlockedByProcessing = showPropagationResolution || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0) || Boolean(activeSourceStabilityJob);
-  const alignmentWaitMessage = activeSourceStabilityJob
-    ? t('Text/search processing or source sync is active. Run source coverage after that work finishes so the check reads stable records.')
-    : t('Run source coverage after text/search processing finishes so the check reads stable records.');
+  const alignmentBlockedByProcessing = hasActiveDocumentPropagationJob || state.processingRequestRunning || (processingRequestStarted && copiedFilesPendingProcessing > 0) || Boolean(activeSourceStabilityJob);
+  const sourceCoveragePausedByDocumentGap = alignmentBlockedByProcessing || idlePropagationDocumentCount > 0;
+  const alignmentWaitMessage = idlePropagationDocumentCount > 0
+    ? t('Restart document processing before running source coverage so the check reads fully propagated files.')
+    : activeSourceStabilityJob || hasActiveDocumentPropagationJob
+      ? t('Document processing or source sync is active. Run source coverage after that work finishes so the check reads stable records.')
+      : t('Run source coverage after document processing finishes so the check reads stable records.');
   const processingStartTitle = processingRequestData.already_started ? 'Processing already in progress' : 'Processing is being tracked';
   const processingStartMessage = processingRequestData.already_started
     ? 'Processing is already in progress. Check Jobs for per-document progress.'
     : 'Processing is queued. Check Jobs for per-document progress.';
-  const pendingDocumentRowsLabel = copiedFilesPendingProcessing > 0
-    ? t('{count} document row(s)', { count: copiedFilesPendingProcessing })
+  const pendingDocumentRowsLabel = healthDocumentGapCount > 0
+    ? t('{count} document row(s)', { count: healthDocumentGapCount })
     : null;
   const pendingUniqueHashesLabel = (copiedFileHashesPendingProcessing || driveExtraHashCount) > 0
     ? t('{count} unique file content item(s)', { count: copiedFileHashesPendingProcessing || driveExtraHashCount })
     : null;
   const currentProcessingCountLabel = [pendingDocumentRowsLabel, pendingUniqueHashesLabel].filter(Boolean).join(', ');
   const currentProcessingCountSentence = currentProcessingCountLabel
-    ? t('Current health check: {counts} still need text/search processing.', { counts: currentProcessingCountLabel })
+    ? idlePropagationDocumentCount > 0
+      ? t('Current health check: {counts} are not fully propagated and no processing job is active.', { counts: currentProcessingCountLabel })
+      : t('Current health check: {counts} are still moving through processing.', { counts: currentProcessingCountLabel })
     : t('Current health check: no copied document rows are waiting for text/search processing.');
   const sourceCoverageBadgeStatus = alignmentOk
     ? 'online'
@@ -792,8 +888,10 @@ export default function HealthPage() {
   const sourceCoverageBadgeLabel = alignmentOk
     ? t('Aligned')
     : alignmentBlockedByProcessing ? t('Waiting') : alignmentAvailable ? t('Needs review') : t('Not checked');
-  const sourceCoverageDetail = alignmentBlockedByProcessing
-    ? t('Run after text/search processing finishes.')
+  const sourceCoverageDetail = idlePropagationDocumentCount > 0
+    ? t('Restart document processing before running source coverage.')
+    : alignmentBlockedByProcessing
+      ? t('Run after document processing finishes.')
     : alignmentAvailable
       ? t('{count} strict gap(s); finished {time}', { count: alignmentGapCount, time: formatDateTime(sourceAlignment.audit_finished_at) })
       : sourceAlignment?.reason || t('Run source coverage to compare source files with processed records.');
@@ -842,19 +940,23 @@ export default function HealthPage() {
     statusActions.push({
       key: 'vectors',
       title: t('Search index coverage needs attention'),
-      detail: copiedFilesPendingProcessing > 0
-        ? t('Some document rows still need text extraction and search indexing before Ask Documents can cover them.')
+      detail: healthDocumentGapCount > 0
+        ? idlePropagationDocumentCount > 0
+          ? t('Some document rows are not fully propagated and no processing job is active. Restart processing before relying on Ask Documents for those files.')
+          : t('Some document rows are still processing before Ask Documents can cover them.')
         : t('Some relationship-map records are missing search coverage. Run source coverage after processing finishes, or ask support to review processing.'),
-      action: copiedFilesPendingProcessing > 0
-        ? processingStatusAction
+      action: idlePropagationDocumentCount > 0
+        ? { label: state.processingRequestRunning ? t('Restarting processing') : t('Restart processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
+        : activeProcessingDocumentCount > 0
+          ? processingStatusAction
         : { label: state.alignmentJobRunning ? t('Starting') : t('Run source coverage'), onClick: queueSourceAlignmentAudit, disabled: state.alignmentJobRunning },
-      secondaryAction: copiedFilesPendingProcessing > 0 && !latestDocumentProcessingJob
-        ? { label: state.processingRequestRunning ? t('Starting processing') : t('Start processing'), onClick: requestPendingDocumentProcessing, disabled: state.processingRequestRunning || processingRequestStarted }
+      secondaryAction: healthDocumentGapCount > 0
+        ? { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents?status=${idlePropagationDocumentCount > 0 ? 'failed' : 'processing'}` }
         : { label: t('Open Documents'), to: `/evidence/cases/${caseId}/documents` },
     });
   }
 
-  if (!state.loading && alignmentAvailable && !alignmentOk && !showPropagationResolution) {
+  if (!state.loading && alignmentAvailable && !alignmentOk && !showHealthDocumentResolution) {
     statusActions.push({
       key: 'alignment',
       title: t('Source check needs review'),
@@ -866,7 +968,7 @@ export default function HealthPage() {
     });
   }
 
-  if (!state.loading && !alignmentAvailable) {
+  if (!state.loading && !alignmentAvailable && !showHealthDocumentResolution) {
     statusActions.push({
       key: 'alignment-missing',
       title: t('Source check has not run yet'),
@@ -898,7 +1000,7 @@ export default function HealthPage() {
       return;
     }
     window.setTimeout(() => target.scrollIntoView({ block: 'start', behavior: 'smooth' }), 0);
-  }, [hash, state.loading, showPropagationResolution, statusActions.length]);
+  }, [hash, state.loading, showHealthDocumentResolution, statusActions.length]);
 
   useEffect(() => {
     if (!alignmentBlockedByProcessing) {
@@ -936,12 +1038,12 @@ export default function HealthPage() {
             <button
               type="button"
               onClick={queueSourceAlignmentAudit}
-              disabled={state.alignmentJobRunning || alignmentBlockedByProcessing}
-              title={alignmentBlockedByProcessing ? t('Finish document text/search processing before queueing a new source check.') : undefined}
+              disabled={state.alignmentJobRunning || sourceCoveragePausedByDocumentGap}
+              title={sourceCoveragePausedByDocumentGap ? alignmentWaitMessage : undefined}
               className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Play size={16} aria-hidden="true" />
-              {alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
+              {idlePropagationDocumentCount > 0 ? t('Restart processing first') : alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
             </button>
           </>
         }
@@ -1099,39 +1201,77 @@ export default function HealthPage() {
         </section>
       ) : null}
 
-      {showPropagationResolution ? (
-        <section id="search-readiness-resolution" className="mt-6 scroll-mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+      {showHealthDocumentResolution ? (
+        <section id="search-readiness-resolution" className={`mt-6 scroll-mt-4 rounded-lg border p-4 text-sm shadow-sm ${
+          idlePropagationDocumentCount > 0
+            ? 'border-red-200 bg-red-50 text-red-950 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
+            : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100'
+        }`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
-              <h3 className="text-base font-semibold">{t('Full search coverage is not complete')}</h3>
+              <h3 className="text-base font-semibold">
+                {idlePropagationDocumentCount > 0 ? t('Document propagation needs restart') : t('Documents are still processing')}
+              </h3>
               <p>
-                {copiedFilesPendingProcessing > 0
-                  ? t('{count} document row(s) are copied into the workspace but still need text extraction and search indexing.', { count: copiedFilesPendingProcessing })
-                  : t('Source coverage found copied Google Drive files that still need text extraction and search indexing.')}
+                {idlePropagationDocumentCount > 0
+                  ? t('{count} document row(s) are not fully propagated and no processing job is active.', { count: idlePropagationDocumentCount })
+                  : activeProcessingDocumentCount > 0
+                    ? t('{count} document row(s) are actively moving through processing before they are fully available in Documents and Ask Documents.', { count: activeProcessingDocumentCount })
+                    : t('Source coverage found copied Google Drive files that still need processing before full propagation is ready.')}
               </p>
               {(copiedFileHashesPendingProcessing || driveExtraHashCount) > 0 ? (
-                <p className="text-xs text-amber-900 dark:text-amber-100">
+                <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                   {t('Health counts {count} unique file hash(es). Documents may show a larger number because multiple document rows can share the same underlying file content.', { count: copiedFileHashesPendingProcessing || driveExtraHashCount })}
                 </p>
               ) : null}
-              <p className="text-xs text-amber-900 dark:text-amber-100">
-                {t('Why this happened: Google Drive sync copied the files, but the older processing pipeline has not run extraction, search indexing, and relationship-map indexing for those copied files yet.')}
+              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                {idlePropagationDocumentCount > 0
+                  ? t('Why this is marked Failed: full propagation is not complete, and there is no active job that will finish it.')
+                  : t('Why this happened: files were copied or imported, and extraction, search indexing, relationship-map updates, or source coverage is still catching up.')}
               </p>
-              <p className="text-xs text-amber-900 dark:text-amber-100">
+              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                 {t('What it affects: Ask Documents may not include these files yet, and source coverage will keep showing a gap until processing finishes.')}
               </p>
-              <p className="text-xs text-amber-900 dark:text-amber-100">
-                {t('Solution: start text/search processing, then run source coverage after text and search are ready.')}
+              {visiblePropagationCauses.length ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {visiblePropagationCauses.map((item) => (
+                    <span
+                      key={item.id || item.label}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        idlePropagationDocumentCount > 0
+                          ? 'border-red-200 bg-white text-red-950 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100'
+                          : 'border-amber-200 bg-white text-amber-950 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100'
+                      }`}
+                    >
+                      {t(item.label)}
+                      <span>{item.count}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                {idlePropagationDocumentCount > 0
+                  ? t('Next step: restart processing or open Jobs to retry the failed batch if a retry is available.')
+                  : t('Next step: open the active processing job to watch progress. Run source coverage after processing finishes.')}
               </p>
-              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+              <p className={`text-xs font-semibold ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                 {alignmentWaitMessage}
               </p>
-              <p className="text-xs text-amber-900 dark:text-amber-100">
+              <p className={`text-xs ${idlePropagationDocumentCount > 0 ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                 {t('You can keep working in other parts of the workspace.')}
               </p>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
-              {latestDocumentProcessingJob?.job_id ? (
+              {idlePropagationDocumentCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={requestPendingDocumentProcessing}
+                  disabled={state.processingRequestRunning || processingRequestStarted}
+                  className="inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-950 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100 dark:hover:bg-red-950/40"
+                >
+                  {state.processingRequestRunning ? t('Restarting processing') : t('Restart processing')}
+                </button>
+              ) : latestDocumentProcessingJob?.job_id ? (
                 <Link
                   to={`/evidence/cases/${caseId}/jobs/${latestDocumentProcessingJob.job_id}`}
                   className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
@@ -1157,14 +1297,14 @@ export default function HealthPage() {
               <button
                 type="button"
                 onClick={queueSourceAlignmentAudit}
-                disabled={state.alignmentJobRunning || alignmentBlockedByProcessing}
-                title={alignmentBlockedByProcessing ? t('Finish document text/search processing before queueing a new source check.') : undefined}
+                disabled={state.alignmentJobRunning || sourceCoveragePausedByDocumentGap}
+                title={sourceCoveragePausedByDocumentGap ? alignmentWaitMessage : undefined}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
-                {alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
+                {idlePropagationDocumentCount > 0 ? t('Restart processing first') : alignmentBlockedByProcessing ? t('Finish processing first') : state.alignmentJobRunning ? t('Starting') : t('Run source coverage')}
               </button>
               <Link
-                to={`/evidence/cases/${caseId}/documents`}
+                to={`/evidence/cases/${caseId}/documents?status=${idlePropagationDocumentCount > 0 ? 'failed' : 'processing'}`}
                 className="inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
               >
                 {t('Open Documents')}
