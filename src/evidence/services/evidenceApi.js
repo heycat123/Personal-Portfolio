@@ -303,6 +303,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/readiness/resolve-all'), { ...options, method: 'POST', body: payload }),
   getDocuments: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/documents'), { ...options, query: params }),
+  getDocumentRollups: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/documents/rollups'), { ...options, query: params }),
   getCategoryQa: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/category-qa'), { ...options, query: params }),
   getCategoryQaResolvePlan: (caseId, params = {}, options = {}) =>
