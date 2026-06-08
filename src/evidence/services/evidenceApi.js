@@ -464,6 +464,8 @@ export const evidenceApi = {
       casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-drive/sync-drive-files`),
       { ...options, method: 'POST', body: payload },
     ),
+  syncSourceFiles: (caseId, payload = {}, options = {}) =>
+    request(casePath(caseId, '/source-sync'), { ...options, method: 'POST', body: payload }),
   syncGoogleContacts: (caseId, sourceConnectionId, payload = {}, options = {}) =>
     request(
       casePath(caseId, `/source-connectors/${encodeURIComponent(sourceConnectionId)}/google-contacts/sync`),

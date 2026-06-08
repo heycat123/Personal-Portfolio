@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronDown, Download, ExternalLink, FileText, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, ExternalLink, FileText, PlayCircle, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -1097,6 +1097,56 @@ export default function DocumentsPage() {
     }
   }, [canContribute, caseId, getAccessToken, loadDocuments, recordFingerprint]);
 
+  const requestFullPropagationRepair = useCallback(async () => {
+    if (!canContribute) {
+      return null;
+    }
+    setProcessingRequest((current) => ({ ...current, busy: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = canSeeOperations
+        ? await evidenceApi.syncSourceFiles(
+          caseId,
+          {
+            source_type: 'all',
+            recursive: true,
+            import_new: true,
+            queue_registration: true,
+            include_google_workspace_exports: true,
+            auto_resume_missing_only: true,
+            run_relationship_map: true,
+            run_source_coverage: true,
+          },
+          { token },
+        )
+        : await evidenceApi.requestDocumentProcessing(
+          caseId,
+          {
+            scope: 'copied_not_extracted',
+            requested_action: 'text_extraction_and_search_indexing',
+            reason: 'User requested full propagation repair from Documents Library',
+            max_documents: 250,
+          },
+          { token },
+        );
+      recordFingerprint(result, canSeeOperations ? 'Full propagation repair' : 'Document text/search processing');
+      const resultData = result.data || {};
+      const startedJob = resultData.job || resultData.existing_job || null;
+      setProcessingRequest({ busy: false, error: null, result: resultData });
+      if (startedJob?.job_id) {
+        setState((current) => ({ ...current, activePropagationJob: startedJob }));
+      }
+      await Promise.all([
+        loadDocuments(),
+        loadDocumentRollups({ refresh: true }),
+      ]);
+      return resultData;
+    } catch (error) {
+      setProcessingRequest({ busy: false, error, result: null });
+      return null;
+    }
+  }, [canContribute, canSeeOperations, caseId, getAccessToken, loadDocumentRollups, loadDocuments, recordFingerprint]);
+
   const handleSearchSubmit = (event) => {
     event.preventDefault();
     setOffset(0);
@@ -1509,11 +1559,37 @@ export default function DocumentsPage() {
     && processingRequestCount
     && processingBatchDocumentCount !== processingRequestCount,
   );
-  const processingStartTitle = processingRequestData.already_started ? 'Processing already started' : 'Processing started';
+  const processingResultJobType = String(
+    processingRequestData.job?.job_type
+    || processingRequestData.existing_job?.job_type
+    || processingRequestData.job_type
+    || '',
+  );
+  const processingIsFullPropagation = processingResultJobType === 'source_sync_full_propagation'
+    || String(processingRequestData.label || '').toLowerCase().includes('sync drive');
+  const processingStartTitle = processingRequestData.already_started
+    ? (processingIsFullPropagation ? 'Full propagation already started' : 'Processing already started')
+    : (processingIsFullPropagation ? 'Full propagation started' : 'Processing started');
   const processingStartMessage = processingRequestData.display_message || (processingRequestData.already_started
-    ? 'Processing already started. Check Jobs for per-document progress.'
-    : 'Processing started. Check Jobs for per-document progress.');
+    ? (processingIsFullPropagation ? 'Full propagation is already queued or running. Check Jobs for progress.' : 'Processing already started. Check Jobs for per-document progress.')
+    : (processingIsFullPropagation ? 'Full propagation started. Check Jobs for Drive scan, extraction, search, relationship-map, and source checks.' : 'Processing started. Check Jobs for per-document progress.'));
   const autoProcessingReady = canContribute && s3OnlyFiles > 0 && effectiveProcessingCount > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
+  const partialBreakdownItems = Array.isArray(librarySummary.breakdown?.partial) ? librarySummary.breakdown.partial : [];
+  const failedDocumentJobs = useMemo(() => {
+    if (!Array.isArray(state.jobs)) {
+      return [];
+    }
+    return state.jobs.filter((job) => {
+      const status = String(job.user_status || job.status || '').toLowerCase();
+      const jobType = String(job.job_type || '').toLowerCase();
+      const visible = job.normal_user_visible === true || isDocumentProcessingRequest(job);
+      return visible && status === 'failed' && (
+        jobType.includes('document')
+        || jobType.includes('source_sync')
+        || jobType.includes('relationship_map')
+      );
+    });
+  }, [state.jobs]);
   const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
     caseId,
     counts: inventorySummary,
@@ -1785,7 +1861,7 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5" aria-label={t('Document status filters')}>
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label={t('Document status filters')}>
         {[
           {
             id: 'all',
@@ -1800,6 +1876,7 @@ export default function DocumentsPage() {
             value: rollupsReady ? rawReadyCount : '...',
             detail: libraryTileById.ready?.helper || libraryTileById.ready?.description || 'Documents ready for review and Ask Documents',
             filter: 'ready',
+            accent: 'bg-emerald-500',
           },
           {
             id: 'processing',
@@ -1807,13 +1884,7 @@ export default function DocumentsPage() {
             value: rollupsReady ? effectiveProcessingCount : '...',
             detail: libraryTileById.processing?.helper || libraryTileById.processing?.description || 'Documents still being prepared',
             filter: 'processing',
-          },
-          {
-            id: 'partial',
-            label: libraryTileById.partial?.label || 'Partial',
-            value: rollupsReady ? rawPartialCount : '...',
-            detail: libraryTileById.partial?.helper || libraryTileById.partial?.description || 'Some propagation exists, but a required stage is missing',
-            filter: 'partial',
+            accent: 'bg-amber-400',
           },
           {
             id: 'failed',
@@ -1821,10 +1892,11 @@ export default function DocumentsPage() {
             value: rollupsReady ? effectiveFailedCount : '...',
             detail: libraryTileById.failed?.helper || libraryTileById.failed?.description || 'No usable propagation is complete',
             filter: 'failed',
+            accent: 'bg-red-500',
           },
         ].map((tile) => {
           const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === tile.filter && !activePropagationSubstageFilter;
-          const expandable = tile.id === 'all' || tile.id === 'partial';
+          const expandable = tile.id === 'all';
           const expanded = expandable && Boolean(expandedStatusTiles[tile.id]);
           const subcategoryItems = tile.id === 'all'
             ? sourceComposition
@@ -1833,31 +1905,30 @@ export default function DocumentsPage() {
           return (
             <section
               key={tile.id}
-              className={`overflow-hidden rounded-2xl border shadow-[var(--lakai-shadow-panel)] transition ${
+              className={`relative overflow-hidden rounded-2xl border bg-[var(--lakai-surface)] text-[var(--lakai-text)] shadow-[var(--lakai-shadow-panel)] transition ${
                 selected
-                  ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
+                  ? 'border-[var(--lakai-primary)] ring-2 ring-[var(--lakai-primary)]/15'
                   : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface-muted)]'
               }`}
             >
+              {tile.accent ? (
+                <span className={`absolute inset-y-0 left-0 w-1.5 ${tile.accent}`} aria-hidden="true" />
+              ) : null}
               <button
                 type="button"
                 onClick={() => setDocumentStatusFilter(tile.filter)}
-                className="block w-full p-4 text-left"
+                className={`block w-full p-4 text-left ${tile.accent ? 'pl-5' : ''}`}
                 aria-pressed={selected}
               >
-                <div className={`text-xs font-semibold uppercase tracking-normal ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.label)}</div>
+                <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t(tile.label)}</div>
                 <div className="mt-1 text-2xl font-semibold">{tile.value}</div>
-                <div className={`mt-1 text-sm ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.detail)}</div>
+                <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t(tile.detail)}</div>
               </button>
               {expandable ? (
                 <button
                   type="button"
                   onClick={() => setExpandedStatusTiles((current) => ({ ...current, [tile.id]: !current[tile.id] }))}
-                  className={`flex min-h-10 w-full items-center justify-center border-t px-3 py-2 text-xs font-semibold transition ${
-                    selected
-                      ? 'border-white/20 text-[var(--lakai-primary-text)]/85 hover:bg-white/10'
-                      : 'border-[var(--lakai-border-soft)] text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-text)]'
-                  }`}
+                  className="flex min-h-10 w-full items-center justify-center border-t border-[var(--lakai-border-soft)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-text)]"
                   aria-expanded={expanded}
                   aria-label={expanded ? t('Collapse {label} breakdown', { label: t(tile.label) }) : t('Expand {label} breakdown', { label: t(tile.label) })}
                 >
@@ -1869,12 +1940,12 @@ export default function DocumentsPage() {
                 </button>
               ) : null}
               {expanded ? (
-                <div className={`border-t p-3 ${selected ? 'border-white/20 bg-black/5' : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)]'}`}>
+                <div className="border-t border-[var(--lakai-border-soft)] bg-[var(--lakai-surface-muted)] p-3">
                   {hasSubcategories ? (
                     <div className="grid gap-2">
                       {subcategoryItems.map((item) => {
                         const itemBucket = tile.id;
-                        const itemSubstage = tile.id === 'partial' ? normalizePropagationSubstageFilter(item.key) : '';
+                        const itemSubstage = '';
                         const itemSelected = tile.id === 'all'
                           ? String(filterValues.origin_label || '') === String(item.filterValue || item.label || '')
                           : normalizeDocumentStatusFilter(filterValues.processing_status) === itemBucket
@@ -1918,7 +1989,7 @@ export default function DocumentsPage() {
                       })}
                     </div>
                   ) : (
-                    <p className={`text-sm ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>
+                    <p className="text-sm text-[var(--lakai-text-muted)]">
                       {rollupsReady
                         ? t(tile.id === 'all' ? 'No document sources reported yet.' : 'No subcategories reported for this status.')
                         : t(tile.id === 'all' ? 'Document sources are loading.' : 'Status subcategories are loading.')}
@@ -1930,6 +2001,126 @@ export default function DocumentsPage() {
           );
         })}
       </div>
+
+      {(rawPartialCount > 0 || failedDocumentJobs.length > 0) ? (
+        <section className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-[var(--lakai-shadow-panel)] dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 shrink-0" size={20} aria-hidden="true" />
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold">{t('Propagation needs attention')}</h2>
+                  {rawPartialCount > 0 ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-100 dark:ring-amber-800">
+                      {t('{count} partial', { count: rawPartialCount })}
+                    </span>
+                  ) : null}
+                  {failedDocumentJobs.length > 0 ? (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-950 ring-1 ring-red-300 dark:bg-red-950/50 dark:text-red-100 dark:ring-red-800">
+                      {t('{count} failed job(s)', { count: failedDocumentJobs.length })}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 max-w-3xl text-sm">
+                  {rawPartialCount > 0
+                    ? t('{count} document(s) have some propagation complete, but at least one required stage is still missing. Finish propagation resumes the missing stages without duplicating documents.', { count: rawPartialCount })
+                    : t('A document processing job needs review before the library can be treated as fully propagated.')}
+                </p>
+                <p className="mt-1 max-w-3xl text-xs text-amber-900 dark:text-amber-100">
+                  {t('This is a system readiness task, not a legal review task. It helps Documents, Ask Documents, and relationship-map search use the same completed source set.')}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
+              {rawPartialCount > 0 && canContribute ? (
+                <button
+                  type="button"
+                  onClick={() => requestFullPropagationRepair()}
+                  disabled={processingRequest.busy}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <PlayCircle size={16} aria-hidden="true" />
+                  {processingRequest.busy ? t('Starting propagation') : t('Finish propagation')}
+                </button>
+              ) : null}
+              {rawPartialCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setDocumentStatusFilter('partial')}
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-950 transition hover:bg-amber-100 dark:border-amber-900/70 dark:bg-[#101820] dark:text-amber-100 dark:hover:bg-amber-950/40"
+                >
+                  {t('View affected documents')}
+                </button>
+              ) : null}
+              {failedDocumentJobs.length > 0 ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/jobs`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-950 transition hover:bg-red-100 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100 dark:hover:bg-red-950/40"
+                >
+                  {t('Open failed jobs')}
+                </Link>
+              ) : null}
+            </div>
+          </div>
+
+          {rawPartialCount > 0 ? (
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {(partialBreakdownItems.length ? partialBreakdownItems : [{
+                key: 'partial',
+                label: 'Missing propagation stage',
+                count: rawPartialCount,
+                next_action: {
+                  user_message: 'Finish propagation so these documents can complete search and relationship-map readiness.',
+                },
+              }]).map((item) => (
+                <div key={item.key || item.label} className="rounded-xl border border-amber-200 bg-white p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-[#101820] dark:text-amber-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold">{t(item.label || 'Propagation stage pending')}</h3>
+                      {(item.next_action?.user_message || item.userMessage) ? (
+                        <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                          {t(item.next_action?.user_message || item.userMessage)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-100 dark:ring-amber-900">
+                      {rollupsReady ? item.count : '...'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPropagationBreakdownFilter('partial', item.key)}
+                    className="mt-3 inline-flex min-h-9 items-center justify-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50"
+                  >
+                    {t('Review this group')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {processingRequest.error ? (
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100">
+              <p className="font-semibold">{t('Propagation did not start')}</p>
+              <p className="mt-1 text-xs">{processingRequest.error.message || t('Evidence API returned an error.')}</p>
+            </div>
+          ) : null}
+          {processingRequest.result ? (
+            <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-950 dark:border-emerald-900/70 dark:bg-emerald-950/25 dark:text-emerald-100">
+              <p className="font-semibold">{t(processingStartTitle)}</p>
+              <p className="mt-1 text-xs">{t(processingStartMessage)}</p>
+              {processingRequestJobId ? (
+                <Link
+                  to={`/evidence/cases/${caseId}/jobs/${processingRequestJobId}`}
+                  className="mt-2 inline-flex text-xs font-semibold text-emerald-900 hover:text-emerald-950 dark:text-emerald-100 dark:hover:text-white"
+                >
+                  {t('Open propagation details')}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <form onSubmit={handleSearchSubmit} className="flex max-w-2xl flex-1 flex-col gap-2 sm:flex-row">
