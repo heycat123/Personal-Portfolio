@@ -577,14 +577,28 @@ export function jobProgressModel(job) {
     result.full_propagation_status,
     display.full_propagation_status,
   ) || '').toLowerCase();
-  const propagationContinues = isDocumentTextSearchProcessing(job)
-    && TERMINAL_SUCCESS.has(status)
-    && ['relationship_map_queued', 'relationship_map_reused'].includes(fullPropagationStatus);
+  const fullPropagationComplete = [
+    'complete',
+    'completed',
+    'ready',
+    'full_propagation_complete',
+    'relationship_map_complete',
+    'source_propagation_complete',
+  ].includes(fullPropagationStatus);
   const propagationNeedsSupport = isDocumentTextSearchProcessing(job)
     && TERMINAL_SUCCESS.has(status)
-    && fullPropagationStatus === 'relationship_map_worker_unavailable';
+    && ['relationship_map_worker_unavailable', 'failed', 'error', 'blocked', 'needs_attention'].includes(fullPropagationStatus);
+  const propagationContinues = isDocumentTextSearchProcessing(job)
+    && TERMINAL_SUCCESS.has(status)
+    && !propagationNeedsSupport
+    && (
+      ['relationship_map_queued', 'relationship_map_reused'].includes(fullPropagationStatus)
+      || !fullPropagationComplete
+    );
   const propagationContinuationMessage = propagationContinues
-    ? 'Search step complete. Processing continues through relationship-map and source propagation.'
+    ? fullPropagationStatus
+      ? 'Search step complete. Processing continues through relationship-map and source propagation.'
+      : 'Search step complete. Waiting for full document propagation to finish.'
     : propagationNeedsSupport
       ? 'Search step complete, but relationship-map propagation still needs support before full propagation is ready.'
       : null;
