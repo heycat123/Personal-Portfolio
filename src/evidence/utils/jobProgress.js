@@ -218,7 +218,7 @@ export function jobProcessingDocumentStatus(document) {
     reading_text: 'Reading text',
     running_ocr: 'Running OCR',
     writing_search_records: 'Indexing for search',
-    processed: 'Ready for search',
+    processed: 'Search step complete',
     needs_ocr: 'Needs OCR/review',
     unsupported_type: 'Needs review',
     empty_text: 'Needs review',
@@ -312,9 +312,9 @@ function documentProgressSummary(job) {
     badgeStatus = 'pending';
     currentStep = 'Review files that need another extractor';
   } else if (ready === statuses.length) {
-    label = 'Ready for search';
+    label = 'Search step complete';
     badgeStatus = 'succeeded';
-    currentStep = 'Ready for search and Q&A';
+    currentStep = 'Text/search step complete';
   } else if (running) {
     currentStep = statuses.find((status) => status.badgeStatus === 'running')?.label || 'Processing documents';
   } else if (waiting) {
@@ -572,6 +572,22 @@ export function jobProgressModel(job) {
   const documentSummary = documentProgressSummary(job);
   const failed = TERMINAL_ATTENTION.has(status);
   const cancelRequested = Boolean(job?.cancel_requested || result.cancel_requested || display.cancel_requested);
+  const fullPropagationStatus = String(firstString(
+    job?.full_propagation_status,
+    result.full_propagation_status,
+    display.full_propagation_status,
+  ) || '').toLowerCase();
+  const propagationContinues = isDocumentTextSearchProcessing(job)
+    && TERMINAL_SUCCESS.has(status)
+    && ['relationship_map_queued', 'relationship_map_reused'].includes(fullPropagationStatus);
+  const propagationNeedsSupport = isDocumentTextSearchProcessing(job)
+    && TERMINAL_SUCCESS.has(status)
+    && fullPropagationStatus === 'relationship_map_worker_unavailable';
+  const propagationContinuationMessage = propagationContinues
+    ? 'Search step complete. Processing continues through relationship-map and source propagation.'
+    : propagationNeedsSupport
+      ? 'Search step complete, but relationship-map propagation still needs support before full propagation is ready.'
+      : null;
 
   const backendPercent = clampPercent(firstNumber(
     job?.progress_percent,
@@ -586,13 +602,16 @@ export function jobProgressModel(job) {
   const estimatedProgress = backendLooksGeneric
     ? estimatedActiveProgress(job, status, backendPercent, documentSummary)
     : null;
-  const progressPercent = documentSummary?.progressPercent
+  const baseProgressPercent = documentSummary?.progressPercent
     ?? estimatedProgress?.progressPercent
     ?? backendPercent
     ?? (isDocumentProcessingRequest(job) && recorded ? 0 : fallbackPercent(status));
+  const progressPercent = propagationContinues ? Math.min(baseProgressPercent ?? 90, 90) : baseProgressPercent;
   const progressEstimated = Boolean(estimatedProgress);
   const progressPercentLabel = estimatedProgress?.progressPercentLabel || `${progressPercent}%`;
   const displayStatusLabel = userFacingProcessingText(firstString(
+    propagationContinues ? 'Processing' : null,
+    propagationNeedsSupport ? 'Ready with review needed' : null,
     userJobStatus.display_label,
     userJobStatus.status_label,
     job?.display_status,
@@ -606,6 +625,8 @@ export function jobProgressModel(job) {
     fallbackStatusLabel(status),
   ));
   const currentStep = userFacingProcessingText(firstString(
+    propagationContinues ? 'Relationship-map and source propagation' : null,
+    propagationNeedsSupport ? 'Relationship-map propagation needs support' : null,
     userJobStatus.stage_label,
     userJobStatus.current_step,
     job?.current_step,
@@ -617,6 +638,7 @@ export function jobProgressModel(job) {
     fallbackCurrentStep(cancelRequested ? 'cancelling' : status),
   ));
   const progressText = userFacingProcessingText(firstString(
+    propagationContinuationMessage,
     userJobStatus.user_message,
     userJobStatus.message,
     job?.progress_text,
@@ -644,6 +666,7 @@ export function jobProgressModel(job) {
     || 0,
   );
   const userMessage = userFacingProcessingText(firstString(
+    propagationContinuationMessage,
     userJobStatus.user_message,
     userJobStatus.message,
     resolution.user_message,
@@ -671,17 +694,22 @@ export function jobProgressModel(job) {
                 : 'Refresh status or contact support if this does not change.');
 
   const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
-  const userBadgeStatus = userStatus === 'ready'
+  const effectiveUserStatus = propagationContinues
+    ? 'processing'
+    : propagationNeedsSupport
+      ? 'ready_with_review_needed'
+      : userStatus;
+  const userBadgeStatus = effectiveUserStatus === 'ready'
     ? 'succeeded'
-    : userStatus === 'ready_with_review_needed'
+    : effectiveUserStatus === 'ready_with_review_needed'
       ? 'needs_review'
-      : userStatus === 'failed'
+      : effectiveUserStatus === 'failed'
         ? 'failed'
-        : userStatus === 'processing'
+        : effectiveUserStatus === 'processing'
           ? 'running'
-          : userStatus === 'queued'
+          : effectiveUserStatus === 'queued'
             ? 'queued'
-            : userStatus === 'canceled' || userStatus === 'cancelled'
+            : effectiveUserStatus === 'canceled' || effectiveUserStatus === 'cancelled'
               ? 'unknown'
               : null;
   const badgeStatus = userBadgeStatus || (workflowStatus === 'needs_attention'

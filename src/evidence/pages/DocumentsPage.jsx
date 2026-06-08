@@ -19,6 +19,7 @@ import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { buildCaseAttentionItems, filterAttentionItems } from '../utils/caseAttention';
 import { removalResultDetail } from '../utils/documentRemoval';
+import { documentPipelineItems, documentUserStatus } from '../utils/documentStatus';
 import {
   detectedLanguageLabel,
   hasTranscript,
@@ -273,61 +274,8 @@ function exportToken(value) {
     .slice(0, 48) || 'documents';
 }
 
-function StorageSyncBadge({ document, t }) {
-  const status = document?.source_status?.storage || document?.canonical_storage_status || 'unknown';
-  const sourceLabel = document?.source_status?.label;
-  if (status === 'canonical' || status === 'synced' || status === 'complete' || document?.s3_key) {
-    return <StatusBadge status="configured" label={t('Secure copy ready')} />;
-  }
-  if (status === 'pending_verification') {
-    return <StatusBadge status="queued" label={t('Secure copy pending')} />;
-  }
-  if (status === 'needs_s3_sync') {
-    return <StatusBadge status="degraded" label={t('Needs secure copy')} />;
-  }
-  if (sourceLabel) {
-    return <StatusBadge status="queued" label={t('Listed from {source}', { source: sourceLabel })} />;
-  }
-  const label = status === 'canonical'
-    ? t('Secure copy ready')
-    : status === 'pending_verification'
-      ? t('Secure copy pending')
-      : status === 'needs_s3_sync'
-        ? t('Needs secure copy')
-        : t('Not processed yet');
-  return <StatusBadge status={status === 'canonical' ? 'configured' : status === 'needs_s3_sync' ? 'degraded' : 'queued'} label={label} />;
-}
-
-function pipelineReadinessItems(document) {
-  const statuses = document?.pipeline_status || {};
-  const display = document?.pipeline_display || {};
-  return [
-    {
-      key: 'postgres',
-      label: display.indexed?.label || 'Indexed for review',
-      shortLabel: 'Indexed',
-      status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending',
-      color: '#0ea5e9',
-    },
-    {
-      key: 'vector',
-      label: display.search?.label || 'Search ready',
-      shortLabel: 'Search',
-      status: display.search?.status || statuses.vector || document?.vector_status || 'pending',
-      color: '#2563eb',
-    },
-    {
-      key: 'graph',
-      label: display.relationship_map?.label || 'Relationship map ready',
-      shortLabel: 'Relationship map',
-      status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending',
-      color: '#7c3aed',
-    },
-  ];
-}
-
 function PipelineDots({ document, showLabels = false, t = (value) => value }) {
-  const items = pipelineReadinessItems(document);
+  const items = documentPipelineItems(document);
   if (!showLabels) {
     return (
       <PipelineReadinessDonut items={items} size={28} t={t} />
@@ -346,81 +294,6 @@ function PipelineDots({ document, showLabels = false, t = (value) => value }) {
       ))}
     </div>
   );
-}
-
-function normalizeStatusValue(value) {
-  return String(value || '').toLowerCase().replace(/\s+/g, '_');
-}
-
-function documentUserStatus(document) {
-  const propagation = document?.propagation_status || document?.library_status || {};
-  const propagationStatus = typeof propagation === 'object' && propagation !== null ? propagation : {};
-  const canonicalStatus = normalizeStatusValue(propagationStatus.user_status || document?.user_status);
-  if (canonicalStatus) {
-    const color = normalizeStatusValue(propagationStatus.status_bar_color);
-    const label = propagationStatus.display_label
-      || (canonicalStatus === 'ready' ? 'Ready' : canonicalStatus === 'failed' ? 'Failed' : 'Processing');
-    return {
-      key: canonicalStatus,
-      label,
-      badgeStatus: canonicalStatus === 'ready' ? 'succeeded' : canonicalStatus === 'failed' ? 'failed' : 'pending',
-      barClassName: color === 'green' ? 'bg-emerald-500' : color === 'red' ? 'bg-red-500' : 'bg-amber-400',
-      description: propagationStatus.tooltip || propagationStatus.user_message || propagationStatus.accessibility_label || label,
-      accessibilityLabel: propagationStatus.accessibility_label || propagationStatus.tooltip || label,
-    };
-  }
-
-  const queryStatus = normalizeStatusValue(document?.query_readiness?.status);
-  const queryLabel = normalizeStatusValue(document?.query_readiness?.label);
-  const reviewState = normalizeStatusValue(document?.document_review_state || document?.review_status);
-  const processingStatus = normalizeStatusValue(document?.processing_status);
-  const pipelineItems = pipelineReadinessItems(document);
-  const pipelineStatuses = pipelineItems.map((item) => normalizeStatusValue(item.status));
-  const combined = [queryStatus, queryLabel, reviewState, processingStatus, ...pipelineStatuses].filter(Boolean);
-
-  if (combined.some((status) => ['failed', 'error', 'blocked', 'needs_attention', 'dependency_missing'].includes(status))) {
-    return {
-      key: 'failed',
-      label: 'Failed',
-      badgeStatus: 'failed',
-      barClassName: 'bg-red-500',
-      description: 'This document needs attention before processing can finish.',
-    };
-  }
-
-  if (combined.some((status) => ['needs_review', 'needs_ocr', 'unsupported_type', 'empty_text', 'ready_with_review_needed'].includes(status))) {
-    return {
-      key: 'review',
-      label: 'Ready with review needed',
-      badgeStatus: 'needs_review',
-      barClassName: 'bg-amber-400',
-      description: 'This document is in the workspace, but something still needs review.',
-    };
-  }
-
-  if (
-    queryStatus === 'ready'
-    || queryLabel === 'ready_for_search'
-    || processingStatus === 'ready'
-    || pipelineStatuses.includes('complete')
-    || pipelineStatuses.includes('succeeded')
-  ) {
-    return {
-      key: 'ready',
-      label: 'Ready',
-      badgeStatus: 'succeeded',
-      barClassName: 'bg-emerald-500',
-      description: 'This document is ready for review and Ask Documents.',
-    };
-  }
-
-  return {
-    key: 'processing',
-    label: 'Processing',
-    badgeStatus: 'pending',
-    barClassName: 'bg-amber-400',
-    description: 'This document is still being prepared for review and Ask Documents.',
-  };
 }
 
 function DocumentRowStatus({ document, t }) {
@@ -1318,6 +1191,7 @@ export default function DocumentsPage() {
   const filterUncategorizedDocuments = () => {
     applyColumnFilter('evidence_type_label', 'Uncategorized');
   };
+  const drawerStatus = documentUserStatus(drawer.document || {});
 
   return (
     <div>
@@ -1416,15 +1290,15 @@ export default function DocumentsPage() {
             <div className="flex items-start gap-3">
               <FileText className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
               <div>
-                <h2 className="font-semibold">{t('Search readiness is not complete')}</h2>
+                <h2 className="font-semibold">{t('Document processing is not complete')}</h2>
                 <p className="mt-1">
-                  {t('{count} document row(s) still need text/search processing before they are fully available in Ask Documents.', { count: s3OnlyFiles })}
+                  {t('{count} document row(s) are still moving through processing before they are fully available in Documents and Ask Documents.', { count: s3OnlyFiles })}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('This is not a legal review task. It means the source file is saved, but text extraction and search preparation have not finished yet.')}
+                  {t('This is not a legal review task. It means the source file is saved, but processing and propagation have not finished yet.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                  {t('Why this happened: these files were copied from Google Drive after the last full processing run, so the secure source copy exists but search indexing has not caught up yet.')}
+                  {t('Why this happened: these files were copied or imported after the last full processing run, so extraction, search indexing, or relationship/source propagation is still catching up.')}
                 </p>
                 <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
                   {canContribute
@@ -1760,11 +1634,16 @@ export default function DocumentsPage() {
                     <div className="break-words text-gray-950 dark:text-white">{documentKindLabel(drawer.document, drawer.previewContentType)}</div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source copy')}</div>
-                    <div className="mt-1 break-words"><StorageSyncBadge document={drawer.document} t={t} /></div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Document status')}</div>
+                    <div className="mt-2 break-words">
+                      <div className="flex items-center gap-2" title={t(drawerStatus.description)}>
+                        <span className={`h-9 w-1.5 rounded-full ${drawerStatus.barClassName}`} aria-hidden="true" />
+                        <StatusBadge status={drawerStatus.badgeStatus} label={t(drawerStatus.label)} />
+                      </div>
+                    </div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
-                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
+                    <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing details')}</div>
                     <div className="mt-2"><PipelineDots document={drawer.document} t={t} /></div>
                   </div>
                   <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20">
@@ -1811,7 +1690,8 @@ export default function DocumentsPage() {
                 ) : null}
 
                 <div className="mt-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing details')}</div>
+                  <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">{t(drawerStatus.userMessage || drawerStatus.description)}</p>
                   <PipelineDots document={drawer.document} showLabels t={t} />
                 </div>
 
@@ -1864,7 +1744,7 @@ export default function DocumentsPage() {
               <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source file preview')}</h3>
-                  {drawer.document?.s3_key ? <StatusBadge status="configured" label={t('Secure workspace copy')} /> : <StatusBadge status="degraded" label={t('No secure copy')} />}
+                  <StatusBadge status={drawerStatus.badgeStatus} label={t(drawerStatus.label)} />
                 </div>
                 {drawer.previewLoading ? (
                   <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>

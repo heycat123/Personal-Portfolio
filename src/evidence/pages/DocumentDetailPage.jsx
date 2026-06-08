@@ -17,6 +17,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { removalResultDetail } from '../utils/documentRemoval';
+import { documentPipelineItems, documentUserStatus } from '../utils/documentStatus';
 import {
   detectedLanguageLabel,
   hasTranscript,
@@ -102,31 +103,6 @@ function issueTagReviewState(document, t) {
     label: t('Issue tags pending'),
     description: t('Search and people/contact processing has not finished for this document yet. This is not a manual legal review task.'),
   };
-}
-
-function documentPipelineItems(document) {
-  const statuses = document?.pipeline_status || {};
-  const display = document?.pipeline_display || {};
-  return [
-    {
-      key: 'postgres',
-      label: display.indexed?.label || 'Indexed for review',
-      status: display.indexed?.status || statuses.postgres || document?.postgres_status || 'pending',
-      color: '#0ea5e9',
-    },
-    {
-      key: 'vector',
-      label: display.search?.label || 'Search ready',
-      status: display.search?.status || statuses.vector || document?.vector_status || 'pending',
-      color: '#2563eb',
-    },
-    {
-      key: 'graph',
-      label: display.relationship_map?.label || 'Relationship map ready',
-      status: display.relationship_map?.status || statuses.graph || document?.graph_status || 'pending',
-      color: '#7c3aed',
-    },
-  ];
 }
 
 function FactorTags({ document, t }) {
@@ -252,6 +228,12 @@ export default function DocumentDetailPage() {
   const transcriptRecords = transcriptPages(document || {});
   const documentTypeLabel = mediaKindLabel(document || {}, state.previewContentType);
   const documentTypeIcon = documentKind === 'audio' ? Headphones : documentKind === 'video' ? Video : FileText;
+  const documentStatus = documentUserStatus(document || {});
+  const documentStatusTone = documentStatus.key === 'ready'
+    ? 'good'
+    : documentStatus.key === 'failed'
+      ? 'bad'
+      : 'warn';
 
   const scrollToTranscript = useCallback(() => {
     document?.file_id && window.requestAnimationFrame(() => {
@@ -452,7 +434,7 @@ export default function DocumentDetailPage() {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <MetricTile icon={documentTypeIcon} label={t('Type')} value={t(documentTypeLabel)} detail={document.media_type || t('unknown media')} />
             <MetricTile icon={FileText} label={isMediaTranscriptDocument ? t('Transcript records') : t('Pages')} value={isMediaTranscriptDocument ? transcriptRecords.length : (document.page_count || 0)} detail={isMediaTranscriptDocument ? t('Transcript records available for review') : t('Reported extraction page count')} />
-            <MetricTile label={t('Status')} value={<StatusBadge status={document.status} />} detail={t('Evidence file status')} />
+            <MetricTile label={t('Document status')} value={<StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />} detail={t(documentStatus.userMessage || documentStatus.description)} tone={documentStatusTone} />
             <MetricTile label={t('Source')} value={document.source_provider || t('unknown')} detail={document.source_of_truth_mode || t('unknown mode')} />
             <MetricTile label={t('Extraction')} value={isMediaTranscriptDocument ? t('Transcript') : (document.extraction_method || t('pending'))} detail={transcriptionMethod(document) || document.media_type || t('unknown media')} />
             <MetricTile
@@ -467,7 +449,7 @@ export default function DocumentDetailPage() {
           <div className="mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source file preview')}</h3>
-              {document.s3_key ? <StatusBadge status="configured" label={t('Secure workspace copy')} /> : <StatusBadge status="degraded" label={t('No secure copy')} />}
+              <StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />
             </div>
             {state.previewLoading ? (
               <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>
@@ -538,10 +520,22 @@ export default function DocumentDetailPage() {
 
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Review status')}</h3>
+                <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Document status')}</h3>
                 <PipelineReadinessDonut items={documentPipelineItems(document)} size={30} t={t} />
               </div>
               <div className="mt-4 space-y-3 text-sm">
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-black/20">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-9 w-1.5 rounded-full ${documentStatus.barClassName}`} aria-hidden="true" />
+                    <StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />
+                  </div>
+                  <p className="mt-2 text-gray-700 dark:text-gray-300">{t(documentStatus.userMessage || documentStatus.description)}</p>
+                  {documentStatus.stageLabel ? (
+                    <p className="mt-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                      {t('Current step')}: {t(documentStatus.stageLabel)}
+                    </p>
+                  ) : null}
+                </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Pages needing text review')}</p>
                   <p className="mt-1 text-gray-900 dark:text-gray-100">
@@ -553,7 +547,7 @@ export default function DocumentDetailPage() {
                   <StatusBadge status={document.graph_status || 'pending'} label={document.graph_status || t('pending')} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</p>
+                  <p className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Processing details')}</p>
                   <StatusBadge status={document.vector_status || 'pending'} label={document.vector_status || t('pending')} />
                 </div>
                 <div>
