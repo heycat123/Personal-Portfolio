@@ -54,6 +54,20 @@ const STATUTE_FACTOR_OPTIONS = [
 ];
 const FACTOR_LABELS = Object.fromEntries(STATUTE_FACTOR_OPTIONS.map((item) => [item.value, item.label]));
 
+function normalizeDocumentStatusFilter(value) {
+  const status = String(value || '').toLowerCase().replace(/\s+/g, '_');
+  if (['ready', 'ready_for_search', 'succeeded', 'complete', 'completed'].includes(status)) {
+    return 'ready';
+  }
+  if (['processing', 'not_processed', 'pending', 'queued', 'running', 'in_progress'].includes(status)) {
+    return 'processing';
+  }
+  if (['failed', 'error', 'needs_attention', 'blocked'].includes(status)) {
+    return 'failed';
+  }
+  return '';
+}
+
 function factorLabel(code, t) {
   if (!code) {
     return t('No issue tag');
@@ -171,7 +185,7 @@ function readUrlDocumentsTableState(searchParams) {
   const storageStatus = String(searchParams.get('storage_status') || '').trim();
   const factorCode = String(searchParams.get('factor_code') || '').trim();
   const pipelineStatus = String(searchParams.get('pipeline_status') || '').trim();
-  const processingStatus = String(searchParams.get('processing_status') || '').trim();
+  const processingStatus = normalizeDocumentStatusFilter(searchParams.get('status') || searchParams.get('user_status') || searchParams.get('processing_status'));
   if (query) {
     next.appliedQuery = query;
   }
@@ -404,12 +418,19 @@ export default function DocumentsPage() {
   const { canContribute, canSeeOperations, debugEnabled } = useOperatorMode();
   const showDiagnostics = canSeeOperations || debugEnabled;
   const canReviewDocuments = canContribute || canSeeOperations;
-  const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
-  const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
-  const [filterValues, setFilterValues] = useState({
+  const initialFilterValues = {
     processing_status: DEFAULT_PROCESSING_FILTER,
     ...(initialTableState.filterValues || {}),
-  });
+  };
+  const normalizedInitialProcessingStatus = normalizeDocumentStatusFilter(initialFilterValues.processing_status);
+  if (normalizedInitialProcessingStatus) {
+    initialFilterValues.processing_status = normalizedInitialProcessingStatus;
+  } else {
+    delete initialFilterValues.processing_status;
+  }
+  const [queryDraft, setQueryDraft] = useState(initialTableState.appliedQuery || '');
+  const [appliedQuery, setAppliedQuery] = useState(initialTableState.appliedQuery || '');
+  const [filterValues, setFilterValues] = useState(initialFilterValues);
   const [sort, setSort] = useState(initialTableState.sort || DEFAULT_SORT);
   const [offset, setOffset] = useState(Number(initialTableState.offset || 0));
   const [state, setState] = useState({
@@ -481,7 +502,7 @@ export default function DocumentsPage() {
     require_postgres: selectedPipelineDomains(filterValues.pipeline_status).includes('postgres'),
     require_vector: selectedPipelineDomains(filterValues.pipeline_status).includes('vector'),
     require_graph: selectedPipelineDomains(filterValues.pipeline_status).includes('graph'),
-    processing_status: filterValues.processing_status,
+    user_status: normalizeDocumentStatusFilter(filterValues.processing_status),
     file_ids: filterValues.file_ids,
     sort_by: sort?.key || 'updated_at',
     sort_dir: sort?.desc ? 'desc' : 'asc',
@@ -822,8 +843,9 @@ export default function DocumentsPage() {
     setOffset(0);
     setFilterValues((current) => {
       const next = { ...current };
-      if (status) {
-        next.processing_status = status;
+      const normalizedStatus = normalizeDocumentStatusFilter(status);
+      if (normalizedStatus) {
+        next.processing_status = normalizedStatus;
       } else {
         delete next.processing_status;
       }
@@ -1012,11 +1034,6 @@ export default function DocumentsPage() {
     }
   }, [documentDetails, loadDocumentDetail]);
 
-  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-  const totalPages = Math.max(1, Math.ceil((state.total || 0) / PAGE_SIZE));
-  const canGoPrevious = offset > 0;
-  const canGoNext = offset + PAGE_SIZE < state.total;
-
   const documentColumns = useMemo(() => ([
     {
       key: 'original_filename',
@@ -1052,8 +1069,8 @@ export default function DocumentsPage() {
       headerClassName: 'w-[18%]',
       sortable: false,
       filterOptions: [
-        { value: 'ready_for_search', label: t('Ready') },
-        { value: 'not_processed', label: t('Processing') },
+        { value: 'ready', label: t('Ready') },
+        { value: 'processing', label: t('Processing') },
         { value: 'failed', label: t('Failed') },
       ],
       filterPlaceholder: t('Ready, processing, failed'),
@@ -1079,11 +1096,12 @@ export default function DocumentsPage() {
         }
         if (key === 'processing_status') {
           const labels = {
-            ready_for_search: 'Ready',
-            not_processed: 'Processing',
+            ready: 'Ready',
+            processing: 'Processing',
             failed: 'Failed',
           };
-          return { id: key, label: `${t('Status')}: ${t(labels[value] || value)}` };
+          const normalizedValue = normalizeDocumentStatusFilter(value);
+          return { id: key, label: `${t('Status')}: ${t(labels[normalizedValue] || value)}` };
         }
         const optionLabel = (column?.filterOptions || []).find((option) => option.value === value)?.label || value;
         return { id: key, label: `${column?.header || key}: ${optionLabel}` };
@@ -1098,8 +1116,6 @@ export default function DocumentsPage() {
     });
   };
 
-  const firstVisibleRow = state.total ? offset + 1 : 0;
-  const lastVisibleRow = Math.min(state.total, offset + state.documents.length);
   const inventorySummary = useMemo(() => state.inventorySummary || {}, [state.inventorySummary]);
   const librarySummary = state.documentsLibrarySummary || {};
   const libraryTileById = useMemo(() => {
@@ -1111,6 +1127,19 @@ export default function DocumentsPage() {
   }, [librarySummary.tiles]);
   const extractedFiles = inventorySummary.extracted_files || 0;
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
+  const activeDocumentStatusFilter = normalizeDocumentStatusFilter(filterValues.processing_status);
+  const visibleDocuments = activeDocumentStatusFilter
+    ? state.documents.filter((document) => normalizeDocumentStatusFilter(documentUserStatus(documentDetails[document.file_id]?.document || document).key) === activeDocumentStatusFilter)
+    : state.documents;
+  const displayedTotal = activeDocumentStatusFilter
+    ? Number(libraryTileById[activeDocumentStatusFilter]?.count ?? visibleDocuments.length)
+    : state.total;
+  const firstVisibleRow = displayedTotal && visibleDocuments.length ? offset + 1 : 0;
+  const lastVisibleRow = Math.min(displayedTotal || 0, offset + visibleDocuments.length);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const totalPages = Math.max(1, Math.ceil((displayedTotal || 0) / PAGE_SIZE));
+  const canGoPrevious = offset > 0;
+  const canGoNext = offset + PAGE_SIZE < displayedTotal;
   const processingRequestData = processingRequest.result || {};
   const processingRequestJobId = processingRequestData.job?.job_id || processingRequestData.existing_job?.job_id || processingRequestData.job_id || null;
   const processingBatchDocumentCount = Number(
@@ -1374,14 +1403,14 @@ export default function DocumentsPage() {
             label: libraryTileById.ready?.label || 'Ready',
             value: libraryTileById.ready?.count ?? extractedFiles,
             detail: libraryTileById.ready?.helper || libraryTileById.ready?.description || 'Documents ready for review and Ask Documents',
-            filter: 'ready_for_search',
+            filter: 'ready',
           },
           {
             id: 'processing',
             label: libraryTileById.processing?.label || 'Processing',
             value: libraryTileById.processing?.count ?? s3OnlyFiles,
             detail: libraryTileById.processing?.helper || libraryTileById.processing?.description || 'Documents still being prepared',
-            filter: 'not_processed',
+            filter: 'processing',
           },
           {
             id: 'failed',
@@ -1391,7 +1420,7 @@ export default function DocumentsPage() {
             filter: 'failed',
           },
         ].map((tile) => {
-          const selected = String(filterValues.processing_status || '') === tile.filter;
+          const selected = normalizeDocumentStatusFilter(filterValues.processing_status) === tile.filter;
           return (
             <button
               key={tile.id}
@@ -1450,7 +1479,7 @@ export default function DocumentsPage() {
       </div>
 
       <DataTable
-        rows={state.documents}
+        rows={visibleDocuments}
         rowKey={(document) => document.file_id}
         loading={state.loading}
         emptyTitle={state.loading ? t('Loading documents') : t('No documents matched')}
@@ -1541,7 +1570,7 @@ export default function DocumentsPage() {
           {t('Showing {first}-{last} of {total}; page {page} of {pages}', {
             first: firstVisibleRow,
             last: lastVisibleRow,
-            total: state.total,
+            total: displayedTotal,
             page: currentPage,
             pages: totalPages,
           })}

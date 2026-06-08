@@ -731,6 +731,7 @@ export const UI_TRANSLATIONS = {
     'Relationship-map propagation needs support': 'A propagacao do mapa de relacionamentos precisa de suporte',
     'Search step complete': 'Etapa de pesquisa concluida',
     'Text/search step complete': 'Etapa de texto/pesquisa concluida',
+    'Search step complete. Waiting for full document propagation to finish.': 'A etapa de pesquisa foi concluida. Aguardando a propagacao completa do documento terminar.',
     'Search step complete. Processing continues through relationship-map and source propagation.': 'A etapa de pesquisa foi concluida. O processamento continua pelo mapa de relacionamentos e pela propagacao de fontes.',
     'Search step complete, but relationship-map propagation still needs support before full propagation is ready.': 'A etapa de pesquisa foi concluida, mas a propagacao do mapa de relacionamentos ainda precisa de suporte antes da propagacao completa ficar pronta.',
     'Inviting a lawyer gives account access to this workspace. It does not by itself create an attorney-client relationship unless you and the lawyer separately agree.': 'Convidar um advogado concede acesso de conta a esta area de trabalho. Isso por si so nao cria uma relacao advogado-cliente, a menos que voce e o advogado concordem separadamente.',
