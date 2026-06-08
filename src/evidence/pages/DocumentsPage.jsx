@@ -1,5 +1,5 @@
 import { CheckCircle2, Download, ExternalLink, FileText, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
 import DataTable from '../components/DataTable';
@@ -37,6 +37,7 @@ const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
 const DEFAULT_PROCESSING_FILTER = '';
 const DEFAULT_CATEGORY_QA_LENS_ID = 'florida_relocation_best_interest';
+const DOCUMENT_JOB_SOCKET_START_TIMEOUT_MS = 8000;
 const STATUTE_FACTOR_OPTIONS = [
   { value: '7a', label: '61.13001(7)(a) - relationship and involvement' },
   { value: '7b', label: '61.13001(7)(b) - age and developmental needs' },
@@ -354,8 +355,9 @@ function originCount(facets, matcher) {
   ), 0);
 }
 
-function DocumentSourcesStrip({ caseId, facets, t, canManageSources = false }) {
-  const googleDriveCount = originCount(facets, (label) => label.includes('google') || label.includes('drive'));
+function DocumentSourcesStrip({ caseId, facets, canonicalDocumentRollup = null, t, canManageSources = false }) {
+  const googleDriveCount = originCount(facets, (label) => label.includes('google') || label.includes('drive'))
+    || Number(canonicalDocumentRollup?.google_drive?.unique_hashes || 0);
 
   return (
     <section className="mb-5 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
@@ -434,6 +436,7 @@ export default function DocumentsPage() {
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
   const { canContribute, canSeeOperations, debugEnabled } = useOperatorMode();
+  const documentJobSocketRef = useRef(null);
   const showDiagnostics = canSeeOperations || debugEnabled;
   const canReviewDocuments = canContribute || canSeeOperations;
   const initialFilterValues = {
@@ -461,6 +464,11 @@ export default function DocumentsPage() {
     documentsPanelStatus: null,
     documentProcessingReadiness: null,
     documentsLibrarySummary: null,
+    documentsPropagationSummary: null,
+    canonicalDocumentRollup: null,
+    rollupsLoading: true,
+    rollupsError: null,
+    activePropagationJob: null,
     jobs: null,
     jobsError: null,
     fingerprint: null,
@@ -511,6 +519,15 @@ export default function DocumentsPage() {
   });
 
   const jobStatusKnown = Array.isArray(state.jobs);
+  const activeDocumentJobForSocket = useMemo(() => {
+    if (state.activePropagationJob?.job_id && isActiveJob(state.activePropagationJob)) {
+      return state.activePropagationJob;
+    }
+    if (!Array.isArray(state.jobs)) {
+      return null;
+    }
+    return state.jobs.find((job) => (job.normal_user_visible === true || isDocumentProcessingRequest(job)) && isActiveJob(job)) || null;
+  }, [state.activePropagationJob, state.jobs]);
   const hasActiveDocumentProcessingJob = jobStatusKnown
     ? state.jobs.some((job) => (job.normal_user_visible === true || isDocumentProcessingRequest(job)) && isActiveJob(job))
     : true;
@@ -574,7 +591,7 @@ export default function DocumentsPage() {
       const results = await Promise.allSettled([
         evidenceApi.getDocuments(
           caseId,
-          documentQuery,
+          { ...documentQuery, include_rollups: false },
           { token },
         ),
         evidenceApi.getJobs(caseId, { limit: 50, offset: 0 }, { token }),
@@ -588,27 +605,47 @@ export default function DocumentsPage() {
         recordFingerprint(results[1].value, 'Jobs list');
       }
       const nextDocuments = result.data?.documents || [];
-      setState({
+      setState((current) => ({
+        ...current,
         loading: false,
         error: null,
         documents: nextDocuments,
         total: result.data?.total || 0,
-        facets: result.data?.facets || {},
-        inventorySummary: result.data?.inventory_summary || {},
+        facets: result.data?.facets || current.facets || {},
+        inventorySummary: result.data?.inventory_summary || current.inventorySummary || {},
         documentsPanelStatus: result.data?.documents_panel_status || null,
-        documentProcessingReadiness: result.data?.document_processing_readiness || null,
-        documentsLibrarySummary: result.data?.documents_library_summary || null,
+        documentProcessingReadiness: result.data?.document_processing_readiness || current.documentProcessingReadiness || null,
+        activePropagationJob: result.data?.active_propagation_job || current.activePropagationJob || null,
         jobs: results[1].status === 'fulfilled' ? results[1].value.data?.jobs || [] : null,
         jobsError: results[1].status === 'rejected' ? results[1].reason : null,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
         },
-      });
+      }));
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
     }
   }, [caseId, documentQuery, getAccessToken, recordFingerprint]);
+
+  const loadDocumentRollups = useCallback(async ({ refresh = false } = {}) => {
+    setState((current) => ({ ...current, rollupsLoading: true, rollupsError: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.getDocumentRollups(caseId, refresh ? { refresh: true } : {}, { token });
+      recordFingerprint(result, 'Document rollups');
+      setState((current) => ({
+        ...current,
+        rollupsLoading: false,
+        rollupsError: null,
+        documentsLibrarySummary: result.data?.documents_library_summary || current.documentsLibrarySummary || null,
+        documentsPropagationSummary: result.data?.documents_propagation_summary || current.documentsPropagationSummary || null,
+        canonicalDocumentRollup: result.data?.canonical_document_rollup || current.canonicalDocumentRollup || null,
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, rollupsLoading: false, rollupsError: error }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
 
   const loadCategoryQa = useCallback(async () => {
     setCategoryQa((current) => ({ ...current, loading: true, error: null }));
@@ -671,6 +708,92 @@ export default function DocumentsPage() {
 
     return () => window.clearTimeout(timerId);
   }, [loadDocuments]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      loadDocumentRollups();
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [loadDocumentRollups]);
+
+  useEffect(() => {
+    const jobId = activeDocumentJobForSocket?.job_id;
+    if (typeof window === 'undefined' || typeof WebSocket === 'undefined' || !jobId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let socket = null;
+    let startTimer = null;
+
+    const refreshAfterJobUpdate = () => {
+      void loadDocumentRollups({ refresh: true });
+      void loadDocuments();
+    };
+
+    const closeSocket = () => {
+      window.clearTimeout(startTimer);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close(1000, 'done');
+      }
+      if (documentJobSocketRef.current === socket) {
+        documentJobSocketRef.current = null;
+      }
+    };
+
+    getAccessToken().then((token) => {
+      if (cancelled || !token) {
+        return;
+      }
+      try {
+        socket = new WebSocket(evidenceApi.getJobEventsWebSocketUrl(caseId, jobId));
+      } catch {
+        return;
+      }
+      if (documentJobSocketRef.current && documentJobSocketRef.current !== socket) {
+        try {
+          documentJobSocketRef.current.close(1000, 'replaced');
+        } catch {
+          // Socket cleanup is best-effort.
+        }
+      }
+      documentJobSocketRef.current = socket;
+      startTimer = window.setTimeout(() => closeSocket(), DOCUMENT_JOB_SOCKET_START_TIMEOUT_MS);
+
+      socket.addEventListener('open', () => {
+        window.clearTimeout(startTimer);
+        socket.send(JSON.stringify({ type: 'auth', access_token: token }));
+      });
+
+      socket.addEventListener('message', (event) => {
+        let payload = null;
+        try {
+          payload = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        const type = String(payload?.type || '').toLowerCase();
+        const jobPayload = payload?.job;
+        if (jobPayload?.job_id === jobId) {
+          setState((current) => ({ ...current, activePropagationJob: jobPayload }));
+        }
+        if (type === 'job_complete' || type === 'job_stream_timeout') {
+          refreshAfterJobUpdate();
+          closeSocket();
+        }
+      });
+
+      socket.addEventListener('error', () => {
+        closeSocket();
+      });
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      closeSocket();
+    };
+  }, [activeDocumentJobForSocket?.job_id, caseId, getAccessToken, loadDocumentRollups, loadDocuments]);
 
   useEffect(() => {
     if (!isReviewView || attentionFilterActive) {
@@ -1196,6 +1319,7 @@ export default function DocumentsPage() {
 
   const inventorySummary = useMemo(() => state.inventorySummary || {}, [state.inventorySummary]);
   const librarySummary = state.documentsLibrarySummary || {};
+  const rollupsReady = Array.isArray(librarySummary.tiles) && librarySummary.tiles.length > 0;
   const libraryTileById = useMemo(() => {
     const libraryTiles = Array.isArray(librarySummary.tiles) ? librarySummary.tiles : [];
     const entries = libraryTiles
@@ -1352,7 +1476,13 @@ export default function DocumentsPage() {
         }
       />
 
-      <DocumentSourcesStrip caseId={caseId} facets={state.facets} t={t} canManageSources={canContribute} />
+      <DocumentSourcesStrip
+        caseId={caseId}
+        facets={state.facets}
+        canonicalDocumentRollup={state.canonicalDocumentRollup}
+        t={t}
+        canManageSources={canContribute}
+      />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
@@ -1513,7 +1643,13 @@ export default function DocumentsPage() {
           <h2 className="text-sm font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Propagation status')}</h2>
           <p className="text-sm text-[var(--lakai-text-muted)]">
             {t('Canonical document counts are based on unique file hashes, so duplicate source rows are counted once.')}
+            {state.rollupsLoading && !rollupsReady ? ` ${t('Status totals are loading separately so the document table can appear faster.')}` : ''}
           </p>
+          {state.rollupsError ? (
+            <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-200">
+              {t('Status totals could not load yet. The document table is still available.')}
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -1536,28 +1672,28 @@ export default function DocumentsPage() {
           {
             id: 'ready',
             label: libraryTileById.ready?.label || 'Ready',
-            value: rawReadyCount,
+            value: rollupsReady ? rawReadyCount : '...',
             detail: libraryTileById.ready?.helper || libraryTileById.ready?.description || 'Documents ready for review and Ask Documents',
             filter: 'ready',
           },
           {
             id: 'processing',
             label: libraryTileById.processing?.label || 'Processing',
-            value: effectiveProcessingCount,
+            value: rollupsReady ? effectiveProcessingCount : '...',
             detail: libraryTileById.processing?.helper || libraryTileById.processing?.description || 'Documents still being prepared',
             filter: 'processing',
           },
           {
             id: 'partial',
             label: libraryTileById.partial?.label || 'Partial',
-            value: rawPartialCount,
+            value: rollupsReady ? rawPartialCount : '...',
             detail: libraryTileById.partial?.helper || libraryTileById.partial?.description || 'Some propagation exists, but a required stage is missing',
             filter: 'partial',
           },
           {
             id: 'failed',
             label: libraryTileById.failed?.label || 'Failed',
-            value: effectiveFailedCount,
+            value: rollupsReady ? effectiveFailedCount : '...',
             detail: libraryTileById.failed?.helper || libraryTileById.failed?.description || 'No usable propagation is complete',
             filter: 'failed',
           },
