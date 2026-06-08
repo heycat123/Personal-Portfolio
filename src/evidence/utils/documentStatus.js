@@ -34,13 +34,13 @@ export function documentUserStatus(document = {}) {
   if (canonicalStatus) {
     const color = normalizeStatusValue(propagationStatus.status_bar_color);
     const label = propagationStatus.display_label
-      || (canonicalStatus === 'ready' ? 'Ready' : canonicalStatus === 'failed' ? 'Failed' : 'Processing');
+      || (canonicalStatus === 'ready' ? 'Ready' : canonicalStatus === 'partial' ? 'Partial' : canonicalStatus === 'failed' ? 'Failed' : 'Processing');
     return {
       key: canonicalStatus,
       label,
       stageLabel: propagationStatus.stage_label || label,
-      badgeStatus: canonicalStatus === 'ready' ? 'succeeded' : canonicalStatus === 'failed' ? 'failed' : 'pending',
-      barClassName: color === 'green' ? 'bg-emerald-500' : color === 'red' ? 'bg-red-500' : 'bg-amber-400',
+      badgeStatus: canonicalStatus === 'ready' ? 'succeeded' : canonicalStatus === 'failed' ? 'failed' : canonicalStatus === 'partial' ? 'needs_review' : 'pending',
+      barClassName: color === 'green' ? 'bg-emerald-500' : color === 'red' ? 'bg-red-500' : canonicalStatus === 'partial' ? 'bg-yellow-500' : 'bg-amber-400',
       description: propagationStatus.tooltip || propagationStatus.user_message || propagationStatus.accessibility_label || label,
       accessibilityLabel: propagationStatus.accessibility_label || propagationStatus.tooltip || label,
       userMessage: propagationStatus.user_message || propagationStatus.tooltip || label,
@@ -119,11 +119,11 @@ export function documentUserStatusForJobState(document = {}, { hasActiveProcessi
   if (statusKey === 'review') {
     return {
       ...status,
-      key: 'failed',
-      label: 'Failed',
+      key: 'partial',
+      label: 'Partial',
       stageLabel: 'Needs attention',
-      badgeStatus: 'failed',
-      barClassName: 'bg-red-500',
+      badgeStatus: 'needs_review',
+      barClassName: 'bg-yellow-500',
       description: 'This document needs attention before full propagation can finish.',
       accessibilityLabel: 'Document needs attention before full propagation can finish.',
       userMessage: 'This document needs attention before full propagation can finish.',
