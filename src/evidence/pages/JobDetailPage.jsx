@@ -17,6 +17,7 @@ import { useLocaleSettings } from '../context/LocaleContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { removalResultDetail, removalResultTitle } from '../utils/documentRemoval';
+import { documentUserStatus } from '../utils/documentStatus';
 import { formatDateTime } from '../utils/formatters';
 import {
   isDocumentProcessingRequest,
@@ -435,6 +436,8 @@ export default function JobDetailPage() {
   const drawerBatchDocument = previewDrawer.batchDocument || {};
   const drawerDocument = previewDrawer.document || {};
   const drawerDocumentStatus = previewDrawer.batchDocument ? jobProcessingDocumentStatus(previewDrawer.batchDocument) : null;
+  const drawerDocumentRollupStatus = drawerDocument.file_id ? documentUserStatus(drawerDocument) : null;
+  const drawerVisibleStatus = drawerDocumentRollupStatus || drawerDocumentStatus;
   const drawerFileId = drawerDocument.file_id || drawerBatchDocument.file_id || drawerBatchDocument.fileId || drawerBatchDocument.id;
   const drawerFileName = drawerDocument.original_filename || previewDrawer.previewFileName || jobProcessingDocumentName(drawerBatchDocument);
   const cleanupFileId = state.cleanupDocument?.file_id || state.cleanupDocument?.fileId || state.cleanupDocument?.id;
@@ -875,16 +878,21 @@ export default function JobDetailPage() {
                   <section className="rounded-lg border border-gray-200 bg-white p-4 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Current processing status')}</div>
-                        <div className="mt-1">
-                          {drawerDocumentStatus ? (
-                            <StatusBadge status={drawerDocumentStatus.badgeStatus} label={t(drawerDocumentStatus.label)} />
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Document status')}</div>
+                        <div className="mt-2 flex items-center gap-2">
+                          {drawerVisibleStatus ? (
+                            <>
+                              {drawerDocumentRollupStatus?.barClassName ? <span className={`h-9 w-1.5 rounded-full ${drawerDocumentRollupStatus.barClassName}`} aria-hidden="true" /> : null}
+                              <StatusBadge status={drawerVisibleStatus.badgeStatus} label={t(drawerVisibleStatus.label)} />
+                            </>
                           ) : (
                             <StatusBadge status="unknown" label={t('Needs review')} />
                           )}
                         </div>
-                        {drawerDocumentStatus?.message ? (
-                          <p className="mt-2 text-gray-600 dark:text-gray-400">{t(drawerDocumentStatus.message)}</p>
+                        {(drawerDocumentRollupStatus?.userMessage || drawerDocumentRollupStatus?.description || drawerDocumentStatus?.message) ? (
+                          <p className="mt-2 text-gray-600 dark:text-gray-400">
+                            {t(drawerDocumentRollupStatus?.userMessage || drawerDocumentRollupStatus?.description || drawerDocumentStatus.message)}
+                          </p>
                         ) : null}
                       </div>
                       <div>
@@ -894,15 +902,15 @@ export default function JobDetailPage() {
                         </p>
                       </div>
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Secure workspace copy')}</div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Source file')}</div>
                         <p className="mt-1 text-gray-900 dark:text-gray-100">
                           {drawerDocument.s3_key ? t('Available') : t('Not recorded')}
                         </p>
                       </div>
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Search readiness')}</div>
+                        <div className="text-xs font-semibold uppercase tracking-normal text-gray-500 dark:text-gray-400">{t('Current step')}</div>
                         <p className="mt-1 text-gray-900 dark:text-gray-100">
-                          {drawerDocument.query_readiness?.label || drawerDocument.query_readiness?.status || drawerDocumentStatus?.label || t('Needs review')}
+                          {drawerDocumentRollupStatus?.stageLabel || drawerDocument.query_readiness?.label || drawerDocument.query_readiness?.status || drawerDocumentStatus?.label || t('Needs review')}
                         </p>
                       </div>
                     </div>
@@ -939,7 +947,7 @@ export default function JobDetailPage() {
                   <section className="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Source file preview')}</h3>
-                      {drawerDocument.s3_key ? <StatusBadge status="configured" label={t('Secure workspace copy')} /> : <StatusBadge status="degraded" label={t('No secure copy')} />}
+                      {drawerVisibleStatus ? <StatusBadge status={drawerVisibleStatus.badgeStatus} label={t(drawerVisibleStatus.label)} /> : null}
                     </div>
                     {previewDrawer.previewLoading ? (
                       <p className="text-sm text-gray-600 dark:text-gray-400">{t('Loading source file preview...')}</p>

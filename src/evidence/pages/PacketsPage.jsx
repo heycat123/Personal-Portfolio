@@ -35,6 +35,7 @@ import { useCaseContext } from '../context/CaseContext';
 import { useOperatorMode } from '../context/OperatorModeContext';
 import { evidenceApi } from '../services/evidenceApi';
 import { evidenceCasePath } from '../utils/caseRouting';
+import { documentUserStatus } from '../utils/documentStatus';
 import { formatCount, formatDateTime, humanizeKey } from '../utils/formatters';
 
 const REQUIREMENT_STATUS_OPTIONS = [
@@ -610,6 +611,7 @@ function PacketDocumentPicker({
             documents.map((document) => {
               const fileId = documentFileId(document);
               const checked = selectedFileIds.includes(fileId);
+              const documentStatus = documentUserStatus(document);
               return (
                 <label
                   key={fileId || document.content_hash || documentDisplayName(document)}
@@ -627,7 +629,7 @@ function PacketDocumentPicker({
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
                       <span>{document.origin_label || document.source_provider || 'Documents'}</span>
                       {document.canonical_storage_label ? <span>{document.canonical_storage_label}</span> : null}
-                      {document.page_rows || document.page_count ? <span>Ready for search</span> : <span>Processing</span>}
+                      <span>{documentStatus.label}</span>
                     </div>
                   </div>
                 </label>
