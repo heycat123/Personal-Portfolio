@@ -27,6 +27,7 @@ const NAV_ITEMS = [
   { group: 'Workspace', label: 'Case Home', path: 'dashboard', icon: LayoutDashboard },
   { group: 'Workspace', label: 'Documents', path: 'documents', icon: FileText },
   { group: 'Workspace', label: 'Ask Documents', path: 'query', icon: MessageSquare },
+  { group: 'Review', label: 'Document categories', path: 'document-categories', icon: ClipboardCheck, requiresContribute: true },
   { group: 'Review', label: 'People & Contacts', path: 'entities', icon: ContactRound, requiresContribute: true },
   { group: 'Review', label: 'Packets', path: 'packets', icon: PackageCheck },
   { group: 'Sharing', label: 'Sharing & Lawyer Access', path: 'access', icon: ShieldCheck, requiresAccessManagement: true },

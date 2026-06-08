@@ -1,4 +1,4 @@
-import { CheckCircle2, Download, ExternalLink, FileText, ListChecks, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Download, ExternalLink, FileText, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import CategoryReviewPanel from '../components/CategoryReviewPanel';
@@ -32,7 +32,7 @@ import { formatDateTime } from '../utils/formatters';
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
-const DEFAULT_PROCESSING_FILTER = 'not_processed';
+const DEFAULT_PROCESSING_FILTER = '';
 const DEFAULT_CATEGORY_QA_LENS_ID = 'florida_relocation_best_interest';
 const STATUTE_FACTOR_OPTIONS = [
   { value: '7a', label: '61.13001(7)(a) - relationship and involvement' },
@@ -348,6 +348,91 @@ function PipelineDots({ document, showLabels = false, t = (value) => value }) {
   );
 }
 
+function normalizeStatusValue(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '_');
+}
+
+function documentUserStatus(document) {
+  const propagation = document?.propagation_status || document?.library_status || {};
+  const propagationStatus = typeof propagation === 'object' && propagation !== null ? propagation : {};
+  const canonicalStatus = normalizeStatusValue(propagationStatus.user_status || document?.user_status);
+  if (canonicalStatus) {
+    const color = normalizeStatusValue(propagationStatus.status_bar_color);
+    const label = propagationStatus.display_label
+      || (canonicalStatus === 'ready' ? 'Ready' : canonicalStatus === 'failed' ? 'Failed' : 'Processing');
+    return {
+      key: canonicalStatus,
+      label,
+      badgeStatus: canonicalStatus === 'ready' ? 'succeeded' : canonicalStatus === 'failed' ? 'failed' : 'pending',
+      barClassName: color === 'green' ? 'bg-emerald-500' : color === 'red' ? 'bg-red-500' : 'bg-amber-400',
+      description: propagationStatus.tooltip || propagationStatus.user_message || propagationStatus.accessibility_label || label,
+      accessibilityLabel: propagationStatus.accessibility_label || propagationStatus.tooltip || label,
+    };
+  }
+
+  const queryStatus = normalizeStatusValue(document?.query_readiness?.status);
+  const queryLabel = normalizeStatusValue(document?.query_readiness?.label);
+  const reviewState = normalizeStatusValue(document?.document_review_state || document?.review_status);
+  const processingStatus = normalizeStatusValue(document?.processing_status);
+  const pipelineItems = pipelineReadinessItems(document);
+  const pipelineStatuses = pipelineItems.map((item) => normalizeStatusValue(item.status));
+  const combined = [queryStatus, queryLabel, reviewState, processingStatus, ...pipelineStatuses].filter(Boolean);
+
+  if (combined.some((status) => ['failed', 'error', 'blocked', 'needs_attention', 'dependency_missing'].includes(status))) {
+    return {
+      key: 'failed',
+      label: 'Failed',
+      badgeStatus: 'failed',
+      barClassName: 'bg-red-500',
+      description: 'This document needs attention before processing can finish.',
+    };
+  }
+
+  if (combined.some((status) => ['needs_review', 'needs_ocr', 'unsupported_type', 'empty_text', 'ready_with_review_needed'].includes(status))) {
+    return {
+      key: 'review',
+      label: 'Ready with review needed',
+      badgeStatus: 'needs_review',
+      barClassName: 'bg-amber-400',
+      description: 'This document is in the workspace, but something still needs review.',
+    };
+  }
+
+  if (
+    queryStatus === 'ready'
+    || queryLabel === 'ready_for_search'
+    || processingStatus === 'ready'
+    || pipelineStatuses.includes('complete')
+    || pipelineStatuses.includes('succeeded')
+  ) {
+    return {
+      key: 'ready',
+      label: 'Ready',
+      badgeStatus: 'succeeded',
+      barClassName: 'bg-emerald-500',
+      description: 'This document is ready for review and Ask Documents.',
+    };
+  }
+
+  return {
+    key: 'processing',
+    label: 'Processing',
+    badgeStatus: 'pending',
+    barClassName: 'bg-amber-400',
+    description: 'This document is still being prepared for review and Ask Documents.',
+  };
+}
+
+function DocumentRowStatus({ document, t }) {
+  const status = documentUserStatus(document);
+  return (
+    <div className="flex min-w-[9rem] items-center gap-2" title={t(status.description)} aria-label={t(status.accessibilityLabel || status.description)}>
+      <span className={`h-10 w-1.5 rounded-full ${status.barClassName}`} aria-hidden="true" />
+      <StatusBadge status={status.badgeStatus} label={t(status.label)} />
+    </div>
+  );
+}
+
 function facetOptions(facets, key) {
   return (facets?.[key] || []).map((item) => ({
     value: item.value,
@@ -401,53 +486,6 @@ function DocumentSourcesStrip({ caseId, facets, t, canManageSources = false }) {
   );
 }
 
-function DocumentsViewTabs({ activeView, onChange, t, canReview = true }) {
-  const tabs = [
-    {
-      id: 'library',
-      label: t('Library'),
-      icon: FileText,
-      detail: t('Find, preview, remove, export, and organize files.'),
-    },
-    {
-      id: 'review',
-      label: t('Review'),
-      icon: ListChecks,
-      detail: t('Review how documents are grouped and what still needs attention.'),
-    },
-  ].filter((tab) => tab.id !== 'review' || canReview);
-
-  return (
-    <nav className="mb-5 grid gap-2 rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-2 shadow-[var(--lakai-shadow-panel)] sm:grid-cols-2" aria-label={t('Document views')}>
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const selected = activeView === tab.id;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => onChange(tab.id)}
-            className={`flex min-h-14 items-start gap-3 rounded-xl px-3 py-3 text-left transition ${
-              selected
-                ? 'bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)] shadow-sm'
-                : 'text-[var(--lakai-text-muted)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]'
-            }`}
-            aria-current={selected ? 'page' : undefined}
-          >
-            <Icon className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-            <span className="min-w-0">
-              <span className="block font-semibold">{tab.label}</span>
-              <span className={`mt-0.5 block text-xs leading-5 ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>
-                {tab.detail}
-              </span>
-            </span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
 function selectedPipelineDomains(value) {
   return String(value || '')
     .split(',')
@@ -482,8 +520,7 @@ export default function DocumentsPage() {
   const { caseId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const attentionContext = String(searchParams.get('attention') || '').trim();
-  const activeDocumentsView = searchParams.get('view') === 'review' ? 'review' : 'library';
-  const isReviewView = activeDocumentsView === 'review';
+  const isReviewView = false;
   const initialTableState = {
     ...readStoredDocumentsTableState(caseId),
     ...readUrlDocumentsTableState(searchParams),
@@ -511,6 +548,7 @@ export default function DocumentsPage() {
     inventorySummary: {},
     documentsPanelStatus: null,
     documentProcessingReadiness: null,
+    documentsLibrarySummary: null,
     fingerprint: null,
   });
   const [drawer, setDrawer] = useState({
@@ -625,6 +663,7 @@ export default function DocumentsPage() {
         inventorySummary: result.data?.inventory_summary || {},
         documentsPanelStatus: result.data?.documents_panel_status || null,
         documentProcessingReadiness: result.data?.document_processing_readiness || null,
+        documentsLibrarySummary: result.data?.documents_library_summary || null,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -901,9 +940,22 @@ export default function DocumentsPage() {
   const resetTable = () => {
     setQueryDraft('');
     setAppliedQuery('');
-    setFilterValues({ processing_status: DEFAULT_PROCESSING_FILTER });
+    setFilterValues({});
     setSort(DEFAULT_SORT);
     setOffset(0);
+  };
+
+  const setDocumentStatusFilter = (status) => {
+    setOffset(0);
+    setFilterValues((current) => {
+      const next = { ...current };
+      if (status) {
+        next.processing_status = status;
+      } else {
+        delete next.processing_status;
+      }
+      return next;
+    });
   };
 
   const openDocumentDrawer = useCallback(async (document) => {
@@ -1096,7 +1148,7 @@ export default function DocumentsPage() {
     {
       key: 'original_filename',
       header: t('File'),
-      headerClassName: 'w-[26%]',
+      headerClassName: 'w-[38%]',
       className: 'min-w-0',
       help: t('The file name recorded for this evidence item. Click the name for the document detail page; click the row for the drawer.'),
       filterPlaceholder: t('Filename or hash'),
@@ -1114,55 +1166,27 @@ export default function DocumentsPage() {
     {
       key: 'origin_label',
       header: t('Origin'),
-      headerClassName: 'w-[11%]',
+      headerClassName: 'w-[16%]',
       help: t('Where the item originally came from, such as Google Drive, web upload, or a communication export.'),
       filterOptions: facetOptions(state.facets, 'origin_label'),
       filterPlaceholder: t('Google Drive, upload, SMS'),
       render: (document) => document.origin_label || 'unknown',
     },
+    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[18%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
     {
-      key: 'evidence_type_label',
-      header: t('Category'),
-      headerClassName: 'w-[11%]',
-      help: t('The category used to organize this document. Categories are review aids and do not decide legal importance.'),
-      filterOptions: facetOptions(state.facets, 'evidence_type_label'),
-      filterPlaceholder: t('Document or communication'),
-      render: (document) => documentKindLabel(document),
-    },
-    {
-      key: 'legal_factor_code',
-      header: t('Issue Tags'),
+      key: 'processing_status',
+      header: t('Status'),
       headerClassName: 'w-[18%]',
       sortable: false,
-      filterOptions: facetOptions(state.facets, 'legal_factor_code').length ? facetOptions(state.facets, 'legal_factor_code') : STATUTE_FACTOR_OPTIONS,
-      filterPlaceholder: t('parenting plan, time-sharing, review'),
-      help: t('Filter by organization tags from processing. Tags are review aids and are not legal conclusions.'),
-      render: (document) => <FactorTags document={document} t={t} compact />,
+      filterOptions: [
+        { value: 'ready_for_search', label: t('Ready') },
+        { value: 'not_processed', label: t('Processing') },
+        { value: 'failed', label: t('Failed') },
+      ],
+      filterPlaceholder: t('Ready, processing, failed'),
+      help: t('A simple rollup of whether this document is ready, still processing, or needs attention.'),
+      render: (document) => <DocumentRowStatus document={documentDetails[document.file_id]?.document || document} t={t} />,
     },
-    {
-      key: 'canonical_storage_label',
-      header: t('Source copy'),
-      headerClassName: 'w-[12%]',
-      help: t('Whether Evidence AI has copied the source file into the secure workspace or is still only listing it from the connected source.'),
-      filterOptions: facetOptions(state.facets, 'canonical_storage_label'),
-      filterPlaceholder: t('Synced, pending, legacy'),
-      render: (document) => <StorageSyncBadge document={document} t={t} />,
-    },
-    {
-      key: 'pipeline_status',
-      header: t('Search readiness'),
-      headerClassName: 'w-[13%]',
-      filterable: true,
-      sortable: false,
-      filterMulti: true,
-      filterOptions: facetOptions(state.facets, 'pipeline_status'),
-      filterLabel: t('Require completed steps'),
-      filterHint: t('Selected processing filters are combined with AND.'),
-      help: t('Shows the same readiness steps used in the document drawer: indexed for review, search ready, and relationship map ready.'),
-      render: (document) => <PipelineDots document={documentDetails[document.file_id]?.document || document} t={t} />,
-    },
-    { key: 'page_count', header: t('Pages'), headerClassName: 'w-[5%]', filterType: 'number', render: (document) => document.page_count ?? '0' },
-    { key: 'updated_at', header: t('Updated'), headerClassName: 'w-[10%]', filterable: false, render: (document) => formatDateTime(document.updated_at || document.created_at) },
   ]), [caseId, documentDetails, state.facets, t]);
 
   const appliedFilters = useMemo(() =>
@@ -1181,7 +1205,12 @@ export default function DocumentsPage() {
           return { id: key, label: `${column?.header || key}: ${labels}` };
         }
         if (key === 'processing_status') {
-          return { id: key, label: t(value === 'not_processed' ? 'Showing documents still processing' : 'Showing search-ready documents') };
+          const labels = {
+            ready_for_search: 'Ready',
+            not_processed: 'Processing',
+            failed: 'Failed',
+          };
+          return { id: key, label: `${t('Status')}: ${t(labels[value] || value)}` };
         }
         const optionLabel = (column?.filterOptions || []).find((option) => option.value === value)?.label || value;
         return { id: key, label: `${column?.header || key}: ${optionLabel}` };
@@ -1199,11 +1228,16 @@ export default function DocumentsPage() {
   const firstVisibleRow = state.total ? offset + 1 : 0;
   const lastVisibleRow = Math.min(state.total, offset + state.documents.length);
   const inventorySummary = useMemo(() => state.inventorySummary || {}, [state.inventorySummary]);
+  const librarySummary = state.documentsLibrarySummary || {};
+  const libraryTileById = useMemo(() => {
+    const libraryTiles = Array.isArray(librarySummary.tiles) ? librarySummary.tiles : [];
+    const entries = libraryTiles
+      .map((tile) => [String(tile.id || tile.key || tile.label || '').toLowerCase().replace(/\s+/g, '_'), tile])
+      .filter(([key]) => key);
+    return Object.fromEntries(entries);
+  }, [librarySummary.tiles]);
   const extractedFiles = inventorySummary.extracted_files || 0;
-  const s3SyncedFiles = inventorySummary.extracted_files_synced_to_s3 || 0;
-  const missingS3Files = inventorySummary.extracted_files_missing_s3 || 0;
   const s3OnlyFiles = inventorySummary.s3_files_not_extracted || 0;
-  const s3SyncedRecords = inventorySummary.s3_synced_records || 0;
   const processingRequestData = processingRequest.result || {};
   const processingRequestJobId = processingRequestData.job?.job_id || processingRequestData.existing_job?.job_id || processingRequestData.job_id || null;
   const processingBatchDocumentCount = Number(
@@ -1289,9 +1323,7 @@ export default function DocumentsPage() {
     <div>
       <PageHeader
         title="Documents"
-        description={isReviewView
-          ? 'Review how documents are grouped and what still needs attention before sharing or building packets.'
-          : `${state.total} ${t('documents in this workspace')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${extractedFiles} ${t('ready for organization and search')}; ${s3SyncedFiles} ${t('with secure workspace copies')}; ${missingS3Files} ${t('need source-copy review')}.`}
+        description={`${state.total} ${t('documents in this workspace')}${appliedQuery ? ` ${t('matching')} "${appliedQuery}"` : ''}. ${t('Use this library to find, preview, remove, export, and organize files.')}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {canContribute ? (
@@ -1319,7 +1351,6 @@ export default function DocumentsPage() {
       />
 
       <DocumentSourcesStrip caseId={caseId} facets={state.facets} t={t} canManageSources={canContribute} />
-      <DocumentsViewTabs activeView={activeDocumentsView} onChange={setDocumentsView} t={t} canReview={canReviewDocuments} />
 
       {state.error ? <div className="mb-5"><ErrorPanel error={state.error} onRetry={loadDocuments} /></div> : null}
       {exportState.error ? <div className="mb-5"><ErrorPanel title="Document export failed" error={exportState.error} /></div> : null}
@@ -1455,27 +1486,56 @@ export default function DocumentsPage() {
         </section>
       ) : null}
 
-      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Ready for search')}</div>
-          <div className="mt-1 text-2xl font-semibold text-[var(--lakai-text)]">{extractedFiles}</div>
-          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Documents recorded for organization and Ask Documents')}</div>
-        </div>
-        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Secure workspace copies')}</div>
-          <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{s3SyncedFiles}</div>
-          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{s3SyncedRecords} {t('secure workspace copy records')}</div>
-        </div>
-        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Needs source-copy review')}</div>
-          <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">{missingS3Files}</div>
-          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Files that need a secure workspace copy confirmed before search')}</div>
-        </div>
-        <div className="rounded-2xl border border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] p-4 shadow-[var(--lakai-shadow-panel)]">
-          <div className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Not processed yet')}</div>
-          <div className="mt-1 text-2xl font-semibold text-[var(--lakai-primary)]">{s3OnlyFiles}</div>
-          <div className="mt-1 text-sm text-[var(--lakai-text-muted)]">{t('Files copied to the workspace but not ready for search')}</div>
-        </div>
+      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label={t('Document status filters')}>
+        {[
+          {
+            id: 'all',
+            label: libraryTileById.all_documents?.label || 'All documents',
+            value: libraryTileById.all_documents?.count ?? inventorySummary.total_documents ?? inventorySummary.document_rows ?? state.total,
+            detail: libraryTileById.all_documents?.helper || libraryTileById.all_documents?.description || 'Every file in this case library',
+            filter: '',
+          },
+          {
+            id: 'ready',
+            label: libraryTileById.ready?.label || 'Ready',
+            value: libraryTileById.ready?.count ?? extractedFiles,
+            detail: libraryTileById.ready?.helper || libraryTileById.ready?.description || 'Documents ready for review and Ask Documents',
+            filter: 'ready_for_search',
+          },
+          {
+            id: 'processing',
+            label: libraryTileById.processing?.label || 'Processing',
+            value: libraryTileById.processing?.count ?? s3OnlyFiles,
+            detail: libraryTileById.processing?.helper || libraryTileById.processing?.description || 'Documents still being prepared',
+            filter: 'not_processed',
+          },
+          {
+            id: 'failed',
+            label: libraryTileById.failed?.label || 'Failed',
+            value: libraryTileById.failed?.count ?? inventorySummary.failed_documents ?? inventorySummary.failed_document_rows ?? 0,
+            detail: libraryTileById.failed?.helper || libraryTileById.failed?.description || 'Documents that need attention',
+            filter: 'failed',
+          },
+        ].map((tile) => {
+          const selected = String(filterValues.processing_status || '') === tile.filter;
+          return (
+            <button
+              key={tile.id}
+              type="button"
+              onClick={() => setDocumentStatusFilter(tile.filter)}
+              className={`rounded-2xl border p-4 text-left shadow-[var(--lakai-shadow-panel)] transition ${
+                selected
+                  ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)]'
+                  : 'border-[var(--lakai-border-soft)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface-muted)]'
+              }`}
+              aria-pressed={selected}
+            >
+              <div className={`text-xs font-semibold uppercase tracking-normal ${selected ? 'text-[var(--lakai-primary-text)]/80' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.label)}</div>
+              <div className="mt-1 text-2xl font-semibold">{tile.value}</div>
+              <div className={`mt-1 text-sm ${selected ? 'text-[var(--lakai-primary-text)]/85' : 'text-[var(--lakai-text-muted)]'}`}>{t(tile.detail)}</div>
+            </button>
+          );
+        })}
       </div>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
