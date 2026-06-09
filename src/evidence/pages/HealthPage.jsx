@@ -176,6 +176,7 @@ const SOURCE_STABILITY_JOB_TYPES = new Set([
 const DOCUMENT_PROCESSING_JOB_TYPES = new Set([
   'document_text_search_processing',
   'document_processing_request',
+  'source_sync_full_propagation',
 ]);
 
 function StatusActionCard({ title, detail, action, secondaryAction }) {

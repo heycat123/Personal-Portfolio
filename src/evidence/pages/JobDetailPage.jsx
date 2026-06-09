@@ -21,6 +21,7 @@ import { documentUserStatus } from '../utils/documentStatus';
 import { formatDateTime } from '../utils/formatters';
 import {
   isDocumentProcessingRequest,
+  jobDocumentScope,
   jobDisplayTitle,
   jobProcessingDocumentName,
   jobProcessingDocuments,
@@ -410,6 +411,8 @@ export default function JobDetailPage() {
   }, [loadJob, shouldLivePoll]);
 
   const isProcessingRequest = isDocumentProcessingRequest(job);
+  const documentScope = job ? jobDocumentScope(job) : null;
+  const processingWindow = documentScope?.processing_window || {};
   const sourceAlignmentNeedsReview = isSourceAlignmentNeedsReview(job, progress);
   const canViewJobDetail = Boolean(!job || canSeeOperations || isProcessingRequest);
   const canCancel = Boolean(progress?.canCancel);
@@ -421,6 +424,15 @@ export default function JobDetailPage() {
     ? jobProcessingDocuments(job).filter((document) => !['excluded_from_case', 'workspace_copy_deleted'].includes(String(document?.status || '').toLowerCase()))
     : [];
   const processingDocumentCount = isProcessingRequest ? jobProcessingRequestedCount(job) : 0;
+  const hasScopeCounts = Boolean(documentScope && Number.isFinite(Number(documentScope.total)));
+  const scopeCounts = hasScopeCounts
+    ? [
+      { key: 'ready', label: 'Ready', value: documentScope.ready || 0 },
+      { key: 'processing', label: 'Processing', value: documentScope.processing || 0 },
+      { key: 'pending', label: 'Waiting', value: documentScope.pending || 0 },
+      { key: 'failed', label: 'Needs attention', value: documentScope.failed || 0 },
+    ]
+    : [];
   const excludedProcessingDocumentCount = isProcessingRequest
     ? Math.max(0, (processingDocumentCount || 0) - processingDocuments.length)
     : 0;
@@ -667,7 +679,9 @@ export default function JobDetailPage() {
                 <div>
                   <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents in this processing batch')}</h2>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {excludedProcessingDocumentCount
+                    {documentScope
+                      ? t('{count} document row(s) are in this batch.', { count: processingDocumentCount || processingDocuments.length })
+                      : excludedProcessingDocumentCount
                       ? t('{visible} file(s) are still shown in this batch. {total} copied file(s) were included when processing started.', {
                         visible: processingDocuments.length,
                         total: processingDocumentCount,
@@ -675,15 +689,38 @@ export default function JobDetailPage() {
                       : t('{count} copied file(s) are included in this processing batch.', { count: processingDocumentCount || processingDocuments.length })}
                     {processingUniqueHashes ? ` ${t('{count} unique file hash(es).', { count: processingUniqueHashes })}` : ''}
                   </p>
+                  {scopeCounts.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {scopeCounts.map((item) => (
+                        <span
+                          key={item.key}
+                          className="rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200"
+                        >
+                          {t(item.label)}: {item.value}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('Each listed file shows its current text/search processing state. Files that need OCR or another extractor will stay marked for review.')}
+                    {documentScope
+                      ? t('Each listed row uses the same status source as Documents. Ready means full propagation is complete; Processing means an active batch is working; Needs attention means the file needs a restart or review.')
+                      : t('Each listed file shows its current text/search processing state. Files that need OCR or another extractor will stay marked for review.')}
                   </p>
+                  {documentScope && (processingWindow.message || processingWindow.window_size) ? (
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      {processingWindow.message
+                        ? t(processingWindow.message)
+                        : t('Evidence AI works through up to {count} document row(s) at a time.', { count: processingWindow.window_size })}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {t('If a file does not belong in this case, remove it from workspace processing. Soft remove keeps the secure workspace copy. Delete workspace copy removes the secure cloud copy too. The original source file is not deleted.')}
                   </p>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {t('If you want to keep the file, resolve it by uploading or exporting a searchable copy, such as a PDF, image, text file, or transcript, then start text/search processing again.')}
-                  </p>
+                  {!documentScope ? (
+                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      {t('If you want to keep the file, resolve it by uploading or exporting a searchable copy, such as a PDF, image, text file, or transcript, then start text/search processing again.')}
+                    </p>
+                  ) : null}
                 </div>
                 <Link
                   to={`/evidence/cases/${caseId}/documents`}

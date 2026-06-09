@@ -24,8 +24,12 @@ export function isDocumentTextSearchProcessing(job) {
   return job?.job_type === 'document_text_search_processing';
 }
 
+export function isSourceSyncFullPropagation(job) {
+  return job?.job_type === 'source_sync_full_propagation';
+}
+
 export function isDocumentProcessingRequest(job) {
-  return isLegacyDocumentProcessingRequest(job) || isDocumentTextSearchProcessing(job);
+  return isLegacyDocumentProcessingRequest(job) || isDocumentTextSearchProcessing(job) || isSourceSyncFullPropagation(job);
 }
 
 function resultPayload(job) {
@@ -155,6 +159,9 @@ function requestRecorded(job, status, result) {
 }
 
 export function jobDisplayTitle(job) {
+  if (isSourceSyncFullPropagation(job)) {
+    return 'Full document propagation';
+  }
   if (isDocumentTextSearchProcessing(job)) {
     return 'Text/search processing';
   }
@@ -164,7 +171,23 @@ export function jobDisplayTitle(job) {
   return humanizeKey(job?.job_type || 'Job');
 }
 
+export function jobDocumentScope(job) {
+  const input = inputPayload(job);
+  const result = resultPayload(job);
+  const display = displayWrapper(job);
+  return firstObject(
+    job?.document_scope,
+    display.document_scope,
+    result.document_scope,
+    input.document_scope,
+  );
+}
+
 export function jobProcessingDocuments(job) {
+  const scopeDocuments = jobDocumentScope(job)?.documents;
+  if (Array.isArray(scopeDocuments) && scopeDocuments.length) {
+    return scopeDocuments;
+  }
   const input = inputPayload(job);
   const result = resultPayload(job);
   const nestedInput = result?.input_json || {};
@@ -182,8 +205,10 @@ export function jobProcessingRequestedCount(job) {
   const input = inputPayload(job);
   const result = resultPayload(job);
   const nestedInput = result?.input_json || {};
+  const scope = jobDocumentScope(job);
   const value = Number(
-    result.requested_document_count
+    scope?.total
+    || result.requested_document_count
     || input.requested_document_count
     || nestedInput.requested_document_count
     || jobProcessingDocuments(job).length
@@ -211,8 +236,13 @@ export function jobProcessingDocumentName(document) {
 }
 
 export function jobProcessingDocumentStatus(document) {
-  const rawStatus = String(document?.status || 'waiting').toLowerCase();
+  const rawStatus = String(document?.user_status || document?.status || 'waiting').toLowerCase();
+  const explicitLabel = firstString(document?.display_label, document?.stage_label, document?.detail_label);
+  const explicitMessage = firstString(document?.message, document?.user_message, document?.detail_label, document?.stage_label);
   const labels = {
+    ready: 'Ready',
+    processing: 'Processing',
+    pending: 'Waiting',
     waiting: 'Waiting',
     queued: 'Waiting',
     reading_text: 'Reading text',
@@ -230,6 +260,9 @@ export function jobProcessingDocumentStatus(document) {
     workspace_copy_deleted: 'Workspace copy deleted',
   };
   const badgeStatuses = {
+    ready: 'succeeded',
+    processing: 'running',
+    pending: 'queued',
     waiting: 'pending',
     queued: 'pending',
     reading_text: 'running',
@@ -248,9 +281,9 @@ export function jobProcessingDocumentStatus(document) {
   };
   return {
     rawStatus,
-    label: labels[rawStatus] || humanizeKey(rawStatus),
+    label: explicitLabel || labels[rawStatus] || humanizeKey(rawStatus),
     badgeStatus: badgeStatuses[rawStatus] || 'unknown',
-    message: userFacingProcessingText(document?.message || 'Waiting for text/search processing.'),
+    message: userFacingProcessingText(explicitMessage || 'Waiting for document propagation.'),
     progressPercent: clampPercent(document?.progress_percent) ?? documentProgressFallback(rawStatus),
   };
 }
@@ -266,6 +299,7 @@ function documentProgressFallback(rawStatus) {
     return 75;
   }
   if ([
+    'ready',
     'processed',
     'needs_ocr',
     'unsupported_type',
@@ -279,6 +313,9 @@ function documentProgressFallback(rawStatus) {
     'workspace_copy_deleted',
   ].includes(rawStatus)) {
     return 100;
+  }
+  if (rawStatus === 'processing') {
+    return 50;
   }
   return 0;
 }
@@ -296,8 +333,8 @@ function documentProgressSummary(job) {
   const needsAttention = statuses.filter((status) => ['failed', 'degraded'].includes(status.badgeStatus)).length;
   const needsReview = statuses.filter((status) => status.badgeStatus === 'pending' && status.progressPercent === 100).length;
   const running = statuses.filter((status) => status.badgeStatus === 'running').length;
-  const ready = statuses.filter((status) => status.rawStatus === 'processed').length;
-  const waiting = statuses.filter((status) => ['waiting', 'queued'].includes(status.rawStatus)).length;
+  const ready = statuses.filter((status) => ['processed', 'ready'].includes(status.rawStatus)).length;
+  const waiting = statuses.filter((status) => ['waiting', 'queued', 'pending'].includes(status.rawStatus)).length;
 
   let label = 'Processing documents';
   let badgeStatus = running ? 'running' : 'pending';
@@ -312,9 +349,9 @@ function documentProgressSummary(job) {
     badgeStatus = 'pending';
     currentStep = 'Review files that need another extractor';
   } else if (ready === statuses.length) {
-    label = 'Search step complete';
+    label = isSourceSyncFullPropagation(job) ? 'Ready' : 'Search step complete';
     badgeStatus = 'succeeded';
-    currentStep = 'Text/search step complete';
+    currentStep = isSourceSyncFullPropagation(job) ? 'Full propagation complete' : 'Text/search step complete';
   } else if (running) {
     currentStep = statuses.find((status) => status.badgeStatus === 'running')?.label || 'Processing documents';
   } else if (waiting) {
