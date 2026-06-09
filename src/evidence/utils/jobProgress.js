@@ -614,6 +614,7 @@ export function jobProgressModel(job) {
     result.full_propagation_status,
     display.full_propagation_status,
   ) || '').toLowerCase();
+  const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
   const fullPropagationComplete = [
     'complete',
     'completed',
@@ -646,6 +647,34 @@ export function jobProgressModel(job) {
     display.progress_percent,
     resolution.progress_percent,
   ));
+  const sourceSyncAttentionText = [
+    workflowStatus,
+    userStatus,
+    userJobStatus.display_label,
+    userJobStatus.status_label,
+    userJobStatus.user_message,
+    userJobStatus.message,
+    job?.display_status,
+    job?.display_message,
+    result.display_status,
+    result.display_message,
+    display.display_status,
+    display.display_message,
+    result.message,
+  ].filter(Boolean).join(' ').toLowerCase();
+  const sourceSyncNeedsAttention = isSourceSyncFullPropagation(job)
+    && !ACTIVE_STATUSES.has(status)
+    && (
+      sourceSyncAttentionText.includes('needs_review')
+      || sourceSyncAttentionText.includes('needs review')
+      || sourceSyncAttentionText.includes('needs_attention')
+      || sourceSyncAttentionText.includes('needs attention')
+      || sourceSyncAttentionText.includes('gap')
+      || (backendPercent !== null && backendPercent < 100)
+    );
+  const sourceSyncAttentionMessage = sourceSyncNeedsAttention
+    ? 'Full propagation did not finish cleanly. Review the affected documents or retry the propagation job when available.'
+    : null;
   const backendLooksGeneric = ACTIVE_STATUSES.has(status)
     && !documentSummary
     && !isDocumentProcessingRequest(job)
@@ -661,6 +690,7 @@ export function jobProgressModel(job) {
   const progressEstimated = Boolean(estimatedProgress);
   const progressPercentLabel = estimatedProgress?.progressPercentLabel || `${progressPercent}%`;
   const displayStatusLabel = userFacingProcessingText(firstString(
+    sourceSyncNeedsAttention ? 'Needs attention' : null,
     propagationContinues ? 'Processing' : null,
     propagationNeedsSupport ? 'Ready with review needed' : null,
     userJobStatus.display_label,
@@ -676,6 +706,7 @@ export function jobProgressModel(job) {
     fallbackStatusLabel(status),
   ));
   const currentStep = userFacingProcessingText(firstString(
+    sourceSyncNeedsAttention ? 'Full propagation needs review' : null,
     propagationContinues ? 'Relationship-map and source propagation' : null,
     propagationNeedsSupport ? 'Relationship-map propagation needs support' : null,
     userJobStatus.stage_label,
@@ -689,6 +720,7 @@ export function jobProgressModel(job) {
     fallbackCurrentStep(cancelRequested ? 'cancelling' : status),
   ));
   const progressText = userFacingProcessingText(firstString(
+    sourceSyncAttentionMessage,
     propagationContinuationMessage,
     userJobStatus.user_message,
     userJobStatus.message,
@@ -708,6 +740,13 @@ export function jobProgressModel(job) {
     || (isDocumentProcessingRequest(job)
       ? documentProcessingFallbackSteps(recorded || ACTIVE_STATUSES.has(status), failed)
       : fallbackSteps(cancelRequested ? 'cancelling' : status));
+  const effectiveSteps = sourceSyncNeedsAttention && steps.length
+    ? steps.map((step, index) => (
+      index === steps.length - 1
+        ? { ...step, label: step.label === 'Ready / Needs review' ? 'Needs review' : step.label, state: 'blocked' }
+        : step
+    ))
+    : steps;
 
   const count = Number(
     result.requested_document_count
@@ -717,6 +756,7 @@ export function jobProgressModel(job) {
     || 0,
   );
   const userMessage = userFacingProcessingText(firstString(
+    sourceSyncAttentionMessage,
     propagationContinuationMessage,
     userJobStatus.user_message,
     userJobStatus.message,
@@ -744,8 +784,9 @@ export function jobProgressModel(job) {
                 ? 'This job needs review before it can continue.'
                 : 'Refresh status or contact support if this does not change.');
 
-  const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
-  const effectiveUserStatus = propagationContinues
+  const effectiveUserStatus = sourceSyncNeedsAttention
+    ? 'failed'
+    : propagationContinues
     ? 'processing'
     : propagationNeedsSupport
       ? 'ready_with_review_needed'
@@ -832,9 +873,9 @@ export function jobProgressModel(job) {
     message: userMessage || userFacingProcessingText(fallbackMessage),
     nextActionLabel,
     nextActionHash: isDocumentProcessingRequest(job) ? 'search-readiness-resolution' : null,
-    steps,
-    completedSteps: steps.filter((step) => step.state === 'complete').length,
-    totalSteps: firstNumber(job?.total_steps, result.total_steps, display.total_steps) || steps.length || 1,
+    steps: effectiveSteps,
+    completedSteps: effectiveSteps.filter((step) => step.state === 'complete').length,
+    totalSteps: firstNumber(job?.total_steps, result.total_steps, display.total_steps) || effectiveSteps.length || 1,
     currentStep,
     progressLabel: currentStep,
     rawStatusLabel: humanizeKey(status),

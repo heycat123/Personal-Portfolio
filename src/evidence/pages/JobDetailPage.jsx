@@ -413,6 +413,9 @@ export default function JobDetailPage() {
   const isProcessingRequest = isDocumentProcessingRequest(job);
   const documentScope = job ? jobDocumentScope(job) : null;
   const processingWindow = documentScope?.processing_window || {};
+  const processingWindowSize = Math.min(10, Math.max(0, Number(processingWindow.window_size) || 0));
+  const processingWindowActive = Math.min(processingWindowSize, Math.max(0, Number(processingWindow.active_count) || 0));
+  const processingWindowPending = Math.max(0, Number(processingWindow.pending_count) || 0);
   const sourceAlignmentNeedsReview = isSourceAlignmentNeedsReview(job, progress);
   const canViewJobDetail = Boolean(!job || canSeeOperations || isProcessingRequest);
   const canCancel = Boolean(progress?.canCancel);
@@ -712,6 +715,39 @@ export default function JobDetailPage() {
                         ? t(processingWindow.message)
                         : t('Evidence AI works through up to {count} document row(s) at a time.', { count: processingWindow.window_size })}
                     </p>
+                  ) : null}
+                  {documentScope && processingWindowSize ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-semibold">{t('Processing window')}</div>
+                        <div className="text-xs">
+                          {t('{active} active of {total}. {waiting} waiting in this batch.', {
+                            active: processingWindowActive,
+                            total: processingWindow.window_size,
+                            waiting: processingWindowPending,
+                          })}
+                        </div>
+                      </div>
+                      <div
+                        className="mt-2 grid gap-1"
+                        style={{ gridTemplateColumns: `repeat(${processingWindowSize}, minmax(0, 1fr))` }}
+                        aria-label={t('{active} active document row(s) out of a {total}-document processing window.', {
+                          active: processingWindowActive,
+                          total: processingWindow.window_size,
+                        })}
+                      >
+                        {Array.from({ length: processingWindowSize }, (_, index) => `slot-${index}`).map((slot, index) => {
+                          const active = index < processingWindowActive;
+                          return (
+                            <span
+                              key={slot}
+                              className={`h-2 rounded-full ${active ? 'animate-pulse bg-amber-500' : 'bg-gray-200 dark:bg-gray-800'}`}
+                              title={active ? t('Processing now') : t('Waiting for this processing window')}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
                   ) : null}
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {t('If a file does not belong in this case, remove it from workspace processing. Soft remove keeps the secure workspace copy. Delete workspace copy removes the secure cloud copy too. The original source file is not deleted.')}
