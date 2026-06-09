@@ -235,6 +235,7 @@ export default function DataTable({
   mobileMetrics,
   mobileActions,
   toolbar,
+  loadingContent = null,
   tableClassName = '',
 }) {
   const { t } = useLocaleSettings();
@@ -263,6 +264,41 @@ export default function DataTable({
     }
     onRowSelect(row);
   };
+
+  if (!hasRows && loading) {
+    return (
+      <div className={tableClassName}>
+        {toolbar ? <div className="mb-3">{toolbar}</div> : null}
+        {(sortLabel || activeFilterLabels.length) ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {sortLabel ? (
+              <span className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-200">
+                {sortLabel}
+              </span>
+            ) : null}
+            {activeFilterLabels.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => onClearFilter?.(filter.id)}
+                className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-100"
+                title={t('Remove this filter')}
+              >
+                {filter.label}
+                <X size={12} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {loadingContent || (
+          <div className="rounded-lg border border-gray-200 bg-white px-4 py-8 text-center text-sm text-gray-500 shadow-sm dark:border-gray-800 dark:bg-[#101820] dark:text-gray-400">
+            {emptyTitle}
+          </div>
+        )}
+        {renderPagination()}
+      </div>
+    );
+  }
 
   if (!hasRows && !loading) {
     const hasActiveFilters = activeFilterLabels.length > 0;
@@ -365,7 +401,7 @@ export default function DataTable({
     );
   };
 
-  const renderPagination = () => {
+  function renderPagination() {
     if (!pagination) {
       return null;
     }
@@ -419,7 +455,7 @@ export default function DataTable({
         </div>
       </div>
     );
-  };
+  }
 
   return (
     <div className={tableClassName}>
