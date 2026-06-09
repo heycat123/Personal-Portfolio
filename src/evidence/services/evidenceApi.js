@@ -296,6 +296,23 @@ export const evidenceApi = {
       ...options,
       method: 'DELETE',
     }),
+  createPacketRequirementFolder: (caseId, packetId, requirementId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/folders`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
+  updatePacketRequirementFolder: (caseId, packetId, requirementId, folderId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/folders/${encodeURIComponent(folderId)}`), {
+      ...options,
+      method: 'PATCH',
+      body: payload,
+    }),
+  deletePacketRequirementFolder: (caseId, packetId, requirementId, folderId, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/folders/${encodeURIComponent(folderId)}`), {
+      ...options,
+      method: 'DELETE',
+    }),
   getCaseSummary: (caseId, options) => request(casePath(caseId, '/summary'), options),
   getReadinessResolvePlan: (caseId, options) =>
     request(casePath(caseId, '/readiness/resolve-plan'), options),
