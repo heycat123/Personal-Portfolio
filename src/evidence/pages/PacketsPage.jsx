@@ -485,6 +485,8 @@ function PacketDocumentPicker({
   onLink,
   linking,
   canContribute,
+  selectedFolderId,
+  onSelectedFolderChange,
   localUploadItems,
   localUploading,
   onLocalFilesChange,
@@ -525,6 +527,7 @@ function PacketDocumentPicker({
   const parentDriveFolder = currentDrivePath.length > 1 ? currentDrivePath[currentDrivePath.length - 2] : null;
   const visibleDriveFiles = driveItems.filter((item) => item.mimeType !== GOOGLE_FOLDER_MIME_TYPE);
   const allVisibleDriveFilesSelected = visibleDriveFiles.length > 0 && visibleDriveFiles.every((item) => driveSelectedIds.includes(item.id));
+  const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
@@ -556,6 +559,31 @@ function PacketDocumentPicker({
 
         <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
           Add files here without leaving this packet. New uploads and Drive imports are added to the case Documents library, then linked to this checklist item.
+        </div>
+
+        <div className="mt-4 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+          <label className="block text-sm font-semibold text-[var(--lakai-text)]" htmlFor="packet-folder-destination">
+            Link under
+          </label>
+          <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:items-center">
+            <select
+              id="packet-folder-destination"
+              value={selectedFolderId || ''}
+              onChange={(event) => onSelectedFolderChange(event.target.value)}
+              disabled={busy || !canContribute}
+              className="min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <option value="">Checklist item only</option>
+              {userFolders.map((folder) => (
+                <option key={folder.folder_id} value={folder.folder_id}>
+                  {folder.label || 'Folder'}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[var(--lakai-text-muted)]">
+              Packet folders organize the packet and export path. The original case document stays in Documents.
+            </p>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -993,14 +1021,24 @@ function RequirementEditor({
   packetId,
   canContribute,
   saving,
+  folderAction,
   unlinking,
   onSave,
+  onCreateFolder,
+  onUpdateFolder,
+  onDeleteFolder,
   onOpenDocumentPicker,
   onUnlinkDocument,
 }) {
   const [status, setStatus] = useState(requirement.status || 'needed');
   const [note, setNote] = useState(requirement.user_note || '');
   const [attentionReason, setAttentionReason] = useState(requirement.attention_reason || '');
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderLabel, setNewFolderLabel] = useState('');
+  const [newFolderDescription, setNewFolderDescription] = useState('');
+  const [editingFolderId, setEditingFolderId] = useState(null);
+  const [editFolderLabel, setEditFolderLabel] = useState('');
+  const [editFolderDescription, setEditFolderDescription] = useState('');
 
   const changed =
     status !== (requirement.status || 'needed') ||
@@ -1011,6 +1049,8 @@ function RequirementEditor({
   const rowSaving = saving === requirementId;
   const linkedDocuments = Array.isArray(requirement.linked_documents) ? requirement.linked_documents : [];
   const links = Array.isArray(requirement.links) ? requirement.links : [];
+  const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
+  const folderById = Object.fromEntries(userFolders.map((folder) => [folder.folder_id, folder]));
   const templateGuidance = requirement.metadata_json?.upload_guidance;
   const uploadGuidance = Array.isArray(templateGuidance) && templateGuidance.length
     ? templateGuidance
@@ -1117,11 +1157,184 @@ function RequirementEditor({
           </div>
         </div>
 
+        <div className="mt-4 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[var(--lakai-text)]">
+                {userFolders.length ? `${userFolders.length} saved folder(s)` : 'No saved folders yet'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
+                Folders help organize this packet item, such as separate banks or accounts. They do not move or delete documents.
+              </p>
+            </div>
+            {canContribute ? (
+              <button
+                type="button"
+                onClick={() => setNewFolderOpen((current) => !current)}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
+              >
+                <Plus size={14} aria-hidden="true" />
+                Add folder
+              </button>
+            ) : null}
+          </div>
+
+          {newFolderOpen ? (
+            <div className="mt-3 grid gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+              <label className="block">
+                <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Folder name</span>
+                <input
+                  type="text"
+                  value={newFolderLabel}
+                  onChange={(event) => setNewFolderLabel(event.target.value)}
+                  maxLength={120}
+                  placeholder="Example: Chase checking"
+                  className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Description</span>
+                <input
+                  type="text"
+                  value={newFolderDescription}
+                  onChange={(event) => setNewFolderDescription(event.target.value)}
+                  maxLength={240}
+                  placeholder="Optional"
+                  className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!newFolderLabel.trim() || Boolean(folderAction)}
+                onClick={async () => {
+                  const created = await onCreateFolder(requirement, {
+                    label: newFolderLabel.trim(),
+                    description: newFolderDescription.trim() || undefined,
+                  });
+                  if (created) {
+                    setNewFolderLabel('');
+                    setNewFolderDescription('');
+                    setNewFolderOpen(false);
+                  }
+                }}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Folder size={14} aria-hidden="true" />}
+                Save folder
+              </button>
+            </div>
+          ) : null}
+
+          {userFolders.length ? (
+            <div className="mt-3 grid gap-2">
+              {userFolders.map((folder) => {
+                const isEditing = editingFolderId === folder.folder_id;
+                const actionBusy = folderAction?.endsWith(`:${folder.folder_id}`);
+                return (
+                  <div key={folder.folder_id} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+                    {isEditing ? (
+                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end">
+                        <label className="block">
+                          <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Folder name</span>
+                          <input
+                            type="text"
+                            value={editFolderLabel}
+                            onChange={(event) => setEditFolderLabel(event.target.value)}
+                            maxLength={120}
+                            className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Description</span>
+                          <input
+                            type="text"
+                            value={editFolderDescription}
+                            onChange={(event) => setEditFolderDescription(event.target.value)}
+                            maxLength={240}
+                            className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={!editFolderLabel.trim() || Boolean(folderAction)}
+                          onClick={async () => {
+                            const updated = await onUpdateFolder(requirement, folder, {
+                              label: editFolderLabel.trim(),
+                              description: editFolderDescription.trim() || undefined,
+                            });
+                            if (updated) {
+                              setEditingFolderId(null);
+                            }
+                          }}
+                          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(folderAction)}
+                          onClick={() => setEditingFolderId(null)}
+                          className="inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--lakai-border)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{folder.label || 'Folder'}</p>
+                          {folder.description ? <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{folder.description}</p> : null}
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+                            <span>{folder.active_link_count || 0} linked document(s)</span>
+                            {folder.export_folder_path ? <span>Export path: {folder.export_folder_path}</span> : null}
+                          </div>
+                        </div>
+                        {canContribute ? (
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={Boolean(folderAction)}
+                              onClick={() => {
+                                setEditingFolderId(folder.folder_id);
+                                setEditFolderLabel(folder.label || '');
+                                setEditFolderDescription(folder.description || '');
+                              }}
+                              className="inline-flex min-h-9 items-center justify-center rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                            >
+                              Rename
+                            </button>
+                            {folder.can_delete !== false ? (
+                              <button
+                                type="button"
+                                disabled={Boolean(folderAction)}
+                                onClick={() => onDeleteFolder(requirement, folder)}
+                                className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                                title="Delete this packet folder. Case documents are not deleted."
+                              >
+                                {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
         {links.length ? (
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             {links.map((link) => {
               const document = link.document || linkedDocuments.find((item) => documentFileId(item) === link.file_id) || {};
               const linkId = link.packet_requirement_link_id;
+              const linkFolderId = link.folder_id || link.packet_folder_id || link.user_folder_id || null;
+              const folder = folderById[linkFolderId] || link.folder || null;
+              const folderLabel = link.folder_label || link.named_folder_value || folder?.label || null;
               return (
                 <div key={linkId || documentFileId(document)} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1129,6 +1342,7 @@ function RequirementEditor({
                       <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
                       <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
                         <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
+                        {folderLabel ? <span>Folder: {folderLabel}</span> : null}
                         {document.readiness_label ? <span>{document.readiness_label}</span> : null}
                       </div>
                     </div>
@@ -1197,6 +1411,7 @@ export default function PacketsPage() {
     search: '',
     documents: [],
     selectedFileIds: [],
+    folderId: '',
     localUploading: false,
     localUploadItems: [],
     connectorsLoading: false,
@@ -1212,6 +1427,7 @@ export default function PacketsPage() {
     driveImportFailures: [],
   });
   const [unlinking, setUnlinking] = useState(null);
+  const [folderAction, setFolderAction] = useState(null);
 
   useEffect(() => {
     if (!documentPicker.open || documentPicker.mode !== 'existing') {
@@ -1403,6 +1619,7 @@ export default function PacketsPage() {
       search: '',
       documents: [],
       selectedFileIds: [],
+      folderId: '',
       localUploading: false,
       localUploadItems: [],
       connectorsLoading: false,
@@ -1451,7 +1668,7 @@ export default function PacketsPage() {
 
   function closeDocumentPicker() {
     if (!documentPicker.linking && !documentPicker.localUploading && !documentPicker.driveAction) {
-      setDocumentPicker((current) => ({ ...current, open: false, requirement: null, selectedFileIds: [] }));
+      setDocumentPicker((current) => ({ ...current, open: false, requirement: null, selectedFileIds: [], folderId: '' }));
     }
   }
 
@@ -1567,6 +1784,95 @@ export default function PacketsPage() {
     });
   }
 
+  async function createRequirementFolder(requirement, payload) {
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id) {
+      return false;
+    }
+    setFolderAction(`create:${requirement.requirement_id}`);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createPacketRequirementFolder(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        payload,
+        { token },
+      );
+      recordFingerprint(result, 'Create packet folder');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || `Folder "${result.data?.folder?.label || payload.label}" added to this packet item.`,
+        fingerprint: result.requestFingerprintId,
+      }));
+      return true;
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+      return false;
+    } finally {
+      setFolderAction(null);
+    }
+  }
+
+  async function updateRequirementFolder(requirement, folder, payload) {
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folder?.folder_id) {
+      return false;
+    }
+    setFolderAction(`update:${folder.folder_id}`);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updatePacketRequirementFolder(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        folder.folder_id,
+        payload,
+        { token },
+      );
+      recordFingerprint(result, 'Update packet folder');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || 'Packet folder updated. Documents stayed in the case library.',
+        fingerprint: result.requestFingerprintId,
+      }));
+      return true;
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+      return false;
+    } finally {
+      setFolderAction(null);
+    }
+  }
+
+  async function deleteRequirementFolder(requirement, folder) {
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folder?.folder_id) {
+      return;
+    }
+    setFolderAction(`delete:${folder.folder_id}`);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.deletePacketRequirementFolder(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        folder.folder_id,
+        { token },
+      );
+      recordFingerprint(result, 'Delete packet folder');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || 'Packet folder deleted. Case documents were not deleted.',
+        fingerprint: result.requestFingerprintId,
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+    } finally {
+      setFolderAction(null);
+    }
+  }
+
   async function linkSelectedDocuments() {
     const requirement = documentPicker.requirement;
     if (!requirement || !documentPicker.selectedFileIds.length) {
@@ -1579,7 +1885,10 @@ export default function PacketsPage() {
         caseId,
         selectedPacket.packet_id,
         requirement.requirement_id,
-        { file_ids: documentPicker.selectedFileIds },
+        {
+          file_ids: documentPicker.selectedFileIds,
+          ...(documentPicker.folderId ? { folder_id: documentPicker.folderId } : {}),
+        },
         { token },
       );
       recordFingerprint(result, 'Link packet documents');
@@ -1589,7 +1898,7 @@ export default function PacketsPage() {
         notice: result.data?.message || 'Selected documents linked to this checklist item.',
         fingerprint: result.requestFingerprintId,
       }));
-      setDocumentPicker((current) => ({ ...current, open: false, requirement: null, linking: false, selectedFileIds: [] }));
+      setDocumentPicker((current) => ({ ...current, open: false, requirement: null, linking: false, selectedFileIds: [], folderId: '' }));
     } catch (error) {
       setDocumentPicker((current) => ({ ...current, linking: false }));
       setState((current) => ({ ...current, error }));
@@ -1697,7 +2006,10 @@ export default function PacketsPage() {
           caseId,
           selectedPacket.packet_id,
           requirement.requirement_id,
-          { file_ids: uploadedFileIds },
+          {
+            file_ids: uploadedFileIds,
+            ...(documentPicker.folderId ? { folder_id: documentPicker.folderId } : {}),
+          },
           { token },
         );
         recordFingerprint(linkResult, 'Link packet uploads');
@@ -1717,6 +2029,7 @@ export default function PacketsPage() {
           localUploading: false,
           localUploadItems: [],
           selectedFileIds: [],
+          folderId: '',
         }));
       } else {
         setDocumentPicker((current) => ({ ...current, localUploading: false }));
@@ -1833,7 +2146,10 @@ export default function PacketsPage() {
           caseId,
           selectedPacket.packet_id,
           requirement.requirement_id,
-          { file_ids: importedFileIds },
+          {
+            file_ids: importedFileIds,
+            ...(documentPicker.folderId ? { folder_id: documentPicker.folderId } : {}),
+          },
           { token },
         );
         recordFingerprint(linkResult, 'Link packet Drive imports');
@@ -1859,7 +2175,7 @@ export default function PacketsPage() {
           driveAction: null,
           driveSelectedIds: importFailures.length ? importFailures.map((failure) => failure.id).filter(Boolean) : [],
           driveImportFailures: importFailures,
-          ...(importFailures.length ? {} : { open: false, requirement: null }),
+          ...(importFailures.length ? {} : { open: false, requirement: null, folderId: '' }),
         }));
       } else {
         setDocumentPicker((current) => ({ ...current, driveAction: null, driveImportFailures: importFailures }));
@@ -1949,6 +2265,8 @@ export default function PacketsPage() {
           onLink={linkSelectedDocuments}
           linking={documentPicker.linking}
           canContribute={canContribute}
+          selectedFolderId={documentPicker.folderId}
+          onSelectedFolderChange={(folderId) => setDocumentPicker((current) => ({ ...current, folderId }))}
           localUploadItems={documentPicker.localUploadItems}
           localUploading={documentPicker.localUploading}
           onLocalFilesChange={setLocalFiles}
@@ -2032,8 +2350,12 @@ export default function PacketsPage() {
                   packetId={selectedPacket.packet_id}
                   canContribute={canContribute}
                   saving={state.savingRequirement}
+                  folderAction={folderAction}
                   unlinking={unlinking}
                   onSave={saveRequirement}
+                  onCreateFolder={createRequirementFolder}
+                  onUpdateFolder={updateRequirementFolder}
+                  onDeleteFolder={deleteRequirementFolder}
                   onOpenDocumentPicker={openDocumentPicker}
                   onUnlinkDocument={unlinkDocument}
                 />
