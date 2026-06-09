@@ -58,6 +58,18 @@ export function documentUserStatus(document = {}) {
     && pipelineStatuses.every((status) => pipelineCompleteStatuses.has(status));
   const hasIncompletePipelineStage = pipelineStatuses.length && !allPipelineStagesComplete;
 
+  if (combined.some((status) => ['limited', 'no_readable_text_found', 'no_readable_text', 'no_extracted_text', 'empty_text'].includes(status))) {
+    return {
+      key: 'failed',
+      label: 'Needs attention',
+      stageLabel: 'No readable text found',
+      badgeStatus: 'failed',
+      barClassName: 'bg-red-500',
+      description: 'No readable text was found for this document. Inspect the file or retry processing if the document should contain readable text.',
+      userMessage: 'No readable text was found for this document. Inspect the file or retry processing if the document should contain readable text.',
+    };
+  }
+
   if (combined.some((status) => ['failed', 'error', 'blocked', 'needs_attention', 'dependency_missing'].includes(status))) {
     return {
       key: 'failed',
