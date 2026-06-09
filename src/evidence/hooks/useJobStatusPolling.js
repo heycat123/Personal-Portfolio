@@ -21,6 +21,7 @@ export default function useJobStatusPolling({
   const { getAccessToken } = useEvidenceAuth();
   const previousStatusesRef = useRef(new Map());
   const mountedRef = useRef(false);
+  const inFlightRef = useRef(false);
   const [state, setState] = useState({
     jobs: [],
     activeCount: 0,
@@ -33,8 +34,15 @@ export default function useJobStatusPolling({
     if (!enabled || !caseId) {
       return null;
     }
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return null;
+    }
+    if (inFlightRef.current) {
+      return null;
+    }
 
     try {
+      inFlightRef.current = true;
       const token = await getAccessToken();
       const result = await evidenceApi.getJobs(caseId, { limit, offset: 0 }, { token });
       const jobs = result.data?.jobs || [];
@@ -67,6 +75,8 @@ export default function useJobStatusPolling({
         setState((current) => ({ ...current, error }));
       }
       return null;
+    } finally {
+      inFlightRef.current = false;
     }
   }, [caseId, enabled, getAccessToken, limit, onJobFinished, onJobsChange]);
 

@@ -31,7 +31,6 @@ import {
   transcriptPages,
 } from '../utils/documentMedia';
 import { formatDateTime } from '../utils/formatters';
-import { isDocumentProcessingRequest } from '../utils/jobProgress';
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = { key: 'updated_at', desc: true };
@@ -582,8 +581,6 @@ export default function DocumentsPage() {
     rollupsLoading: true,
     rollupsError: null,
     activePropagationJob: null,
-    jobs: null,
-    jobsError: null,
     fingerprint: null,
   });
   const [drawer, setDrawer] = useState({
@@ -633,20 +630,13 @@ export default function DocumentsPage() {
     fingerprint: null,
   });
 
-  const jobStatusKnown = Array.isArray(state.jobs);
   const activeDocumentJobForSocket = useMemo(() => {
     if (state.activePropagationJob?.job_id && isActiveJob(state.activePropagationJob)) {
       return state.activePropagationJob;
     }
-    if (!Array.isArray(state.jobs)) {
-      return null;
-    }
-    return state.jobs.find((job) => (job.normal_user_visible === true || isDocumentProcessingRequest(job)) && isActiveJob(job)) || null;
-  }, [state.activePropagationJob, state.jobs]);
-  const hasActiveDocumentProcessingJob = jobStatusKnown
-    ? state.jobs.some((job) => (job.normal_user_visible === true || isDocumentProcessingRequest(job)) && isActiveJob(job))
-    : true;
-  const documentStatusHasActiveJob = !jobStatusKnown || hasActiveDocumentProcessingJob;
+    return null;
+  }, [state.activePropagationJob]);
+  const documentStatusHasActiveJob = Boolean(activeDocumentJobForSocket);
   const activeDocumentStatusFilter = normalizeDocumentStatusFilter(filterValues.processing_status);
   const activePropagationSubstageFilter = normalizePropagationSubstageFilter(filterValues.propagation_substage);
 
@@ -703,22 +693,12 @@ export default function DocumentsPage() {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const results = await Promise.allSettled([
-        evidenceApi.getDocuments(
-          caseId,
-          { ...documentQuery, include_rollups: false },
-          { token },
-        ),
-        evidenceApi.getJobs(caseId, { limit: 50, offset: 0 }, { token }),
-      ]);
-      const result = results[0].status === 'fulfilled' ? results[0].value : null;
-      if (!result) {
-        throw results[0].reason;
-      }
+      const result = await evidenceApi.getDocuments(
+        caseId,
+        { ...documentQuery, include_rollups: false },
+        { token },
+      );
       recordFingerprint(result, 'Documents list');
-      if (results[1].status === 'fulfilled') {
-        recordFingerprint(results[1].value, 'Jobs list');
-      }
       const nextDocuments = result.data?.documents || [];
       setState((current) => ({
         ...current,
@@ -730,9 +710,7 @@ export default function DocumentsPage() {
         inventorySummary: result.data?.inventory_summary || current.inventorySummary || {},
         documentsPanelStatus: result.data?.documents_panel_status || null,
         documentProcessingReadiness: result.data?.document_processing_readiness || current.documentProcessingReadiness || null,
-        activePropagationJob: result.data?.active_propagation_job || current.activePropagationJob || null,
-        jobs: results[1].status === 'fulfilled' ? results[1].value.data?.jobs || [] : null,
-        jobsError: results[1].status === 'rejected' ? results[1].reason : null,
+        activePropagationJob: result.data?.active_propagation_job || null,
         fingerprint: {
           id: result.requestFingerprintId,
           correlationId: result.correlationId,
@@ -1599,21 +1577,7 @@ export default function DocumentsPage() {
     : (processingIsFullPropagation ? 'Full propagation started. Check Jobs for Drive scan, extraction, search, relationship-map, and source checks.' : 'Processing started. Check Jobs for per-document progress.'));
   const autoProcessingReady = canContribute && s3OnlyFiles > 0 && effectiveProcessingCount > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
   const partialBreakdownItems = Array.isArray(librarySummary.breakdown?.partial) ? librarySummary.breakdown.partial : [];
-  const failedDocumentJobs = useMemo(() => {
-    if (!Array.isArray(state.jobs)) {
-      return [];
-    }
-    return state.jobs.filter((job) => {
-      const status = String(job.user_status || job.status || '').toLowerCase();
-      const jobType = String(job.job_type || '').toLowerCase();
-      const visible = job.normal_user_visible === true || isDocumentProcessingRequest(job);
-      return visible && status === 'failed' && (
-        jobType.includes('document')
-        || jobType.includes('source_sync')
-        || jobType.includes('relationship_map')
-      );
-    });
-  }, [state.jobs]);
+  const failedDocumentJobs = [];
   const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
     caseId,
     counts: inventorySummary,
