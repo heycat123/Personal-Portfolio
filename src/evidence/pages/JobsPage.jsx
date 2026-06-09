@@ -134,7 +134,8 @@ export default function JobsPage() {
 
   const liveJobs = useJobStatusPolling({
     caseId,
-    intervalMs: 2000,
+    intervalMs: 5000,
+    runImmediately: false,
     onJobsChange: handleLiveJobs,
   });
 
