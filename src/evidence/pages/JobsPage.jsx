@@ -16,6 +16,7 @@ import { evidenceApi } from '../services/evidenceApi';
 import { formatDateTime } from '../utils/formatters';
 import {
   isDocumentProcessingRequest,
+  isSourceSyncFullPropagation,
   jobDisplayTitle,
   jobProcessingDocuments,
   jobProcessingRequestedCount,
@@ -61,6 +62,15 @@ function TimeSummary({ job, t }) {
       ))}
     </dl>
   );
+}
+
+function jobNeedsAttention(job) {
+  const progress = jobProgressModel(job);
+  const rawStatus = String(job.status || '').toLowerCase();
+  const userStatus = String(job.user_status || job.user_job_status?.user_status || '').toLowerCase();
+  return ['failed', 'cancelled', 'canceled'].includes(rawStatus)
+    || ['failed', 'ready_with_review_needed'].includes(userStatus)
+    || ['failed', 'needs_review'].includes(progress.badgeStatus);
 }
 
 export default function JobsPage() {
@@ -193,13 +203,16 @@ export default function JobsPage() {
   const processingJobs = [...state.jobs]
     .filter((job) => job.normal_user_visible === true || isDocumentProcessingRequest(job))
     .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
-  const failedProcessingJobs = processingJobs.filter((job) => ['failed', 'cancelled', 'canceled'].includes(String(job.status || '').toLowerCase()));
+  const failedProcessingJobs = processingJobs.filter(jobNeedsAttention);
   const failedJobsAlert = state.jobsPageContract?.failed_jobs_alert || {};
   const activeProcessingJob = processingJobs.find((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
   const latestProcessingJob = activeProcessingJob || processingJobs[0] || null;
   const latestProcessingProgress = latestProcessingJob ? jobProgressModel(latestProcessingJob) : null;
   const activeProcessingJobs = processingJobs.filter((job) => jobProgressModel(job).canCancel || isActiveJob(job)).length;
-  const processingDocumentCount = processingJobs.reduce((sum, job) => sum + (jobProcessingRequestedCount(job) || jobProcessingDocuments(job).length || 0), 0);
+  const latestProcessingDocumentCount = latestProcessingJob
+    ? jobProcessingRequestedCount(latestProcessingJob) || jobProcessingDocuments(latestProcessingJob).length || 0
+    : 0;
+  const latestProcessingDocumentUnit = isSourceSyncFullPropagation(latestProcessingJob) ? 'document row(s)' : 'file(s)';
   const renderJobSummary = (job) => {
     const progress = jobProgressModel(job);
     return (
@@ -308,7 +321,7 @@ export default function JobsPage() {
     },
   ];
   const allVisibleJobs = processingJobs.filter((job) => job.normal_user_visible !== false);
-  const currentJobs = allVisibleJobs.filter((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
+  const currentJobs = allVisibleJobs.filter((job) => isActiveJob(job) || jobProgressModel(job).canCancel || jobNeedsAttention(job));
   const displayJobs = showJobHistory ? allVisibleJobs : currentJobs;
   const displayActiveJobCount = displayJobs.filter(isActiveJob).length;
 
@@ -363,16 +376,16 @@ export default function JobsPage() {
                 <h2 className="font-semibold">{t('Processing at a glance')}</h2>
                 <StatusBadge status={latestProcessingProgress.badgeStatus} label={t(latestProcessingProgress.statusLabel)} />
                 <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
-                  <AnimatedCount value={processingJobs.length} /> {t('processing job(s)')}
+                  <AnimatedCount value={processingJobs.length} /> {t('job record(s)')}
                 </span>
                 {activeProcessingJobs ? (
                   <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
                     <AnimatedCount value={activeProcessingJobs} /> {t('active')}
                   </span>
                 ) : null}
-                {processingDocumentCount ? (
+                {latestProcessingDocumentCount ? (
                   <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
-                    <AnimatedCount value={processingDocumentCount} /> {t('copied file(s)')}
+                    <AnimatedCount value={latestProcessingDocumentCount} /> {t(latestProcessingDocumentUnit)}
                   </span>
                 ) : null}
               </div>
