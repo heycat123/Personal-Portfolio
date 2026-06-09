@@ -1078,27 +1078,55 @@ export default function DocumentsPage() {
     }
   }, [caseId, categoryLensId, getAccessToken, loadCategoryQa, loadCategoryResolvePlan, loadDocuments, recordFingerprint]);
 
-  const requestPendingDocumentProcessing = useCallback(async ({ quiet = false } = {}) => {
+  const requestPendingDocumentProcessing = useCallback(async ({
+    quiet = false,
+    scope = 'copied_not_extracted',
+    requestedAction = 'text_extraction_and_search_indexing',
+    reason = 'Automatically start processing after documents were added to the workspace',
+    maxDocuments = 250,
+    phase = 'starting_processing',
+    fingerprintLabel = 'Document text/search processing',
+    refreshRollups = false,
+  } = {}) => {
     if (!canContribute) {
       return null;
     }
-    setProcessingRequest((current) => ({ ...current, busy: true, error: null, phase: 'starting_processing' }));
+    if (processingRequestInFlightRef.current) {
+      return null;
+    }
+    processingRequestInFlightRef.current = true;
+    setProcessingRequest((current) => ({
+      ...current,
+      busy: true,
+      error: null,
+      phase,
+      result: phase === 'starting_failed_retry'
+        ? {
+          label: 'Retry failed documents',
+          status: 'starting',
+          display_message: 'Retry request sent. Evidence AI is creating or reusing the background processing job now.',
+        }
+        : null,
+    }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.requestDocumentProcessing(
         caseId,
         {
-          scope: 'copied_not_extracted',
-          requested_action: 'text_extraction_and_search_indexing',
-          reason: 'Automatically start processing after documents were added to the workspace',
-          max_documents: 250,
+          scope,
+          requested_action: requestedAction,
+          reason,
+          max_documents: maxDocuments,
         },
         { token },
       );
-      recordFingerprint(result, 'Document text/search processing');
+      recordFingerprint(result, fingerprintLabel);
       setProcessingRequest({ busy: false, error: null, result: result.data || {}, phase: null });
       if (!quiet) {
-        await loadDocuments();
+        await Promise.all([
+          loadDocuments(),
+          refreshRollups ? loadDocumentRollups({ refresh: true }) : Promise.resolve(),
+        ]);
       }
       return result.data || {};
     } catch (error) {
@@ -1122,8 +1150,10 @@ export default function DocumentsPage() {
       }
       setProcessingRequest({ busy: false, error, result: null, phase: null });
       return null;
+    } finally {
+      processingRequestInFlightRef.current = false;
     }
-  }, [canContribute, caseId, getAccessToken, loadDocuments, recordFingerprint]);
+  }, [canContribute, caseId, getAccessToken, loadDocumentRollups, loadDocuments, recordFingerprint]);
 
   const requestFullPropagationRepair = useCallback(async () => {
     if (!canContribute) {
@@ -1609,21 +1639,28 @@ export default function DocumentsPage() {
     || '',
   );
   const processingIsStartingFullPropagation = processingRequest.phase === 'starting_full_propagation';
+  const processingIsStartingFailedRetry = processingRequest.phase === 'starting_failed_retry';
   const processingIsFullPropagation = processingIsStartingFullPropagation
     || processingResultJobType === 'source_sync_full_propagation'
     || String(processingRequestData.label || '').toLowerCase().includes('sync drive');
   const processingStartTitle = processingIsStartingFullPropagation
     ? 'Starting full propagation'
+    : processingIsStartingFailedRetry
+    ? 'Retrying failed documents'
     : processingRequestData.already_started
     ? (processingIsFullPropagation ? 'Full propagation already started' : 'Processing already started')
     : (processingIsFullPropagation ? 'Full propagation started' : 'Processing started');
   const processingStartMessage = processingRequestData.display_message || (processingIsStartingFullPropagation
     ? 'Propagation request sent. The button is locked while the background job is created or reused.'
+    : processingIsStartingFailedRetry
+    ? 'Retry request sent. The button is locked while the background job is created or reused.'
     : processingRequestData.already_started
     ? (processingIsFullPropagation ? 'Full propagation is already queued or running. Check Jobs for progress.' : 'Processing already started. Check Jobs for per-document progress.')
     : (processingIsFullPropagation ? 'Full propagation started. Check Jobs for Drive scan, extraction, search, relationship-map, and source checks.' : 'Processing started. Check Jobs for per-document progress.'));
   const autoProcessingReady = canContribute && s3OnlyFiles > 0 && effectiveProcessingCount > 0 && !processingRequest.busy && !processingRequest.result && !processingRequest.error;
   const partialBreakdownItems = Array.isArray(librarySummary.breakdown?.partial) ? librarySummary.breakdown.partial : [];
+  const failedBreakdownItems = Array.isArray(librarySummary.breakdown?.failed) ? librarySummary.breakdown.failed : [];
+  const hasFailedDocuments = rollupsReady && effectiveFailedCount > 0;
   const failedDocumentJobs = [];
   const attentionItems = useMemo(() => filterAttentionItems(buildCaseAttentionItems({
     caseId,
@@ -2037,14 +2074,23 @@ export default function DocumentsPage() {
         })}
       </div>
 
-      {(rawPartialCount > 0 || failedDocumentJobs.length > 0) ? (
-        <section className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-[var(--lakai-shadow-panel)] dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100">
+      {(rawPartialCount > 0 || hasFailedDocuments || failedDocumentJobs.length > 0) ? (
+        <section className={`mb-5 rounded-2xl border p-4 shadow-[var(--lakai-shadow-panel)] ${
+          hasFailedDocuments
+            ? 'border-red-300 bg-red-50 text-red-950 dark:border-red-900/70 dark:bg-red-950/25 dark:text-red-100'
+            : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-100'
+        }`}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 shrink-0" size={20} aria-hidden="true" />
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-semibold">{t('Propagation needs attention')}</h2>
+                  {hasFailedDocuments ? (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-950 ring-1 ring-red-300 dark:bg-red-950/50 dark:text-red-100 dark:ring-red-800">
+                      {t('{count} failed document(s)', { count: effectiveFailedCount })}
+                    </span>
+                  ) : null}
                   {rawPartialCount > 0 ? (
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-950 ring-1 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-100 dark:ring-amber-800">
                       {t('{count} partial', { count: rawPartialCount })}
@@ -2057,16 +2103,47 @@ export default function DocumentsPage() {
                   ) : null}
                 </div>
                 <p className="mt-1 max-w-3xl text-sm">
-                  {rawPartialCount > 0
+                  {hasFailedDocuments
+                    ? t('{count} document(s) could not be read for Evidence AI yet. Retry processing to run OCR or visual extraction again, or inspect and remove the files if they still cannot be read.', { count: effectiveFailedCount })
+                    : rawPartialCount > 0
                     ? t('{count} document(s) have some propagation complete, but at least one required stage is still missing. Finish propagation resumes the missing stages without duplicating documents.', { count: rawPartialCount })
                     : t('A document processing job needs review before the library can be treated as fully propagated.')}
                 </p>
-                <p className="mt-1 max-w-3xl text-xs text-amber-900 dark:text-amber-100">
+                <p className={`mt-1 max-w-3xl text-xs ${hasFailedDocuments ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
                   {t('This is a system readiness task, not a legal review task. It helps Documents, Ask Documents, and relationship-map search use the same completed source set.')}
                 </p>
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
+              {hasFailedDocuments && canContribute ? (
+                <button
+                  type="button"
+                  onClick={() => requestPendingDocumentProcessing({
+                    reason: 'User requested retry for failed documents from Documents Library',
+                    phase: 'starting_failed_retry',
+                    fingerprintLabel: 'Failed document retry',
+                    refreshRollups: true,
+                  })}
+                  disabled={processingRequest.busy}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {processingRequest.busy && processingIsStartingFailedRetry ? (
+                    <Loader2 className="animate-spin" size={16} aria-hidden="true" />
+                  ) : (
+                    <PlayCircle size={16} aria-hidden="true" />
+                  )}
+                  {processingRequest.busy && processingIsStartingFailedRetry ? t('Starting retry') : t('Retry failed documents')}
+                </button>
+              ) : null}
+              {hasFailedDocuments ? (
+                <button
+                  type="button"
+                  onClick={() => setDocumentStatusFilter('failed')}
+                  className="inline-flex min-h-11 items-center justify-center rounded-full border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-950 transition hover:bg-red-100 dark:border-red-900/70 dark:bg-[#101820] dark:text-red-100 dark:hover:bg-red-950/40"
+                >
+                  {t('View failed documents')}
+                </button>
+              ) : null}
               {rawPartialCount > 0 && canContribute ? (
                 <button
                   type="button"
@@ -2130,6 +2207,42 @@ export default function DocumentsPage() {
                     type="button"
                     onClick={() => setPropagationBreakdownFilter('partial', item.key)}
                     className="mt-3 inline-flex min-h-9 items-center justify-center rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-950 transition hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-950/50"
+                  >
+                    {t('Review this group')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {hasFailedDocuments ? (
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {(failedBreakdownItems.length ? failedBreakdownItems : [{
+                key: 'failed',
+                label: 'Failed document processing',
+                count: effectiveFailedCount,
+                next_action: {
+                  user_message: 'Retry processing, inspect the file, or remove it from the workspace if it should not be included.',
+                },
+              }]).map((item) => (
+                <div key={item.key || item.label} className="rounded-xl border border-red-200 bg-white p-3 text-sm text-red-950 dark:border-red-900/60 dark:bg-[#101820] dark:text-red-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold">{t(item.label || 'Failed document processing')}</h3>
+                      {(item.next_action?.user_message || item.userMessage) ? (
+                        <p className="mt-1 text-xs text-red-900 dark:text-red-100">
+                          {t(item.next_action?.user_message || item.userMessage)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-950 ring-1 ring-red-200 dark:bg-red-950/40 dark:text-red-100 dark:ring-red-900">
+                      {rollupsReady ? item.count : '...'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPropagationBreakdownFilter('failed', item.key)}
+                    className="mt-3 inline-flex min-h-9 items-center justify-center rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-950 transition hover:bg-red-100 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 dark:hover:bg-red-950/50"
                   >
                     {t('Review this group')}
                   </button>
