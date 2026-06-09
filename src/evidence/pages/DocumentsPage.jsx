@@ -535,6 +535,53 @@ function exportGuardrailMessage(guardrails, t) {
   return lines.join('\n\n');
 }
 
+function DocumentsTableLoading({ t }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-sky-200 bg-sky-50/70 px-4 py-10 text-center shadow-sm dark:border-sky-900/70 dark:bg-sky-950/20">
+      <style>{`
+        @keyframes evidence-page-scan {
+          0%, 100% { transform: translateX(-42px) rotateY(0deg); opacity: 0; }
+          20% { opacity: 1; }
+          55% { transform: translateX(0) rotateY(-18deg); opacity: 1; }
+          80% { transform: translateX(42px) rotateY(-42deg); opacity: 0; }
+        }
+        @keyframes evidence-page-glow {
+          0%, 100% { opacity: .35; transform: scaleX(.82); }
+          50% { opacity: 1; transform: scaleX(1); }
+        }
+      `}</style>
+      <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-4">
+        <div className="relative h-20 w-44" aria-hidden="true">
+          <div className="absolute inset-x-2 bottom-2 h-12 rounded-xl border border-sky-200 bg-white shadow-sm dark:border-sky-800 dark:bg-[#101820]" />
+          <div className="absolute left-4 right-4 bottom-5 h-8 rounded-lg bg-sky-50 dark:bg-sky-950/40">
+            {[0, 1, 2].map((line) => (
+              <span
+                key={line}
+                className="mx-auto mt-1 block h-1 rounded-full bg-sky-300 dark:bg-sky-500"
+                style={{ width: `${62 - line * 9}%`, animation: 'evidence-page-glow 1.35s ease-in-out infinite', animationDelay: `${line * 140}ms` }}
+              />
+            ))}
+          </div>
+          <div
+            className="absolute left-1/2 bottom-4 h-11 w-16 origin-left rounded-r-lg border border-sky-200 bg-white shadow-md dark:border-sky-800 dark:bg-[#f8fbff]"
+            style={{ animation: 'evidence-page-scan 1.45s ease-in-out infinite' }}
+          >
+            <span className="mt-3 block h-1 rounded-full bg-sky-200" />
+            <span className="mt-2 block h-1 w-10 rounded-full bg-sky-200" />
+          </div>
+          <div className="absolute left-1/2 bottom-3 h-14 w-0.5 -translate-x-1/2 rounded-full bg-sky-300 dark:bg-sky-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-sky-950 dark:text-sky-100">{t('Looking through documents')}</p>
+          <p className="mt-1 text-xs text-sky-800 dark:text-sky-200">
+            {t('Applying the current filters and loading the matching rows.')}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DocumentsPage() {
   const { caseId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -2167,6 +2214,7 @@ export default function DocumentsPage() {
         rowKey={(document) => document.file_id}
         loading={state.loading}
         emptyTitle={state.loading ? t('Loading documents') : t('No documents matched')}
+        loadingContent={<DocumentsTableLoading t={t} />}
         enableHeaderMenus
         filterValues={filterValues}
         sort={sort}

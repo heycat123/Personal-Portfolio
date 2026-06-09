@@ -436,6 +436,8 @@ export const UI_TRANSLATIONS = {
     'Loading connectors.': 'Carregando conectores.',
     'Loading document.': 'Carregando documento.',
     'Loading documents': 'Carregando documentos',
+    'Looking through documents': 'Consultando documentos',
+    'Applying the current filters and loading the matching rows.': 'Aplicando os filtros atuais e carregando as linhas correspondentes.',
     'Loading entities': 'Carregando entidades',
     'Loading jobs': 'Carregando tarefas',
     'Loading page rows': 'Carregando linhas de página',
