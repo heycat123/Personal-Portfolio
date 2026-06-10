@@ -399,6 +399,11 @@ export default function JobDetailPage() {
   const job = state.job;
   const progress = job ? jobProgressModel(job) : null;
   const shouldLivePoll = Boolean(job && LIVE_POLL_STATUSES.has(job.status));
+  const jobStillProcessing = Boolean(progress && (
+    progress.badgeStatus === 'running'
+    || String(progress.statusLabel || '').toLowerCase().includes('processing')
+    || String(progress.workflowStatus || '').toLowerCase().includes('processing')
+  ));
 
   useEffect(() => {
     if (!shouldLivePoll) {
@@ -889,7 +894,12 @@ export default function JobDetailPage() {
 
           <section className="mt-6">
             <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Latest activity')}</h3>
-            <JobStatusTimeline events={job.events || []} limit={debugEnabled ? 0 : 4} />
+            <JobStatusTimeline
+              events={job.events || []}
+              limit={debugEnabled ? 0 : 4}
+              jobStillProcessing={jobStillProcessing}
+              continuationMessage={progress?.message || progress?.progressText}
+            />
           </section>
 
           {debugEnabled ? (
