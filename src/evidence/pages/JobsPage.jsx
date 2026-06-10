@@ -73,6 +73,11 @@ function jobNeedsAttention(job) {
     || ['failed', 'needs_review'].includes(progress.badgeStatus);
 }
 
+function jobIsCurrent(job) {
+  const progress = jobProgressModel(job);
+  return Boolean(progress.isCurrent || progress.canCancel || isActiveJob(job));
+}
+
 export default function JobsPage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
@@ -206,10 +211,10 @@ export default function JobsPage() {
     .toSorted((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
   const failedProcessingJobs = processingJobs.filter(jobNeedsAttention);
   const failedJobsAlert = state.jobsPageContract?.failed_jobs_alert || {};
-  const activeProcessingJob = processingJobs.find((job) => isActiveJob(job) || jobProgressModel(job).canCancel);
-  const latestProcessingJob = activeProcessingJob || processingJobs[0] || null;
+  const currentProcessingJobs = processingJobs.filter(jobIsCurrent);
+  const latestProcessingJob = currentProcessingJobs[0] || null;
   const latestProcessingProgress = latestProcessingJob ? jobProgressModel(latestProcessingJob) : null;
-  const activeProcessingJobs = processingJobs.filter((job) => jobProgressModel(job).canCancel || isActiveJob(job)).length;
+  const activeProcessingJobs = currentProcessingJobs.length;
   const latestProcessingDocumentCount = latestProcessingJob
     ? jobProcessingRequestedCount(latestProcessingJob) || jobProcessingDocuments(latestProcessingJob).length || 0
     : 0;
@@ -322,9 +327,9 @@ export default function JobsPage() {
     },
   ];
   const allVisibleJobs = processingJobs.filter((job) => job.normal_user_visible !== false);
-  const currentJobs = allVisibleJobs.filter((job) => isActiveJob(job) || jobProgressModel(job).canCancel || jobNeedsAttention(job));
+  const currentJobs = allVisibleJobs.filter((job) => jobIsCurrent(job) || jobNeedsAttention(job));
   const displayJobs = showJobHistory ? allVisibleJobs : currentJobs;
-  const displayActiveJobCount = displayJobs.filter(isActiveJob).length;
+  const displayActiveJobCount = displayJobs.filter(jobIsCurrent).length;
 
   return (
     <div>
@@ -374,10 +379,10 @@ export default function JobsPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-semibold">{t('Processing at a glance')}</h2>
+                <h2 className="font-semibold">{t('Current processing')}</h2>
                 <StatusBadge status={latestProcessingProgress.badgeStatus} label={t(latestProcessingProgress.statusLabel)} />
                 <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
-                  <AnimatedCount value={processingJobs.length} /> {t('job record(s)')}
+                  <AnimatedCount value={currentProcessingJobs.length} /> {t('current job(s)')}
                 </span>
                 {activeProcessingJobs ? (
                   <span className="rounded-full border border-amber-300/70 px-2.5 py-1 text-xs font-semibold dark:border-amber-900">
@@ -391,7 +396,7 @@ export default function JobsPage() {
                 ) : null}
               </div>
               <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
-                {t('Latest processing job: {title}. {message}', {
+                {t('Current processing job: {title}. {message}', {
                   title: t(jobDisplayTitle(latestProcessingJob)),
                   message: t(latestProcessingProgress.message),
                 })}

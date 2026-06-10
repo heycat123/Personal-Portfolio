@@ -79,14 +79,19 @@ export default function JobStatusTimeline({ events, limit = 4, jobStillProcessin
     );
   }
 
+  const sortedEvents = [...events].sort((left, right) => {
+    const leftTime = Date.parse(left?.created_at || '') || 0;
+    const rightTime = Date.parse(right?.created_at || '') || 0;
+    return leftTime - rightTime;
+  });
   const visibleEvents = Number.isFinite(Number(limit)) && Number(limit) > 0
-    ? events.slice(-Number(limit))
-    : events;
+    ? sortedEvents.slice(-Number(limit))
+    : sortedEvents;
   const olderEvents = Number.isFinite(Number(limit)) && Number(limit) > 0
-    ? events.slice(0, Math.max(0, events.length - visibleEvents.length))
+    ? sortedEvents.slice(0, Math.max(0, sortedEvents.length - visibleEvents.length))
     : [];
   const hiddenCount = olderEvents.length;
-  const renderedEvents = expanded ? events : visibleEvents;
+  const renderedEvents = expanded ? sortedEvents : visibleEvents;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">

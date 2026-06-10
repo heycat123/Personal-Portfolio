@@ -398,12 +398,8 @@ export default function JobDetailPage() {
 
   const job = state.job;
   const progress = job ? jobProgressModel(job) : null;
-  const shouldLivePoll = Boolean(job && LIVE_POLL_STATUSES.has(job.status));
-  const jobStillProcessing = Boolean(progress && (
-    progress.badgeStatus === 'running'
-    || String(progress.statusLabel || '').toLowerCase().includes('processing')
-    || String(progress.workflowStatus || '').toLowerCase().includes('processing')
-  ));
+  const shouldLivePoll = Boolean(job && (LIVE_POLL_STATUSES.has(job.status) || progress?.isCurrent));
+  const jobStillProcessing = Boolean(progress?.isCurrent);
 
   useEffect(() => {
     if (!shouldLivePoll) {
@@ -453,6 +449,20 @@ export default function JobDetailPage() {
         ? t('Estimated cost')
         : t(progress.costSummary?.message || 'Cost recorded for this job.')
     : t(progress?.costSummary?.message || 'No paid cost recorded for this job.');
+  const progressCardClass = progress?.badgeStatus === 'failed'
+    ? 'border-red-200 bg-red-50 text-red-950 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
+    : progress?.isCurrent
+      ? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100'
+      : progress?.badgeStatus === 'succeeded'
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100'
+        : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100';
+  const progressTextToneClass = progress?.badgeStatus === 'failed'
+    ? 'text-red-900 dark:text-red-100'
+    : progress?.isCurrent
+      ? 'text-sky-900 dark:text-sky-100'
+      : progress?.badgeStatus === 'succeeded'
+        ? 'text-emerald-900 dark:text-emerald-100'
+        : 'text-amber-900 dark:text-amber-100';
   const drawerBatchDocument = previewDrawer.batchDocument || {};
   const drawerDocument = previewDrawer.document || {};
   const drawerDocumentStatus = previewDrawer.batchDocument ? jobProcessingDocumentStatus(previewDrawer.batchDocument) : null;
@@ -580,16 +590,19 @@ export default function JobDetailPage() {
       {job && canViewJobDetail ? (
         <>
           {progress ? (
-            <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+            <section className={`mb-5 rounded-lg border p-4 text-sm shadow-sm ${progressCardClass}`}>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="max-w-4xl">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-normal opacity-80">
+                    {t('Current job status')}
+                  </div>
                   <div className="mb-2">
                     <StatusBadge status={progress.badgeStatus} label={t(progress.statusLabel)} />
                   </div>
                   <h2 className="text-base font-semibold">{t(progress.title)}</h2>
                   <p className="mt-1">{t(progress.message)}</p>
                   {shouldLivePoll ? (
-                    <p className="mt-2 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                    <p className={`mt-2 text-xs font-semibold ${progressTextToneClass}`}>
                       {t('Live updates are on. This page refreshes progress every few seconds while processing is active.')}
                     </p>
                   ) : null}
@@ -598,30 +611,43 @@ export default function JobDetailPage() {
                       {t('This older start record did not create a running processing batch. Start text/search processing from Documents to create a cancellable batch with per-file progress.')}
                     </p>
                   ) : null}
-                  <ProgressMeter
-                    value={progress.progressPercent}
-                    valueLabel={progress.progressPercentLabel}
-                    label={t(progress.progressLabel)}
-                    detail={[
-                      t('{percentLabel} processed. {meaning}', {
-                        percentLabel: progress.progressPercentLabel,
-                        meaning: progress.progressText,
-                      }),
-                      progress.progressEstimateDetail ? t(progress.progressEstimateDetail) : null,
-                    ].filter(Boolean).join(' ')}
-                    className="mt-3 max-w-lg"
-                  />
+                  {progress.isCurrent || progress.badgeStatus !== 'succeeded' ? (
+                    <ProgressMeter
+                      value={progress.progressPercent}
+                      valueLabel={progress.progressPercentLabel}
+                      label={t(progress.progressLabel)}
+                      detail={[
+                        t('{percentLabel} processed. {meaning}', {
+                          percentLabel: progress.progressPercentLabel,
+                          meaning: progress.progressText,
+                        }),
+                        progress.progressEstimateDetail ? t(progress.progressEstimateDetail) : null,
+                      ].filter(Boolean).join(' ')}
+                      className="mt-3 max-w-lg"
+                    />
+                  ) : (
+                    <div className="mt-3 max-w-lg rounded-md border border-emerald-200 bg-white/75 p-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-black/20 dark:text-emerald-100">
+                      <div className="text-xs font-semibold uppercase tracking-normal opacity-80">{t('Current state')}</div>
+                      <div className="mt-1 font-semibold">{t(progress.progressLabel)}</div>
+                      <p className="mt-1 text-xs">{t(progress.progressText)}</p>
+                    </div>
+                  )}
                   {isProcessingRequest ? (
-                    <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                    <p className={`mt-1 text-xs ${progressTextToneClass}`}>
                       {t('Processing readiness means the app can search and cite the document. It does not decide legal importance, completeness, or whether a legal requirement is satisfied.')}
                     </p>
                   ) : null}
-                  <p className="mt-1 text-xs text-amber-900 dark:text-amber-100">
+                  <p className={`mt-1 text-xs ${progressTextToneClass}`}>
                     {t('You can keep working in other parts of the workspace.')}
                   </p>
                   {!progress.canCancel && isProcessingRequest ? (
-                    <p className="mt-1 text-xs font-semibold text-amber-900 dark:text-amber-100">
+                    <p className={`mt-1 text-xs font-semibold ${progressTextToneClass}`}>
                       {t(progress.cancelMessage)}
+                    </p>
+                  ) : null}
+                  {progress.nextActionLabel ? (
+                    <p className={`mt-2 text-xs font-semibold ${progressTextToneClass}`}>
+                      {t('Next action:')} {t(progress.nextActionLabel)}
                     </p>
                   ) : null}
                 </div>
@@ -685,10 +711,12 @@ export default function JobDetailPage() {
             <section className="mb-5 rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#101820]">
               <div className="flex flex-col gap-2 border-b border-gray-200 p-4 dark:border-gray-800 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <h2 className="text-base font-semibold text-gray-950 dark:text-white">{t('Documents in this processing batch')}</h2>
+                  <h2 className="text-base font-semibold text-gray-950 dark:text-white">
+                    {t(progress?.isCurrent ? 'Documents in this processing batch' : 'Document readiness')}
+                  </h2>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     {documentScope
-                      ? t('{count} document row(s) are in this batch.', { count: processingDocumentCount || processingDocuments.length })
+                      ? t('{count} document row(s) are connected to this job.', { count: processingDocumentCount || processingDocuments.length })
                       : excludedProcessingDocumentCount
                       ? t('{visible} file(s) are still shown in this batch. {total} copied file(s) were included when processing started.', {
                         visible: processingDocuments.length,
@@ -721,7 +749,7 @@ export default function JobDetailPage() {
                         : t('Evidence AI works through up to {count} document row(s) at a time.', { count: processingWindow.window_size })}
                     </p>
                   ) : null}
-                  {documentScope && processingWindowSize ? (
+                  {documentScope && progress?.isCurrent && processingWindowSize ? (
                     <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="font-semibold">{t('Processing window')}</div>
@@ -789,6 +817,8 @@ export default function JobDetailPage() {
                     const fileId = document?.file_id || document?.fileId || document?.id;
                     const canInspect = Boolean(fileId);
                     const cleanupBusy = state.cleanupLoadingFileId === fileId;
+                    const showDocumentProgress = documentStatus.badgeStatus === 'running'
+                      || (['queued', 'pending'].includes(documentStatus.badgeStatus) && documentStatus.progressPercent < 100);
                     return (
                       <article
                         key={`${document?.file_id || document?.content_hash || jobProcessingDocumentName(document)}-${index}`}
@@ -835,14 +865,21 @@ export default function JobDetailPage() {
                           <StatusBadge status={documentStatus.badgeStatus} label={t(documentStatus.label)} />
                           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(documentStatus.message)}</p>
                         </div>
-                        <ProgressMeter
-                          value={documentStatus.progressPercent}
-                          label={t(documentStatus.label)}
-                          detail={t('{percent}% processed. {meaning}', {
-                            percent: documentStatus.progressPercent,
-                            meaning: documentStatus.message,
-                          })}
-                        />
+                        {showDocumentProgress ? (
+                          <ProgressMeter
+                            value={documentStatus.progressPercent}
+                            label={t(documentStatus.label)}
+                            detail={t('{percent}% processed. {meaning}', {
+                              percent: documentStatus.progressPercent,
+                              meaning: documentStatus.message,
+                            })}
+                          />
+                        ) : (
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            <div className="font-semibold text-gray-800 dark:text-gray-100">{t(documentStatus.label)}</div>
+                            <p className="mt-1">{t(documentStatus.message)}</p>
+                          </div>
+                        )}
                         <div className="flex items-start justify-start md:justify-end">
                           <button
                             type="button"
@@ -893,7 +930,7 @@ export default function JobDetailPage() {
           </div>
 
           <section className="mt-6">
-            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Latest activity')}</h3>
+            <h3 className="mb-3 text-base font-semibold text-gray-950 dark:text-white">{t('Activity history')}</h3>
             <JobStatusTimeline
               events={job.events || []}
               limit={debugEnabled ? 0 : 4}
