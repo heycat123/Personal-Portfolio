@@ -76,8 +76,8 @@ const REQUIREMENT_UPLOAD_GUIDANCE = {
     'Child support worksheet notes if child support is part of the case.',
   ],
   income_employment: [
-    'Pay stubs or other earned-income proof for the last 6 months.',
-    'Income from any other source for the last 6 months if it is not already shown on pay stubs.',
+    'Recent pay stubs or other earned-income proof. Florida guidance may call for the 3 months before the financial affidavit is served.',
+    'Income from any other source if it is not already shown on pay stubs.',
     'Employment changes, bonuses, payouts, cash income, or non-recurring income notes if they apply.',
   ],
   tax_returns_documents: [
@@ -86,7 +86,7 @@ const REQUIREMENT_UPLOAD_GUIDANCE = {
     'Gift, foreign, state, business, partnership, corporate, or trust tax returns if they apply.',
   ],
   bank_account_statements: [
-    'Periodic statements for all checking accounts for the last 12 months.',
+    'Checking account statements. Florida guidance may call for the last 3 months.',
     'Statements for savings, money market, certificate of deposit, and similar accounts for the last 12 months.',
     'Canceled checks or registers for accounts with check-writing privileges, if available.',
   ],
@@ -96,8 +96,8 @@ const REQUIREMENT_UPLOAD_GUIDANCE = {
     'Notes if you do not use these accounts or they may not apply.',
   ],
   debts_liabilities: [
-    'Credit card and charge account statements or other debt records for the last 24 months.',
-    'Promissory notes, loan records, liens, judgments, or other money owed by either party within the last 24 months.',
+    'Credit card and charge account statements or other debt records. Florida guidance may call for records as of filing and the prior 3 months.',
+    'Promissory notes, loan records, liens, judgments, or other money owed by either party.',
     'Current lease agreements and debt balance records if they apply.',
   ],
   housing_recurring_expenses: [
@@ -129,6 +129,112 @@ const REQUIREMENT_UPLOAD_GUIDANCE = {
     'Questions for your lawyer, trusted helper, or your own review.',
     'A missing documents list.',
     'Items to verify before sharing, serving, or filing anything.',
+  ],
+};
+
+const STANDARD_PACKET_FOLDERS = {
+  financial_affidavit_draft_form: [
+    { label: 'Draft financial affidavit worksheet', description: 'Draft form, worksheet notes, or prepared values for review.' },
+    { label: 'Florida affidavit form notes', description: 'Questions about form 12.902(b), 12.902(c), or which form may apply.' },
+    { label: 'Questions for review', description: 'Questions to check before sharing, serving, or filing.' },
+    { label: 'Supporting notes', description: 'Notes that explain missing or uncertain affidavit items.' },
+  ],
+  income_employment: [
+    { label: 'Pay stubs', description: 'Recent pay stubs or earned-income proof. Add custom folders by employer if helpful.' },
+    { label: 'W-2 forms', description: 'W-2 forms and related wage records.' },
+    { label: '1099 forms', description: '1099 income forms and backup records.' },
+    { label: 'K-1 forms', description: 'K-1 income forms if they apply.' },
+    { label: 'Employment change records', description: 'Job changes, offer letters, separation records, or similar documents.' },
+    { label: 'Bonus, payout, or non-recurring income', description: 'Bonus, cash income, payout, or one-time income records.' },
+    { label: 'Other income records', description: 'Other income records or notes.' },
+  ],
+  tax_returns_documents: [
+    { label: 'Personal tax returns', description: 'Personal federal tax returns and attachments.' },
+    { label: 'State tax returns', description: 'State tax returns if they apply.' },
+    { label: 'Gift or other tax returns', description: 'Gift, foreign, or other tax returns if they apply.' },
+    { label: 'W-2 / 1099 / K-1 backup', description: 'Income forms used to support tax return records.' },
+    { label: 'IRS or state notices', description: 'Tax notices, estimates, or correspondence.' },
+    { label: 'Tax preparer notes or estimates', description: 'Preparer notes, estimates, or questions.' },
+    { label: 'Not-yet-filed notes', description: 'Notes explaining returns that are not filed yet.' },
+  ],
+  bank_account_statements: [
+    { label: 'Checking accounts', description: 'Checking statements. Add custom folders by institution or account.' },
+    { label: 'Savings accounts', description: 'Savings account statements grouped by institution or account.' },
+    { label: 'Money market accounts', description: 'Money market account statements.' },
+    { label: 'Certificates of deposit', description: 'Certificate of deposit statements or account records.' },
+    { label: 'Closed accounts', description: 'Closed account statements or closing records.' },
+    { label: 'Other account statements', description: 'Other bank, credit union, brokerage, or similar account records.' },
+  ],
+  digital_wallets_payment_apps: [
+    { label: 'PayPal', description: 'PayPal balances, statements, transfers, or screenshots.' },
+    { label: 'Venmo', description: 'Venmo transfers, balances, or screenshots.' },
+    { label: 'Cash App', description: 'Cash App transfers, balances, or screenshots.' },
+    { label: 'Apple Cash', description: 'Apple Cash records if they apply.' },
+    { label: 'Zelle records', description: 'Zelle transfers or bank screenshots showing transfers.' },
+    { label: 'Other payment apps', description: 'Other payment or transfer app records.' },
+  ],
+  debts_liabilities: [
+    { label: 'Credit cards and charge accounts', description: 'Credit card and charge account statements.' },
+    { label: 'Auto loans', description: 'Auto loan statements or payoff records.' },
+    { label: 'Student loans', description: 'Student loan statements or balance records.' },
+    { label: 'Personal loans', description: 'Personal loan statements, notes, or balance records.' },
+    { label: 'Family or friend loans', description: 'Loan notes, messages, or support records if they apply.' },
+    { label: 'Mortgage or real estate debt', description: 'Mortgage, lien, or real estate debt records.' },
+    { label: 'Tax debt or estimated tax liability', description: 'Tax debt notices, estimates, or notes.' },
+    { label: 'Other debts', description: 'Other debt or liability records.' },
+  ],
+  housing_recurring_expenses: [
+    { label: 'Rent or mortgage payments', description: 'Rent, mortgage, or housing payment proof.' },
+    { label: 'Lease or housing agreement', description: 'Lease, rental agreement, or housing contract.' },
+    { label: 'Utilities', description: 'Electric, water, gas, internet, phone, or similar utility records.' },
+    { label: 'Insurance expenses', description: 'Insurance bills or payment records.' },
+    { label: 'Transportation expenses', description: 'Vehicle, rideshare, fuel, toll, or commute records.' },
+    { label: 'Food and household expenses', description: 'Recurring household expense records.' },
+    { label: 'Other recurring expenses', description: 'Other recurring bills or explanations.' },
+  ],
+  insurance_benefits_retirement: [
+    { label: 'Health insurance', description: 'Health insurance cards, plan records, or premium records.' },
+    { label: 'Dental or vision insurance', description: 'Dental or vision insurance records.' },
+    { label: 'Life insurance', description: 'Life insurance declarations or statements.' },
+    { label: 'Retirement accounts', description: 'Retirement account statements such as 401(k), IRA, or similar accounts.' },
+    { label: 'Pension or deferred compensation', description: 'Pension, deferred compensation, or benefit records.' },
+    { label: 'Employer benefits', description: 'Employer benefit records.' },
+    { label: 'Benefit deduction records', description: 'Payroll deductions or benefit deduction records.' },
+  ],
+  business_self_employment: [
+    { label: 'Business tax returns', description: 'Business, partnership, corporate, or trust tax returns.' },
+    { label: 'Business bank statements', description: 'Business bank statements grouped by business or account.' },
+    { label: 'Profit and loss records', description: 'Profit/loss statements and accounting summaries.' },
+    { label: 'Invoices and payment records', description: 'Invoices, receipts, and payment records.' },
+    { label: 'Account balances', description: 'Business account balance records.' },
+    { label: 'Business ownership or status records', description: 'Ownership, corporate, partnership, trust, or status records.' },
+    { label: 'Corporate, partnership, or trust records', description: 'Entity records or agreements if they apply.' },
+    { label: 'Self-employment income records', description: 'Self-employment income support.' },
+  ],
+  child_household_support_expenses: [
+    { label: 'Child care expenses', description: 'Daycare, babysitting, aftercare, or child care records.' },
+    { label: 'School expenses', description: 'School, supplies, fees, activities, or tuition records.' },
+    { label: 'Medical or health expenses', description: 'Medical, dental, therapy, or health-related expense records.' },
+    { label: 'Insurance for child/dependents', description: 'Insurance records for children or dependents.' },
+    { label: 'Transportation or travel expenses', description: 'Transportation or travel expenses related to children or household support.' },
+    { label: 'Support transfers or remittances', description: 'Support payments, transfers, remittances, or reimbursements.' },
+    { label: 'Other household support', description: 'Other child or household support expenses.' },
+  ],
+  orders_agreements_support_obligations: [
+    { label: 'Child support orders', description: 'Existing child support orders if they apply.' },
+    { label: 'Spousal support or alimony orders', description: 'Existing spousal support or alimony orders if they apply.' },
+    { label: 'Other financial court orders', description: 'Other court orders related to money, property, or disclosure.' },
+    { label: 'Written agreements', description: 'Written agreements or settlement terms.' },
+    { label: 'Premarital or marital agreements', description: 'Premarital or marital agreements if they apply.' },
+    { label: 'Modification-related agreements', description: 'Documents related to modification requests or agreements.' },
+    { label: 'Financial disclosure notices/orders', description: 'Notices or orders about financial disclosure.' },
+  ],
+  notes_questions: [
+    { label: 'Questions for lawyer', description: 'Questions for a lawyer, trusted helper, or your own review.' },
+    { label: 'Missing documents', description: 'A list of documents you still need to find.' },
+    { label: 'Items to verify', description: 'Items that need another look before sharing or filing.' },
+    { label: 'Explanation notes', description: 'Notes explaining context or gaps.' },
+    { label: 'May not apply notes', description: 'Notes for items you believe may not apply.' },
   ],
 };
 
@@ -254,6 +360,22 @@ function formatBytes(value) {
   return `${(numeric / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function folderLabelKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function standardFoldersForRequirement(requirement) {
+  return STANDARD_PACKET_FOLDERS[requirement?.requirement_id] || [];
+}
+
+function linkFolderId(link) {
+  return link?.folder_id || link?.packet_folder_id || link?.user_folder_id || '';
+}
+
+function linkDocument(link, linkedDocuments = []) {
+  return link?.document || linkedDocuments.find((item) => documentFileId(item) === link?.file_id) || {};
+}
+
 async function sha256File(selectedFile) {
   if (!window.crypto?.subtle) {
     return null;
@@ -267,6 +389,18 @@ async function sha256File(selectedFile) {
 
 function uploadItemId(selectedFile, index) {
   return `${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}-${index}`;
+}
+
+function localUploadItemsFromFiles(files = []) {
+  return files.map((file, index) => ({
+    id: uploadItemId(file, index),
+    file,
+    name: file.name,
+    size: file.size,
+    status: 'ready',
+    progress: 0,
+    message: 'Ready to upload.',
+  }));
 }
 
 function uploadWithProgress(url, { method = 'PUT', headers = {}, file, onProgress }) {
@@ -1028,6 +1162,7 @@ function RequirementEditor({
   onUpdateFolder,
   onDeleteFolder,
   onOpenDocumentPicker,
+  onDropFiles,
   onUnlinkDocument,
 }) {
   const [status, setStatus] = useState(requirement.status || 'needed');
@@ -1039,6 +1174,7 @@ function RequirementEditor({
   const [editingFolderId, setEditingFolderId] = useState(null);
   const [editFolderLabel, setEditFolderLabel] = useState('');
   const [editFolderDescription, setEditFolderDescription] = useState('');
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
 
   const changed =
     status !== (requirement.status || 'needed') ||
@@ -1049,12 +1185,218 @@ function RequirementEditor({
   const rowSaving = saving === requirementId;
   const linkedDocuments = Array.isArray(requirement.linked_documents) ? requirement.linked_documents : [];
   const links = Array.isArray(requirement.links) ? requirement.links : [];
+  const linkedDocumentCount = Math.max(linkedDocuments.length, links.length);
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
   const folderById = Object.fromEntries(userFolders.map((folder) => [folder.folder_id, folder]));
+  const standardFolders = standardFoldersForRequirement(requirement);
+  const existingFolderLabels = new Set(userFolders.map((folder) => folderLabelKey(folder.label)));
+  const missingStandardFolders = standardFolders.filter((folder) => !existingFolderLabels.has(folderLabelKey(folder.label)));
+  const linksByFolderId = new Map(userFolders.map((folder) => [folder.folder_id, []]));
+  const unfiledLinks = [];
+  links.forEach((link) => {
+    const folderId = linkFolderId(link);
+    if (folderId && linksByFolderId.has(folderId)) {
+      linksByFolderId.get(folderId).push(link);
+      return;
+    }
+    unfiledLinks.push(link);
+  });
+  const fallbackUnfiledDocuments = links.length ? [] : linkedDocuments.map((document) => ({ document, file_id: documentFileId(document) }));
   const templateGuidance = requirement.metadata_json?.upload_guidance;
   const uploadGuidance = Array.isArray(templateGuidance) && templateGuidance.length
     ? templateGuidance
     : REQUIREMENT_UPLOAD_GUIDANCE[requirementId] || [];
+  const showLegacyFolderLayout = requirement.metadata_json?.show_legacy_packet_folder_layout === true;
+
+  function dropFilesOnFolder(event, folderId) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragOverFolderId(null);
+    if (!canContribute || typeof onDropFiles !== 'function') {
+      return;
+    }
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length) {
+      onDropFiles(requirement, folderId || '', files);
+    }
+  }
+
+  function renderLinkedDocumentCard(link, folderLabel = null) {
+    const document = link.document || linkDocument(link, linkedDocuments);
+    const linkId = link.packet_requirement_link_id;
+    return (
+      <div key={linkId || documentFileId(document) || `${documentDisplayName(document)}:${folderLabel || 'folder'}`} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
+            <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+              <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
+              {folderLabel ? <span>In folder: {folderLabel}</span> : null}
+              {document.readiness_label ? <span>{document.readiness_label}</span> : null}
+            </div>
+          </div>
+          {linkId ? (
+            <button
+              type="button"
+              onClick={() => onUnlinkDocument(requirement, link)}
+              disabled={!canContribute || unlinking === linkId}
+              className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+              title="Remove from this packet item"
+            >
+              {unlinking === linkId ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+              Remove link
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFolderContainer({ folder, folderLinks, isChecklistOnly = false }) {
+    const folderId = folder?.folder_id || '';
+    const folderLabel = isChecklistOnly ? 'Checklist item only' : (folder?.label || 'Folder');
+    const isDragTarget = dragOverFolderId === (folderId || 'checklist');
+    const isEditing = !isChecklistOnly && editingFolderId === folderId;
+    const actionBusy = folderAction?.endsWith(`:${folderId}`);
+    if (isEditing) {
+      return (
+        <div key={folderId} className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end">
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Folder name</span>
+              <input
+                type="text"
+                value={editFolderLabel}
+                onChange={(event) => setEditFolderLabel(event.target.value)}
+                maxLength={120}
+                className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Description</span>
+              <input
+                type="text"
+                value={editFolderDescription}
+                onChange={(event) => setEditFolderDescription(event.target.value)}
+                maxLength={240}
+                className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={!editFolderLabel.trim() || Boolean(folderAction)}
+              onClick={async () => {
+                const updated = await onUpdateFolder(requirement, folder, {
+                  label: editFolderLabel.trim(),
+                  description: editFolderDescription.trim() || undefined,
+                });
+                if (updated) {
+                  setEditingFolderId(null);
+                }
+              }}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Save size={14} aria-hidden="true" />}
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(folderAction)}
+              onClick={() => setEditingFolderId(null)}
+              className="inline-flex min-h-10 items-center justify-center rounded-md border border-[var(--lakai-border)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div
+        key={folderId || 'checklist-only'}
+        onDragOver={(event) => {
+          if (!canContribute) return;
+          event.preventDefault();
+          setDragOverFolderId(folderId || 'checklist');
+        }}
+        onDragLeave={() => setDragOverFolderId(null)}
+        onDrop={(event) => dropFilesOnFolder(event, folderId)}
+        className={`rounded-lg border p-3 transition ${
+          isDragTarget
+            ? 'border-[var(--lakai-primary)] bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
+            : 'border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)]'
+        }`}
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Folder size={16} className={isChecklistOnly ? 'text-[var(--lakai-text-muted)]' : 'text-amber-600'} aria-hidden="true" />
+              <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{folderLabel}</p>
+              <span className="rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 py-0.5 text-xs text-[var(--lakai-text-muted)]">
+                {folderLinks.length} document(s)
+              </span>
+            </div>
+            {folder?.description ? <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{folder.description}</p> : null}
+            {folder?.export_folder_path ? (
+              <p className="mt-1 break-words text-xs text-[var(--lakai-text-muted)]">Export path: {folder.export_folder_path}</p>
+            ) : null}
+            <p className="mt-2 text-xs text-[var(--lakai-text-muted)]">
+              Drop computer files here, or add documents into this folder.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {canContribute ? (
+              <button
+                type="button"
+                onClick={() => onOpenDocumentPicker(requirement, { folderId })}
+                className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
+              >
+                <Paperclip size={14} aria-hidden="true" />
+                Add to folder
+              </button>
+            ) : null}
+            {!isChecklistOnly && canContribute ? (
+              <>
+                <button
+                  type="button"
+                  disabled={Boolean(folderAction)}
+                  onClick={() => {
+                    setEditingFolderId(folder.folder_id);
+                    setEditFolderLabel(folder.label || '');
+                    setEditFolderDescription(folder.description || '');
+                  }}
+                  className="inline-flex min-h-9 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                >
+                  Rename
+                </button>
+                {folder.can_delete !== false ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(folderAction)}
+                    onClick={() => onDeleteFolder(requirement, folder)}
+                    className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                    title="Delete this packet folder. Case documents are not deleted."
+                  >
+                    {folderAction?.endsWith(`:${folder.folder_id}`) ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                    Delete
+                  </button>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2">
+          {folderLinks.length ? (
+            folderLinks.map((link) => renderLinkedDocumentCard(link, isChecklistOnly ? null : folderLabel))
+          ) : (
+            <div className="rounded-md border border-dashed border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-4 text-sm text-[var(--lakai-text-muted)]">
+              No documents in this folder yet.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -1138,16 +1480,16 @@ function RequirementEditor({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-[var(--lakai-text)]">
-              {linkedDocuments.length ? `${linkedDocuments.length} document(s) linked` : 'No documents linked yet'}
+              {linkedDocumentCount ? `${linkedDocumentCount} document(s) linked` : 'No documents linked yet'}
             </p>
             <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
-              Packet links organize case documents under this checklist item. Removing a link does not delete the document.
+              Packet folders organize case documents for review and export. Removing a link does not delete the document.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => onOpenDocumentPicker(requirement)}
+              onClick={() => onOpenDocumentPicker(requirement, { folderId: '' })}
               disabled={!canContribute}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
             >
@@ -1160,24 +1502,61 @@ function RequirementEditor({
         <div className="mt-4 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-[var(--lakai-text)]">
-                {userFolders.length ? `${userFolders.length} saved folder(s)` : 'No saved folders yet'}
-              </p>
+              <p className="text-sm font-semibold text-[var(--lakai-text)]">Folder structure</p>
               <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
-                Folders help organize this packet item, such as separate banks or accounts. They do not move or delete documents.
+                Use standard folders for a consistent packet, then add custom folders for specific accounts, employers, businesses, creditors, or expense sources.
               </p>
             </div>
             {canContribute ? (
-              <button
-                type="button"
-                onClick={() => setNewFolderOpen((current) => !current)}
-                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
-              >
-                <Plus size={14} aria-hidden="true" />
-                Add folder
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {missingStandardFolders.length ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(folderAction)}
+                    onClick={async () => {
+                      for (const folder of missingStandardFolders) {
+                        const created = await onCreateFolder(requirement, folder);
+                        if (!created) break;
+                      }
+                    }}
+                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                  >
+                    {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Folder size={14} aria-hidden="true" />}
+                    Add standard folders
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setNewFolderOpen((current) => !current)}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  Add custom folder
+                </button>
+              </div>
             ) : null}
           </div>
+
+          {missingStandardFolders.length ? (
+            <div className="mt-3 rounded-md border border-dashed border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+              <p className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">Suggested standard folders</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {missingStandardFolders.slice(0, 8).map((folder) => (
+                  <span key={folder.label} className="rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2.5 py-1 text-xs text-[var(--lakai-text-muted)]">
+                    {folder.label}
+                  </span>
+                ))}
+                {missingStandardFolders.length > 8 ? (
+                  <span className="rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2.5 py-1 text-xs text-[var(--lakai-text-muted)]">
+                    +{missingStandardFolders.length - 8} more
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs text-[var(--lakai-text-muted)]">
+                These are organization folders, not legal conclusions. You can add only the ones that help your packet.
+              </p>
+            </div>
+          ) : null}
 
           {newFolderOpen ? (
             <div className="mt-3 grid gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
@@ -1188,7 +1567,7 @@ function RequirementEditor({
                   value={newFolderLabel}
                   onChange={(event) => setNewFolderLabel(event.target.value)}
                   maxLength={120}
-                  placeholder="Example: Chase checking"
+                  placeholder="Example: Chase checking or 2025"
                   className="mt-1 min-h-10 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20"
                 />
               </label>
@@ -1225,7 +1604,19 @@ function RequirementEditor({
             </div>
           ) : null}
 
-          {userFolders.length ? (
+          <div className="mt-3 grid gap-3">
+            {renderFolderContainer({
+              folder: null,
+              folderLinks: [...unfiledLinks, ...fallbackUnfiledDocuments],
+              isChecklistOnly: true,
+            })}
+            {userFolders.map((folder) => renderFolderContainer({
+              folder,
+              folderLinks: linksByFolderId.get(folder.folder_id) || [],
+            }))}
+          </div>
+
+          {showLegacyFolderLayout && userFolders.length ? (
             <div className="mt-3 grid gap-2">
               {userFolders.map((folder) => {
                 const isEditing = editingFolderId === folder.folder_id;
@@ -1327,7 +1718,7 @@ function RequirementEditor({
           ) : null}
         </div>
 
-        {links.length ? (
+        {showLegacyFolderLayout && links.length ? (
           <div className="mt-3 grid gap-2 md:grid-cols-2">
             {links.map((link) => {
               const document = link.document || linkedDocuments.find((item) => documentFileId(item) === link.file_id) || {};
@@ -1609,19 +2000,20 @@ export default function PacketsPage() {
     }
   }
 
-  function openDocumentPicker(requirement) {
+  function openDocumentPicker(requirement, options = {}) {
+    const files = Array.isArray(options.files) ? options.files : [];
     setDocumentPicker({
       open: true,
       requirement,
-      mode: 'existing',
+      mode: options.mode || 'existing',
       loading: false,
       linking: false,
       search: '',
       documents: [],
       selectedFileIds: [],
-      folderId: '',
+      folderId: options.folderId || '',
       localUploading: false,
-      localUploadItems: [],
+      localUploadItems: files.length ? localUploadItemsFromFiles(files) : [],
       connectorsLoading: false,
       connectorAction: null,
       connectorError: null,
@@ -1632,7 +2024,15 @@ export default function PacketsPage() {
       driveItems: [],
       drivePath: [{ id: 'root', name: 'My Drive' }],
       driveSelectedIds: [],
+      driveImportFailures: [],
     });
+  }
+
+  function dropFilesOnPacketFolder(requirement, folderId, files) {
+    if (!files?.length) {
+      return;
+    }
+    openDocumentPicker(requirement, { folderId, mode: 'local_upload', files });
   }
 
   async function startProcessingAfterPacketDocuments(token) {
@@ -1915,15 +2315,7 @@ export default function PacketsPage() {
   function setLocalFiles(files) {
     setDocumentPicker((current) => ({
       ...current,
-      localUploadItems: files.map((file, index) => ({
-        id: uploadItemId(file, index),
-        file,
-        name: file.name,
-        size: file.size,
-        status: 'ready',
-        progress: 0,
-        message: 'Ready to upload.',
-      })),
+      localUploadItems: localUploadItemsFromFiles(files),
     }));
   }
 
@@ -2369,6 +2761,7 @@ export default function PacketsPage() {
                   onUpdateFolder={updateRequirementFolder}
                   onDeleteFolder={deleteRequirementFolder}
                   onOpenDocumentPicker={openDocumentPicker}
+                  onDropFiles={dropFilesOnPacketFolder}
                   onUnlinkDocument={unlinkDocument}
                 />
               ))}
