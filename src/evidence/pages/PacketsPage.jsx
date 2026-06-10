@@ -1,14 +1,18 @@
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   ClipboardCheck,
   Eye,
   FileText,
   FileUp,
   Folder,
+  FolderPlus,
   FolderOpen,
   Info,
   Link2,
+  ListChecks,
   Loader2,
   NotepadText,
   PackageCheck,
@@ -372,6 +376,16 @@ function packetFolderId(folder) {
 
 function standardFoldersForRequirement(requirement) {
   return STANDARD_PACKET_FOLDERS[requirement?.requirement_id] || [];
+}
+
+function requirementAnchorId(requirementId) {
+  return `packet-requirement-${String(requirementId || 'item').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
+
+function requirementLinkedCount(requirement) {
+  const linkedDocuments = Array.isArray(requirement?.linked_documents) ? requirement.linked_documents : [];
+  const links = Array.isArray(requirement?.links) ? requirement.links : [];
+  return Math.max(linkedDocuments.length, links.length);
 }
 
 function linkPlacement(link) {
@@ -789,6 +803,7 @@ function PacketDocumentPicker({
               type="button"
               onClick={() => onModeChange(tab.id)}
               disabled={busy}
+              aria-pressed={mode === tab.id}
               className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                 mode === tab.id
                   ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)] text-white'
@@ -844,6 +859,7 @@ function PacketDocumentPicker({
                     checked={checked}
                     onChange={() => onToggle(fileId)}
                     disabled={!fileId || !canContribute}
+                    aria-label={`Select ${documentDisplayName(document)}`}
                     className="mt-1 h-4 w-4 accent-[var(--lakai-primary)]"
                   />
                   <div className="min-w-0 flex-1">
@@ -1061,6 +1077,7 @@ function PacketDocumentPicker({
                             checked={checked}
                             onChange={() => onToggleDriveItem(item)}
                             disabled={isFolder || !canContribute || Boolean(driveAction)}
+                            aria-label={isFolder ? `${item.name || 'Drive folder'} is a folder` : `Select ${item.name || item.id}`}
                             className="mt-1 h-4 w-4 accent-[var(--lakai-primary)]"
                           />
                           <div className="min-w-0 flex-1">
@@ -1324,6 +1341,80 @@ function PacketCard({ packet, caseId }) {
   );
 }
 
+function PacketChecklistGuide({ coverage, groupedRequirements, activeRequirementId }) {
+  const requirements = groupedRequirements.flatMap(({ items }) => items);
+  const completedCount = requirements.filter((requirement) => COVERED_STATUSES.includes(normalizeStatus(requirement.status))).length;
+  const needsAttentionCount = requirements.filter((requirement) => normalizeStatus(requirement.status) === 'needs_attention').length;
+
+  return (
+    <aside className="rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-4 shadow-sm lg:sticky lg:top-4">
+      <div className="flex items-start gap-3">
+        <span className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-full bg-[var(--lakai-primary)]/10 text-[var(--lakai-primary)]">
+          <ListChecks size={20} aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-[var(--lakai-text)]">Packet guide</p>
+          <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
+            Track what is covered and what still needs a document, note, skip, or may-not-apply response.
+          </p>
+        </div>
+      </div>
+      <ProgressMeter
+        className="mt-4"
+        value={coverage.percent}
+        label="Checklist coverage"
+        valueLabel={`${coverage.responded}/${coverage.total || 0}`}
+        detail={`${formatCount(coverage.open)} item(s) still need a response.`}
+      />
+      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+        <div className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-2">
+          <p className="font-semibold text-[var(--lakai-text)]">{formatCount(requirements.length)}</p>
+          <p className="text-[var(--lakai-text-muted)]">Items</p>
+        </div>
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+          <p className="font-semibold text-emerald-800 dark:text-emerald-100">{formatCount(completedCount)}</p>
+          <p className="text-emerald-800 dark:text-emerald-100">Covered</p>
+        </div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 dark:border-amber-900/60 dark:bg-amber-950/30">
+          <p className="font-semibold text-amber-900 dark:text-amber-100">{formatCount(needsAttentionCount)}</p>
+          <p className="text-amber-900 dark:text-amber-100">Review</p>
+        </div>
+      </div>
+      <nav className="mt-4 space-y-4" aria-label="Packet checklist sections">
+        {groupedRequirements.map(({ group, items }) => (
+          <div key={group}>
+            <p className="mb-2 text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">{group}</p>
+            <div className="space-y-1.5">
+              {items.map((requirement) => {
+                const isActive = activeRequirementId === requirement.requirement_id;
+                return (
+                  <a
+                    key={requirement.requirement_id}
+                    href={`#${requirementAnchorId(requirement.requirement_id)}`}
+                    className={`block rounded-lg border px-3 py-2 text-sm transition ${
+                      isActive
+                        ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)]/10 text-[var(--lakai-text)]'
+                        : 'border-transparent text-[var(--lakai-text-muted)] hover:border-[var(--lakai-border)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate font-semibold">{requirement.label}</span>
+                      <span className="shrink-0 text-xs">{requirementStatusLabel(requirement.status)}</span>
+                    </span>
+                    <span className="mt-1 block text-xs">
+                      {formatCount(requirementLinkedCount(requirement))} document(s)
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
 function RequirementEditor({
   requirement,
   packetId,
@@ -1352,6 +1443,7 @@ function RequirementEditor({
   const [editFolderLabel, setEditFolderLabel] = useState('');
   const [editFolderDescription, setEditFolderDescription] = useState('');
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
+  const [activeFolderKey, setActiveFolderKey] = useState(null);
 
   const changed =
     status !== (requirement.status || 'needed') ||
@@ -1379,26 +1471,104 @@ function RequirementEditor({
     unfiledLinks.push(link);
   });
   const fallbackUnfiledDocuments = links.length ? [] : linkedDocuments.map((document) => ({ document, file_id: documentFileId(document) }));
+  const checklistLinks = [...unfiledLinks, ...fallbackUnfiledDocuments];
+  const folderCards = [
+    {
+      key: 'checklist',
+      type: 'base',
+      folderId: '',
+      label: 'Checklist item only',
+      description: 'Documents linked to this checklist item without a folder yet.',
+      links: checklistLinks,
+    },
+    ...userFolders.map((folder) => ({
+      key: `folder:${packetFolderId(folder)}`,
+      type: 'folder',
+      folderId: packetFolderId(folder),
+      label: folder.label || 'Folder',
+      description: folder.description || '',
+      folder,
+      links: linksByFolderId.get(packetFolderId(folder)) || [],
+    })),
+    ...missingStandardFolders.map((folder) => ({
+      key: `standard:${folderLabelKey(folder.label)}`,
+      type: 'suggested',
+      folderId: '',
+      label: folder.label || 'Standard folder',
+      description: folder.description || 'Create this standard folder when it helps organize the packet.',
+      folder,
+      links: [],
+    })),
+  ];
+  const activeFolder = folderCards.find((folder) => folder.key === activeFolderKey) || null;
+  const moveFolderOptions = [
+    { value: '', label: 'Checklist item only' },
+    ...userFolders
+      .map((folder) => ({ value: packetFolderId(folder), label: folder.label || 'Folder' }))
+      .filter((folder) => folder.value),
+  ];
   const templateGuidance = requirement.metadata_json?.upload_guidance;
   const uploadGuidance = Array.isArray(templateGuidance) && templateGuidance.length
     ? templateGuidance
     : REQUIREMENT_UPLOAD_GUIDANCE[requirementId] || [];
   const showLegacyFolderLayout = requirement.metadata_json?.show_legacy_packet_folder_layout === true;
 
-  function dropItemsOnFolder(event, folderId) {
+  async function ensureFolderForCard(card) {
+    if (!card) {
+      return '';
+    }
+    if (card.type === 'base') {
+      return '';
+    }
+    if (card.folderId) {
+      return card.folderId;
+    }
+    if (card.type === 'suggested' && typeof onCreateFolder === 'function') {
+      const created = await onCreateFolder(requirement, card.folder);
+      const createdFolderId = packetFolderId(created);
+      if (createdFolderId) {
+        setActiveFolderKey(`folder:${createdFolderId}`);
+        return createdFolderId;
+      }
+    }
+    return '';
+  }
+
+  async function openFolderCard(card) {
+    if (!card) {
+      setActiveFolderKey(null);
+      return;
+    }
+    if (card.type === 'suggested') {
+      const createdFolderId = await ensureFolderForCard(card);
+      if (!createdFolderId) {
+        return;
+      }
+      return;
+    }
+    setActiveFolderKey(card.key);
+  }
+
+  async function addDocumentsToFolder(card) {
+    const folderId = await ensureFolderForCard(card);
+    onOpenDocumentPicker(requirement, { folderId });
+  }
+
+  async function dropItemsOnFolder(event, card) {
     event.preventDefault();
     event.stopPropagation();
     setDragOverFolderId(null);
     if (!canContribute || typeof onDropFiles !== 'function') {
       return;
     }
+    const folderId = await ensureFolderForCard(card);
     const linkPayload = event.dataTransfer?.getData('application/x-packet-link') ||
       event.dataTransfer?.getData('text/plain');
     if (linkPayload && typeof onMoveDocumentLink === 'function') {
       try {
         const parsed = JSON.parse(linkPayload);
         if (parsed?.linkId) {
-          onMoveDocumentLink(requirement, parsed, folderId || '');
+          onMoveDocumentLink(requirement, parsed, folderId);
           return;
         }
       } catch {
@@ -1407,7 +1577,7 @@ function RequirementEditor({
     }
     const files = Array.from(event.dataTransfer?.files || []);
     if (files.length) {
-      onDropFiles(requirement, folderId || '', files);
+      onDropFiles(requirement, folderId, files);
     }
   }
 
@@ -1418,18 +1588,15 @@ function RequirementEditor({
     const currentFolderId = linkFolderId(link);
     const moveBusy = movingLink === linkId;
     const canPreview = Boolean(fileId);
+    const documentName = documentDisplayName(document);
+    const movePayload = { linkId, fileId, fromFolderId: currentFolderId, documentName };
     return (
       <div
-        key={linkId || fileId || `${documentDisplayName(document)}:${folderLabel || 'folder'}`}
+        key={linkId || fileId || `${documentName}:${folderLabel || 'folder'}`}
         draggable={Boolean(canContribute && linkId)}
         onDragStart={(event) => {
           if (!linkId) return;
-          const payload = JSON.stringify({
-            linkId,
-            fileId,
-            fromFolderId: currentFolderId,
-            documentName: documentDisplayName(document),
-          });
+          const payload = JSON.stringify(movePayload);
           event.dataTransfer.effectAllowed = 'move';
           event.dataTransfer.setData('application/x-packet-link', payload);
           event.dataTransfer.setData('text/plain', payload);
@@ -1449,7 +1616,7 @@ function RequirementEditor({
                 className="min-w-0 break-words text-left text-sm font-semibold text-[var(--lakai-text)] transition hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:hover:text-[var(--lakai-text)]"
                 title={canPreview ? 'Preview this document' : undefined}
               >
-                {documentDisplayName(document)}
+                {documentName}
               </button>
               <button
                 type="button"
@@ -1459,7 +1626,7 @@ function RequirementEditor({
                 title="Preview this document"
               >
                 <Eye size={14} aria-hidden="true" />
-                <span className="sr-only">Preview {documentDisplayName(document)}</span>
+                <span className="sr-only">Preview {documentName}</span>
               </button>
             </div>
             <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
@@ -1469,7 +1636,22 @@ function RequirementEditor({
               {linkId && canContribute ? <span>Drag to move</span> : null}
             </div>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap items-start gap-2">
+            {linkId && canContribute ? (
+              <label className="block min-w-[150px]">
+                <span className="sr-only">Move {documentName} to folder</span>
+                <select
+                  value={currentFolderId || ''}
+                  onChange={(event) => onMoveDocumentLink(requirement, movePayload, event.target.value)}
+                  disabled={moveBusy}
+                  className="min-h-9 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 py-1 text-xs font-semibold text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {moveFolderOptions.map((option) => (
+                    <option key={option.value || 'checklist'} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {linkId ? (
             <button
               type="button"
@@ -1488,10 +1670,88 @@ function RequirementEditor({
     );
   }
 
-  function renderFolderContainer({ folder, folderLinks, isChecklistOnly = false }) {
+  function renderFolderTile(card) {
+    const isChecklistOnly = card.type === 'base';
+    const isSuggested = card.type === 'suggested';
+    const isDragTarget = dragOverFolderId === card.key;
+    const folderCountLabel = isSuggested ? 'Add when needed' : `${card.links.length} document(s)`;
+    return (
+      <div
+        key={card.key}
+        onDragOver={(event) => {
+          if (!canContribute) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = event.dataTransfer?.files?.length ? 'copy' : 'move';
+          setDragOverFolderId(card.key);
+        }}
+        onDragLeave={() => setDragOverFolderId(null)}
+        onDrop={(event) => dropItemsOnFolder(event, card)}
+        className={`flex min-h-[180px] flex-col rounded-2xl border border-dashed p-4 transition ${
+          isDragTarget
+            ? 'border-[var(--lakai-primary)] bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
+            : 'border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] hover:border-[var(--lakai-primary)]/60 hover:bg-[var(--lakai-surface)]'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2">
+            <span className={`inline-flex min-h-9 min-w-9 items-center justify-center rounded-full ${
+              isChecklistOnly ? 'bg-[var(--lakai-surface)] text-[var(--lakai-text-muted)]' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+            }`}>
+              <Folder size={18} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h5 className="break-words text-sm font-semibold text-[var(--lakai-text)]">{card.label}</h5>
+              <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{card.description}</p>
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${
+            isSuggested
+              ? 'bg-[var(--lakai-surface)] text-[var(--lakai-text-muted)]'
+              : 'bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-100'
+          }`}>
+            {folderCountLabel}
+          </span>
+        </div>
+        <div className="mt-4 flex flex-1 items-center justify-center rounded-xl border border-dashed border-[var(--lakai-border)] bg-[var(--lakai-surface)]/70 p-4 text-center text-sm text-[var(--lakai-text-muted)]">
+          {card.links.length ? (
+            <span>{card.links.slice(0, 2).map((link) => documentDisplayName(link.document || linkDocument(link, linkedDocuments))).join(', ')}{card.links.length > 2 ? `, +${card.links.length - 2} more` : ''}</span>
+          ) : isSuggested ? (
+            <span>Create this folder when it fits your packet.</span>
+          ) : (
+            <span>Drop files here or add documents to this folder.</span>
+          )}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => openFolderCard(card)}
+            className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
+          >
+            {isSuggested ? <FolderPlus size={15} aria-hidden="true" /> : <FolderOpen size={15} aria-hidden="true" />}
+            {isSuggested ? 'Create folder' : 'Open folder'}
+          </button>
+          {canContribute ? (
+            <button
+              type="button"
+              onClick={() => addDocumentsToFolder(card)}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--lakai-primary-strong)]"
+            >
+              <Paperclip size={15} aria-hidden="true" />
+              Add
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFolderContainer(card) {
+    const folder = card?.folder || null;
+    const folderLinks = Array.isArray(card?.links) ? card.links : [];
+    const isChecklistOnly = card?.type === 'base';
     const folderId = packetFolderId(folder);
     const folderLabel = isChecklistOnly ? 'Checklist item only' : (folder?.label || 'Folder');
-    const isDragTarget = dragOverFolderId === (folderId || 'checklist');
+    const isDragTarget = dragOverFolderId === card?.key;
     const isEditing = !isChecklistOnly && editingFolderId === folderId;
     const actionBusy = folderAction?.endsWith(`:${folderId}`);
     if (isEditing) {
@@ -1554,10 +1814,10 @@ function RequirementEditor({
           if (!canContribute) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = event.dataTransfer?.files?.length ? 'copy' : 'move';
-          setDragOverFolderId(folderId || 'checklist');
+          setDragOverFolderId(card?.key || 'checklist');
         }}
         onDragLeave={() => setDragOverFolderId(null)}
-        onDrop={(event) => dropItemsOnFolder(event, folderId)}
+        onDrop={(event) => dropItemsOnFolder(event, card)}
         className={`rounded-lg border p-3 transition ${
           isDragTarget
             ? 'border-[var(--lakai-primary)] bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
@@ -1634,7 +1894,11 @@ function RequirementEditor({
   }
 
   return (
-    <article className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+    <article
+      id={requirementAnchorId(requirementId)}
+      data-requirement-id={requirementId}
+      className="scroll-mt-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]"
+    >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -1756,7 +2020,7 @@ function RequirementEditor({
                     }}
                     className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
                   >
-                    {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Folder size={14} aria-hidden="true" />}
+                    {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <FolderPlus size={14} aria-hidden="true" />}
                     Add standard folders
                   </button>
                 ) : null}
@@ -1765,7 +2029,7 @@ function RequirementEditor({
                   onClick={() => setNewFolderOpen((current) => !current)}
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
                 >
-                  <Plus size={14} aria-hidden="true" />
+                  <FolderPlus size={14} aria-hidden="true" />
                   Add custom folder
                 </button>
               </div>
@@ -1833,23 +2097,39 @@ function RequirementEditor({
                 }}
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Folder size={14} aria-hidden="true" />}
+                {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <FolderPlus size={14} aria-hidden="true" />}
                 Save folder
               </button>
             </div>
           ) : null}
 
-          <div className="mt-3 grid gap-3">
-            {renderFolderContainer({
-              folder: null,
-              folderLinks: [...unfiledLinks, ...fallbackUnfiledDocuments],
-              isChecklistOnly: true,
-            })}
-            {userFolders.map((folder) => renderFolderContainer({
-              folder,
-              folderLinks: linksByFolderId.get(packetFolderId(folder)) || [],
-            }))}
-          </div>
+          {activeFolder ? (
+            <div className="mt-3">
+              <div className="mb-3 flex flex-col gap-3 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-[var(--lakai-text-muted)]">
+                  <button
+                    type="button"
+                    onClick={() => setActiveFolderKey(null)}
+                    className="inline-flex min-h-9 items-center gap-1 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
+                  >
+                    <ChevronLeft size={14} aria-hidden="true" />
+                    All folders
+                  </button>
+                  <span className="font-semibold text-[var(--lakai-text)]">{requirement.label}</span>
+                  <ChevronRight size={14} aria-hidden="true" />
+                  <span className="break-words font-semibold text-[var(--lakai-text)]">{activeFolder.label}</span>
+                </div>
+                <p className="text-xs text-[var(--lakai-text-muted)]">
+                  Drag linked documents here, upload files, or use Move to folder on each document.
+                </p>
+              </div>
+              {renderFolderContainer(activeFolder)}
+            </div>
+          ) : (
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {folderCards.map((card) => renderFolderTile(card))}
+            </div>
+          )}
 
           {showLegacyFolderLayout && userFolders.length ? (
             <div className="mt-3 grid gap-2">
@@ -2078,6 +2358,7 @@ export default function PacketsPage() {
   const [unlinking, setUnlinking] = useState(null);
   const [movingLink, setMovingLink] = useState(null);
   const [folderAction, setFolderAction] = useState(null);
+  const [activeRequirementId, setActiveRequirementId] = useState(null);
   const [preview, setPreview] = useState({
     open: false,
     loading: false,
@@ -2170,6 +2451,10 @@ export default function PacketsPage() {
     () => groupRequirements(selectedPacket?.requirements || []),
     [selectedPacket?.requirements],
   );
+  const requirementIds = useMemo(
+    () => groupedRequirements.flatMap(({ items }) => items.map((requirement) => requirement.requirement_id).filter(Boolean)),
+    [groupedRequirements],
+  );
   const activeGoogleConnection = useMemo(() => {
     const google = documentPicker.connectors.find((provider) => provider.provider === 'google_drive');
     return google?.connections?.find((connection) => (
@@ -2177,6 +2462,36 @@ export default function PacketsPage() {
       (connection.can_browse || connection.owned_by_current_user)
     )) || null;
   }, [documentPicker.connectors]);
+
+  useEffect(() => {
+    if (!selectedPacket || !requirementIds.length) {
+      setActiveRequirementId(null);
+      return undefined;
+    }
+    setActiveRequirementId((current) => current || requirementIds[0]);
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((first, second) => first.boundingClientRect.top - second.boundingClientRect.top);
+        const nextId = visible[0]?.target?.dataset?.requirementId;
+        if (nextId) {
+          setActiveRequirementId(nextId);
+        }
+      },
+      { rootMargin: '-20% 0px -65% 0px', threshold: [0, 0.1, 0.4] },
+    );
+    requirementIds.forEach((requirementId) => {
+      const element = document.getElementById(requirementAnchorId(requirementId));
+      if (element) {
+        observer.observe(element);
+      }
+    });
+    return () => observer.disconnect();
+  }, [requirementIds, selectedPacket]);
 
   function startPacketWorkflow() {
     setShowCreateFlow(true);
@@ -2603,7 +2918,7 @@ export default function PacketsPage() {
         notice: result.data?.message || `Folder "${result.data?.folder?.label || payload.label}" added to this packet item.`,
         fingerprint: result.requestFingerprintId,
       }));
-      return true;
+      return result.data?.folder || true;
     } catch (error) {
       setState((current) => ({ ...current, error }));
       return false;
@@ -3073,7 +3388,11 @@ export default function PacketsPage() {
 
         {state.error ? <div className="mb-5"><ErrorPanel title="Packet request failed" error={{ message: friendlyError(state.error) }} onRetry={loadPackets} /></div> : null}
         {state.notice ? (
-          <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div
+            role="status"
+            aria-live="polite"
+            className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100"
+          >
             {state.notice}
           </div>
         ) : null}
@@ -3157,56 +3476,64 @@ export default function PacketsPage() {
 
         <ComingLaterPanel />
 
-        <section className="mt-5 space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-950 dark:text-white">Checklist</h3>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                Update each item with a status and note. This is a planning checklist, not a legal completeness review.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
-              {REQUIREMENT_STATUS_OPTIONS.map((option) => (
-                <div key={option.value} className="rounded-md border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-[#101820]">
-                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">{option.label}</div>
-                  <div className="text-lg font-semibold text-gray-950 dark:text-white">
-                    {formatCount(coverage.counts?.[option.value] || 0)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {groupedRequirements.map(({ group, items }) => (
-            <section key={group} className="space-y-3">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-gray-500 dark:text-gray-400" aria-hidden="true" />
-                <h4 className="text-sm font-semibold uppercase text-gray-600 dark:text-gray-300">{group}</h4>
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="space-y-5">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-950 dark:text-white">Checklist</h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                  Update each item with a status, note, folders, and linked documents. This is a planning checklist, not a legal completeness review.
+                </p>
               </div>
-              {items.map((requirement) => (
-                <RequirementEditor
-                  key={`${requirement.requirement_id}:${requirement.status}:${requirement.updated_at || ''}`}
-                  requirement={requirement}
-                  packetId={selectedPacket.packet_id}
-                  canContribute={canContribute}
-                  saving={state.savingRequirement}
-                  folderAction={folderAction}
-                  unlinking={unlinking}
-                  onSave={saveRequirement}
-                  onCreateFolder={createRequirementFolder}
-                  onUpdateFolder={updateRequirementFolder}
-                  onDeleteFolder={deleteRequirementFolder}
-                  onOpenDocumentPicker={openDocumentPicker}
-                  onDropFiles={dropFilesOnPacketFolder}
-                  onUnlinkDocument={unlinkDocument}
-                  onPreviewDocument={previewPacketDocument}
-                  onMoveDocumentLink={movePacketDocumentLink}
-                  movingLink={movingLink}
-                />
-              ))}
-            </section>
-          ))}
-        </section>
+              <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+                {REQUIREMENT_STATUS_OPTIONS.map((option) => (
+                  <div key={option.value} className="rounded-md border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-[#101820]">
+                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400">{option.label}</div>
+                    <div className="text-lg font-semibold text-gray-950 dark:text-white">
+                      {formatCount(coverage.counts?.[option.value] || 0)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {groupedRequirements.map(({ group, items }) => (
+              <section key={group} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <FileText size={16} className="text-gray-500 dark:text-gray-400" aria-hidden="true" />
+                  <h4 className="text-sm font-semibold uppercase text-gray-600 dark:text-gray-300">{group}</h4>
+                </div>
+                {items.map((requirement) => (
+                  <RequirementEditor
+                    key={`${requirement.requirement_id}:${requirement.status}:${requirement.updated_at || ''}`}
+                    requirement={requirement}
+                    packetId={selectedPacket.packet_id}
+                    canContribute={canContribute}
+                    saving={state.savingRequirement}
+                    folderAction={folderAction}
+                    unlinking={unlinking}
+                    onSave={saveRequirement}
+                    onCreateFolder={createRequirementFolder}
+                    onUpdateFolder={updateRequirementFolder}
+                    onDeleteFolder={deleteRequirementFolder}
+                    onOpenDocumentPicker={openDocumentPicker}
+                    onDropFiles={dropFilesOnPacketFolder}
+                    onUnlinkDocument={unlinkDocument}
+                    onPreviewDocument={previewPacketDocument}
+                    onMoveDocumentLink={movePacketDocumentLink}
+                    movingLink={movingLink}
+                  />
+                ))}
+              </section>
+            ))}
+          </section>
+
+          <PacketChecklistGuide
+            coverage={coverage}
+            groupedRequirements={groupedRequirements}
+            activeRequirementId={activeRequirementId}
+          />
+        </div>
 
         {Array.isArray(selectedPacket.events) && selectedPacket.events.length ? (
           <section className="mt-5 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -3271,7 +3598,11 @@ export default function PacketsPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Packets failed" error={{ message: friendlyError(state.error) }} onRetry={loadPackets} /></div> : null}
       {state.notice ? (
-        <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100"
+        >
           {state.notice}
         </div>
       ) : null}
