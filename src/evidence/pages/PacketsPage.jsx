@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardCheck,
+  Eye,
   FileText,
   FileUp,
   Folder,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
 import EmptyState from '../components/EmptyState';
 import ErrorPanel from '../components/ErrorPanel';
 import PageHeader from '../components/PageHeader';
@@ -372,6 +374,10 @@ function linkFolderId(link) {
   return link?.folder_id || link?.packet_folder_id || link?.user_folder_id || '';
 }
 
+function linkRecordId(link) {
+  return link?.packet_requirement_link_id || link?.link_id || link?.packet_link_id || '';
+}
+
 function linkDocument(link, linkedDocuments = []) {
   return link?.document || linkedDocuments.find((item) => documentFileId(item) === link?.file_id) || {};
 }
@@ -615,6 +621,7 @@ function PacketDocumentPicker({
   onSearchChange,
   onRefresh,
   onToggle,
+  onPreviewDocument,
   onClose,
   onLink,
   linking,
@@ -775,9 +782,9 @@ function PacketDocumentPicker({
               const checked = selectedFileIds.includes(fileId);
               const documentStatus = documentUserStatus(document);
               return (
-                <label
+                <div
                   key={fileId || document.content_hash || documentDisplayName(document)}
-                  className="flex cursor-pointer gap-3 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 transition hover:border-[var(--lakai-primary)]"
+                  className="flex gap-3 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 transition hover:border-[var(--lakai-primary)]"
                 >
                   <input
                     type="checkbox"
@@ -794,7 +801,16 @@ function PacketDocumentPicker({
                       <span>{documentStatus.label}</span>
                     </div>
                   </div>
-                </label>
+                  <button
+                    type="button"
+                    onClick={() => onPreviewDocument(document)}
+                    disabled={!fileId}
+                    className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Eye size={14} aria-hidden="true" />
+                    Preview
+                  </button>
+                </div>
               );
             })
           ) : (
@@ -1110,6 +1126,85 @@ function PacketDocumentPicker({
   );
 }
 
+function PacketDocumentPreviewDialog({
+  open,
+  document,
+  previewUrl,
+  previewContentType,
+  previewError,
+  previewLoading,
+  caseId,
+  onClose,
+}) {
+  if (!open) {
+    return null;
+  }
+  const fileId = documentFileId(document);
+  const name = documentDisplayName(document);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-12 backdrop-blur-sm sm:p-6 sm:pt-16">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="packet-document-preview-title"
+        className="w-full max-w-5xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
+      >
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Document preview</p>
+            <h2 id="packet-document-preview-title" className="mt-1 break-words text-xl font-semibold text-[var(--lakai-text)]">
+              {name}
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+              <span>{document?.source_label || document?.origin_label || document?.source_provider || 'Linked from Documents'}</span>
+              {document?.readiness_label ? <span>{document.readiness_label}</span> : null}
+              {document?.media_type || previewContentType ? <span>{document.media_type || previewContentType}</span> : null}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {fileId ? (
+              <Link
+                to={`/evidence/cases/${caseId}/documents/${fileId}`}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+              >
+                <FileText size={16} aria-hidden="true" />
+                Open document details
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+            >
+              <X size={16} aria-hidden="true" />
+              Close
+            </button>
+          </div>
+        </div>
+
+        {previewLoading ? (
+          <div className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-6 text-sm text-[var(--lakai-text-muted)]">
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="animate-spin" size={16} aria-hidden="true" />
+              Loading source file preview...
+            </span>
+          </div>
+        ) : (
+          <DocumentPreviewPanel
+            previewUrl={previewUrl}
+            previewError={previewError}
+            contentType={previewContentType || document?.media_type}
+            fileName={name}
+            document={document}
+            maxHeightClass="max-h-[64vh]"
+          />
+        )}
+      </section>
+    </div>
+  );
+}
+
 function PacketCard({ packet, caseId }) {
   const coverage = coverageFromPacket(packet);
   return (
@@ -1164,6 +1259,9 @@ function RequirementEditor({
   onOpenDocumentPicker,
   onDropFiles,
   onUnlinkDocument,
+  onPreviewDocument,
+  onMoveDocumentLink,
+  movingLink,
 }) {
   const [status, setStatus] = useState(requirement.status || 'needed');
   const [note, setNote] = useState(requirement.user_note || '');
@@ -1208,12 +1306,25 @@ function RequirementEditor({
     : REQUIREMENT_UPLOAD_GUIDANCE[requirementId] || [];
   const showLegacyFolderLayout = requirement.metadata_json?.show_legacy_packet_folder_layout === true;
 
-  function dropFilesOnFolder(event, folderId) {
+  function dropItemsOnFolder(event, folderId) {
     event.preventDefault();
     event.stopPropagation();
     setDragOverFolderId(null);
     if (!canContribute || typeof onDropFiles !== 'function') {
       return;
+    }
+    const linkPayload = event.dataTransfer?.getData('application/x-packet-link') ||
+      event.dataTransfer?.getData('text/plain');
+    if (linkPayload && typeof onMoveDocumentLink === 'function') {
+      try {
+        const parsed = JSON.parse(linkPayload);
+        if (parsed?.linkId) {
+          onMoveDocumentLink(requirement, parsed, folderId || '');
+          return;
+        }
+      } catch {
+        // Fall through to file-drop handling.
+      }
     }
     const files = Array.from(event.dataTransfer?.files || []);
     if (files.length) {
@@ -1223,9 +1334,31 @@ function RequirementEditor({
 
   function renderLinkedDocumentCard(link, folderLabel = null) {
     const document = link.document || linkDocument(link, linkedDocuments);
-    const linkId = link.packet_requirement_link_id;
+    const linkId = linkRecordId(link);
+    const fileId = documentFileId(document) || link.file_id || '';
+    const currentFolderId = linkFolderId(link);
+    const moveBusy = movingLink === linkId;
     return (
-      <div key={linkId || documentFileId(document) || `${documentDisplayName(document)}:${folderLabel || 'folder'}`} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
+      <div
+        key={linkId || fileId || `${documentDisplayName(document)}:${folderLabel || 'folder'}`}
+        draggable={Boolean(canContribute && linkId)}
+        onDragStart={(event) => {
+          if (!linkId) return;
+          const payload = JSON.stringify({
+            linkId,
+            fileId,
+            fromFolderId: currentFolderId,
+            documentName: documentDisplayName(document),
+          });
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('application/x-packet-link', payload);
+          event.dataTransfer.setData('text/plain', payload);
+        }}
+        className={`rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3 transition ${
+          linkId && canContribute ? 'cursor-grab active:cursor-grabbing' : ''
+        }`}
+        title={linkId && canContribute ? 'Drag to another packet folder to move this packet link.' : undefined}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
@@ -1233,20 +1366,33 @@ function RequirementEditor({
               <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
               {folderLabel ? <span>In folder: {folderLabel}</span> : null}
               {document.readiness_label ? <span>{document.readiness_label}</span> : null}
+              {linkId && canContribute ? <span>Drag to move</span> : null}
             </div>
           </div>
-          {linkId ? (
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onPreviewDocument(document, link)}
+              disabled={!fileId}
+              className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+              title="Preview this document"
+            >
+              <Eye size={14} aria-hidden="true" />
+              Preview
+            </button>
+            {linkId ? (
             <button
               type="button"
               onClick={() => onUnlinkDocument(requirement, link)}
-              disabled={!canContribute || unlinking === linkId}
+              disabled={!canContribute || unlinking === linkId || moveBusy}
               className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
               title="Remove from this packet item"
             >
-              {unlinking === linkId ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+              {unlinking === linkId || moveBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
               Remove link
             </button>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </div>
     );
@@ -1317,10 +1463,11 @@ function RequirementEditor({
         onDragOver={(event) => {
           if (!canContribute) return;
           event.preventDefault();
+          event.dataTransfer.dropEffect = event.dataTransfer?.files?.length ? 'copy' : 'move';
           setDragOverFolderId(folderId || 'checklist');
         }}
         onDragLeave={() => setDragOverFolderId(null)}
-        onDrop={(event) => dropFilesOnFolder(event, folderId)}
+        onDrop={(event) => dropItemsOnFolder(event, folderId)}
         className={`rounded-lg border p-3 transition ${
           isDragTarget
             ? 'border-[var(--lakai-primary)] bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
@@ -1341,7 +1488,7 @@ function RequirementEditor({
               <p className="mt-1 break-words text-xs text-[var(--lakai-text-muted)]">Export path: {folder.export_folder_path}</p>
             ) : null}
             <p className="mt-2 text-xs text-[var(--lakai-text-muted)]">
-              Drop computer files here, or add documents into this folder.
+              Drop computer files here, or drag linked packet files here to move them.
             </p>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -1818,7 +1965,22 @@ export default function PacketsPage() {
     driveImportFailures: [],
   });
   const [unlinking, setUnlinking] = useState(null);
+  const [movingLink, setMovingLink] = useState(null);
   const [folderAction, setFolderAction] = useState(null);
+  const [preview, setPreview] = useState({
+    open: false,
+    loading: false,
+    error: null,
+    document: null,
+    previewUrl: null,
+    previewContentType: null,
+  });
+
+  useEffect(() => () => {
+    if (preview.previewUrl) {
+      URL.revokeObjectURL(preview.previewUrl);
+    }
+  }, [preview.previewUrl]);
 
   useEffect(() => {
     if (!documentPicker.open || documentPicker.mode !== 'existing') {
@@ -2033,6 +2195,131 @@ export default function PacketsPage() {
       return;
     }
     openDocumentPicker(requirement, { folderId, mode: 'local_upload', files });
+  }
+
+  function closePacketPreview() {
+    setPreview((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        open: false,
+        loading: false,
+        error: null,
+        document: null,
+        previewUrl: null,
+        previewContentType: null,
+      };
+    });
+  }
+
+  async function previewPacketDocument(document, link = null) {
+    const fileId = documentFileId(document) || link?.file_id || '';
+    const startingDocument = {
+      ...(document || {}),
+      file_id: fileId || document?.file_id,
+      original_filename: documentDisplayName(document || link?.document || {}),
+    };
+    setPreview((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        open: true,
+        loading: Boolean(fileId),
+        error: fileId ? null : new Error('This packet link does not include a document id to preview yet.'),
+        document: startingDocument,
+        previewUrl: null,
+        previewContentType: startingDocument.media_type || null,
+      };
+    });
+    if (!fileId) {
+      return;
+    }
+    try {
+      const token = await getAccessToken();
+      const detailResult = await evidenceApi.getDocument(caseId, fileId, { token });
+      recordFingerprint(detailResult, 'Packet document detail preview');
+      const detailDocument = detailResult.data?.document || detailResult.data || startingDocument;
+      let nextPreviewUrl = null;
+      let nextContentType = detailDocument?.media_type || startingDocument.media_type || null;
+      let previewError = null;
+      try {
+        const previewResult = await evidenceApi.previewDocument(caseId, fileId, { token });
+        recordFingerprint(previewResult, 'Packet document raw preview');
+        nextPreviewUrl = URL.createObjectURL(previewResult.blob);
+        nextContentType = previewResult.contentType || nextContentType;
+      } catch (error) {
+        previewError = error;
+      }
+      setPreview((current) => {
+        if (!current.open) {
+          if (nextPreviewUrl) URL.revokeObjectURL(nextPreviewUrl);
+          return current;
+        }
+        if (current.previewUrl) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+        return {
+          open: true,
+          loading: false,
+          error: previewError,
+          document: detailDocument,
+          previewUrl: nextPreviewUrl,
+          previewContentType: nextContentType,
+        };
+      });
+    } catch (error) {
+      setPreview((current) => ({
+        ...current,
+        loading: false,
+        error,
+      }));
+    }
+  }
+
+  async function movePacketDocumentLink(requirement, linkPayload, targetFolderId) {
+    const linkId = linkPayload?.linkId || linkRecordId(linkPayload);
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !linkId) {
+      return;
+    }
+    const nextFolderId = targetFolderId || '';
+    if ((linkPayload.fromFolderId || '') === nextFolderId) {
+      setState((current) => ({
+        ...current,
+        notice: 'This document is already in that packet folder.',
+      }));
+      return;
+    }
+    setMovingLink(linkId);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updatePacketRequirementDocumentLink(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        linkId,
+        { folder_id: nextFolderId || null },
+        { token },
+      );
+      recordFingerprint(result, 'Move packet document link');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || `${linkPayload.documentName || 'Document'} moved to the selected packet folder. The case document was not deleted or duplicated.`,
+        fingerprint: result.requestFingerprintId,
+      }));
+    } catch (error) {
+      const unavailable = error?.status === 404 || error?.status === 405;
+      setState((current) => ({
+        ...current,
+        error: unavailable
+          ? new Error('Moving linked documents between packet folders is not available from the API yet. The document stayed in its current packet folder.')
+          : error,
+      }));
+    } finally {
+      setMovingLink(null);
+    }
   }
 
   async function startProcessingAfterPacketDocuments(token) {
@@ -2665,6 +2952,7 @@ export default function PacketsPage() {
           onSearchChange={updatePickerSearch}
           onRefresh={() => loadPickerDocuments(documentPicker.search)}
           onToggle={togglePickerDocument}
+          onPreviewDocument={previewPacketDocument}
           onClose={closeDocumentPicker}
           onLink={linkSelectedDocuments}
           linking={documentPicker.linking}
@@ -2694,6 +2982,16 @@ export default function PacketsPage() {
           onToggleAllDriveFiles={toggleAllVisibleDriveFiles}
           onPreviewDriveItem={previewDriveItem}
           onImportDriveItems={importSelectedDriveItems}
+        />
+        <PacketDocumentPreviewDialog
+          open={preview.open}
+          document={preview.document}
+          previewUrl={preview.previewUrl}
+          previewContentType={preview.previewContentType}
+          previewError={preview.error}
+          previewLoading={preview.loading}
+          caseId={caseId}
+          onClose={closePacketPreview}
         />
 
         <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -2763,6 +3061,9 @@ export default function PacketsPage() {
                   onOpenDocumentPicker={openDocumentPicker}
                   onDropFiles={dropFilesOnPacketFolder}
                   onUnlinkDocument={unlinkDocument}
+                  onPreviewDocument={previewPacketDocument}
+                  onMoveDocumentLink={movePacketDocumentLink}
+                  movingLink={movingLink}
                 />
               ))}
             </section>
