@@ -366,12 +366,31 @@ function folderLabelKey(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function packetFolderId(folder) {
+  return folder?.folder_id || folder?.packet_folder_id || folder?.user_folder_id || folder?.id || '';
+}
+
 function standardFoldersForRequirement(requirement) {
   return STANDARD_PACKET_FOLDERS[requirement?.requirement_id] || [];
 }
 
+function linkPlacement(link) {
+  const documentPlacement = link?.document?.packet_placement;
+  if (documentPlacement && typeof documentPlacement === 'object') return documentPlacement;
+  if (link?.packet_placement && typeof link.packet_placement === 'object') return link.packet_placement;
+  const snapshotPlacement = link?.snapshot_metadata_json?.packet_placement;
+  if (snapshotPlacement && typeof snapshotPlacement === 'object') return snapshotPlacement;
+  return {};
+}
+
 function linkFolderId(link) {
-  return link?.folder_id || link?.packet_folder_id || link?.user_folder_id || '';
+  const placement = linkPlacement(link);
+  return link?.folder_id || link?.packet_folder_id || link?.user_folder_id || placement.folder_id || '';
+}
+
+function linkFolderLabel(link, folder = null) {
+  const placement = linkPlacement(link);
+  return link?.folder_label || link?.named_folder_value || folder?.label || placement.folder_label || placement.named_folder_value || '';
 }
 
 function linkRecordId(link) {
@@ -652,6 +671,8 @@ function PacketDocumentPicker({
   onPreviewDriveItem,
   onImportDriveItems,
 }) {
+  const [localDropActive, setLocalDropActive] = useState(false);
+
   if (!open || !requirement) {
     return null;
   }
@@ -669,6 +690,19 @@ function PacketDocumentPicker({
   const visibleDriveFiles = driveItems.filter((item) => item.mimeType !== GOOGLE_FOLDER_MIME_TYPE);
   const allVisibleDriveFilesSelected = visibleDriveFiles.length > 0 && visibleDriveFiles.every((item) => driveSelectedIds.includes(item.id));
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
+
+  function handleLocalDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setLocalDropActive(false);
+    if (!canContribute || localUploading) {
+      return;
+    }
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length) {
+      onLocalFilesChange(files);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
@@ -715,11 +749,14 @@ function PacketDocumentPicker({
               className="min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="">Checklist item only</option>
-              {userFolders.map((folder) => (
-                <option key={folder.folder_id} value={folder.folder_id}>
-                  {folder.label || 'Folder'}
-                </option>
-              ))}
+              {userFolders.map((folder) => {
+                const folderId = packetFolderId(folder);
+                return (
+                  <option key={folderId} value={folderId}>
+                    {folder.label || 'Folder'}
+                  </option>
+                );
+              })}
             </select>
             <p className="text-xs text-[var(--lakai-text-muted)]">
               Packet folders organize the packet and export path. The original case document stays in Documents.
@@ -1066,9 +1103,35 @@ function PacketDocumentPicker({
 
         {mode === 'local_upload' ? (
           <div className="mt-4 space-y-4">
-            <label className="block rounded-lg border border-dashed border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-5 text-center">
+            <label
+              className={`block rounded-lg border border-dashed p-5 text-center transition ${
+                localDropActive
+                  ? 'border-[var(--lakai-primary)] bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
+                  : 'border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)]'
+              } ${!canContribute || localUploading ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                if (!canContribute || localUploading) return;
+                event.dataTransfer.dropEffect = 'copy';
+                setLocalDropActive(true);
+              }}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                if (!canContribute || localUploading) return;
+                setLocalDropActive(true);
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                if (!event.currentTarget.contains(event.relatedTarget)) {
+                  setLocalDropActive(false);
+                }
+              }}
+              onDrop={handleLocalDrop}
+            >
               <FileUp className="mx-auto text-[var(--lakai-text-muted)]" size={24} aria-hidden="true" />
-              <span className="mt-2 block text-sm font-semibold text-[var(--lakai-text)]">Choose files from this computer</span>
+              <span className="mt-2 block text-sm font-semibold text-[var(--lakai-text)]">
+                {localDropActive ? 'Drop files to add them here' : 'Choose or drop files from this computer'}
+              </span>
               <span className="mt-1 block text-sm text-[var(--lakai-text-muted)]">
                 Files are uploaded to this case, registered for processing, and linked to {requirement.label}.
               </span>
@@ -1285,11 +1348,11 @@ function RequirementEditor({
   const links = Array.isArray(requirement.links) ? requirement.links : [];
   const linkedDocumentCount = Math.max(linkedDocuments.length, links.length);
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
-  const folderById = Object.fromEntries(userFolders.map((folder) => [folder.folder_id, folder]));
+  const folderById = Object.fromEntries(userFolders.map((folder) => [packetFolderId(folder), folder]).filter(([folderId]) => folderId));
   const standardFolders = standardFoldersForRequirement(requirement);
   const existingFolderLabels = new Set(userFolders.map((folder) => folderLabelKey(folder.label)));
   const missingStandardFolders = standardFolders.filter((folder) => !existingFolderLabels.has(folderLabelKey(folder.label)));
-  const linksByFolderId = new Map(userFolders.map((folder) => [folder.folder_id, []]));
+  const linksByFolderId = new Map(userFolders.map((folder) => [packetFolderId(folder), []]).filter(([folderId]) => folderId));
   const unfiledLinks = [];
   links.forEach((link) => {
     const folderId = linkFolderId(link);
@@ -1338,6 +1401,7 @@ function RequirementEditor({
     const fileId = documentFileId(document) || link.file_id || '';
     const currentFolderId = linkFolderId(link);
     const moveBusy = movingLink === linkId;
+    const canPreview = Boolean(fileId);
     return (
       <div
         key={linkId || fileId || `${documentDisplayName(document)}:${folderLabel || 'folder'}`}
@@ -1361,7 +1425,27 @@ function RequirementEditor({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
+            <div className="flex min-w-0 items-start gap-1.5">
+              <button
+                type="button"
+                onClick={() => onPreviewDocument(document, link)}
+                disabled={!canPreview}
+                className="min-w-0 break-words text-left text-sm font-semibold text-[var(--lakai-text)] transition hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:hover:text-[var(--lakai-text)]"
+                title={canPreview ? 'Preview this document' : undefined}
+              >
+                {documentDisplayName(document)}
+              </button>
+              <button
+                type="button"
+                onClick={() => onPreviewDocument(document, link)}
+                disabled={!canPreview}
+                className="inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-full text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                title="Preview this document"
+              >
+                <Eye size={14} aria-hidden="true" />
+                <span className="sr-only">Preview {documentDisplayName(document)}</span>
+              </button>
+            </div>
             <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
               <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
               {folderLabel ? <span>In folder: {folderLabel}</span> : null}
@@ -1370,16 +1454,6 @@ function RequirementEditor({
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onPreviewDocument(document, link)}
-              disabled={!fileId}
-              className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
-              title="Preview this document"
-            >
-              <Eye size={14} aria-hidden="true" />
-              Preview
-            </button>
             {linkId ? (
             <button
               type="button"
@@ -1399,7 +1473,7 @@ function RequirementEditor({
   }
 
   function renderFolderContainer({ folder, folderLinks, isChecklistOnly = false }) {
-    const folderId = folder?.folder_id || '';
+    const folderId = packetFolderId(folder);
     const folderLabel = isChecklistOnly ? 'Checklist item only' : (folder?.label || 'Folder');
     const isDragTarget = dragOverFolderId === (folderId || 'checklist');
     const isEditing = !isChecklistOnly && editingFolderId === folderId;
@@ -1508,7 +1582,7 @@ function RequirementEditor({
                   type="button"
                   disabled={Boolean(folderAction)}
                   onClick={() => {
-                    setEditingFolderId(folder.folder_id);
+                    setEditingFolderId(packetFolderId(folder));
                     setEditFolderLabel(folder.label || '');
                     setEditFolderDescription(folder.description || '');
                   }}
@@ -1516,18 +1590,16 @@ function RequirementEditor({
                 >
                   Rename
                 </button>
-                {folder.can_delete !== false ? (
-                  <button
-                    type="button"
-                    disabled={Boolean(folderAction)}
-                    onClick={() => onDeleteFolder(requirement, folder)}
-                    className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
-                    title="Delete this packet folder. Case documents are not deleted."
-                  >
-                    {folderAction?.endsWith(`:${folder.folder_id}`) ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-                    Delete
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  disabled={Boolean(folderAction)}
+                  onClick={() => onDeleteFolder(requirement, folder, folderLinks)}
+                  className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                  title="Remove this packet folder. Case documents are not deleted."
+                >
+                  {folderAction?.endsWith(`:${folderId}`) ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                  Remove folder
+                </button>
               </>
             ) : null}
           </div>
@@ -1759,17 +1831,18 @@ function RequirementEditor({
             })}
             {userFolders.map((folder) => renderFolderContainer({
               folder,
-              folderLinks: linksByFolderId.get(folder.folder_id) || [],
+              folderLinks: linksByFolderId.get(packetFolderId(folder)) || [],
             }))}
           </div>
 
           {showLegacyFolderLayout && userFolders.length ? (
             <div className="mt-3 grid gap-2">
               {userFolders.map((folder) => {
-                const isEditing = editingFolderId === folder.folder_id;
-                const actionBusy = folderAction?.endsWith(`:${folder.folder_id}`);
+                const folderId = packetFolderId(folder);
+                const isEditing = editingFolderId === folderId;
+                const actionBusy = folderAction?.endsWith(`:${folderId}`);
                 return (
-                  <div key={folder.folder_id} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+                  <div key={folderId} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
                     {isEditing ? (
                       <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] md:items-end">
                         <label className="block">
@@ -1834,7 +1907,7 @@ function RequirementEditor({
                               type="button"
                               disabled={Boolean(folderAction)}
                               onClick={() => {
-                                setEditingFolderId(folder.folder_id);
+                                setEditingFolderId(folderId);
                                 setEditFolderLabel(folder.label || '');
                                 setEditFolderDescription(folder.description || '');
                               }}
@@ -1842,18 +1915,19 @@ function RequirementEditor({
                             >
                               Rename
                             </button>
-                            {folder.can_delete !== false ? (
-                              <button
-                                type="button"
-                                disabled={Boolean(folderAction)}
-                                onClick={() => onDeleteFolder(requirement, folder)}
-                                className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
-                                title="Delete this packet folder. Case documents are not deleted."
-                              >
-                                {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-                                Delete
-                              </button>
-                            ) : null}
+                            <button
+                              type="button"
+                              disabled={Boolean(folderAction)}
+                              onClick={() => {
+                                const folderLinks = links.filter((link) => linkFolderId(link) === folderId);
+                                onDeleteFolder(requirement, folder, folderLinks);
+                              }}
+                              className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
+                              title="Remove this packet folder. Case documents are not deleted."
+                            >
+                              {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
+                              Remove folder
+                            </button>
                           </div>
                         ) : null}
                       </div>
@@ -1870,14 +1944,35 @@ function RequirementEditor({
             {links.map((link) => {
               const document = link.document || linkedDocuments.find((item) => documentFileId(item) === link.file_id) || {};
               const linkId = link.packet_requirement_link_id;
-              const linkFolderId = link.folder_id || link.packet_folder_id || link.user_folder_id || null;
-              const folder = folderById[linkFolderId] || link.folder || null;
-              const folderLabel = link.folder_label || link.named_folder_value || folder?.label || null;
+              const currentLinkFolderId = linkFolderId(link) || null;
+              const folder = folderById[currentLinkFolderId] || link.folder || null;
+              const folderLabel = linkFolderLabel(link, folder) || null;
+              const fileId = documentFileId(document) || link.file_id || '';
               return (
                 <div key={linkId || documentFileId(document)} className="rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{documentDisplayName(document)}</p>
+                      <div className="flex min-w-0 items-start gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onPreviewDocument(document, link)}
+                          disabled={!fileId}
+                          className="min-w-0 break-words text-left text-sm font-semibold text-[var(--lakai-text)] transition hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:hover:text-[var(--lakai-text)]"
+                          title={fileId ? 'Preview this document' : undefined}
+                        >
+                          {documentDisplayName(document)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onPreviewDocument(document, link)}
+                          disabled={!fileId}
+                          className="inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-full text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                          title="Preview this document"
+                        >
+                          <Eye size={14} aria-hidden="true" />
+                          <span className="sr-only">Preview {documentDisplayName(document)}</span>
+                        </button>
+                      </div>
                       <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
                         <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
                         {folderLabel ? <span>Folder: {folderLabel}</span> : null}
@@ -2502,17 +2597,18 @@ export default function PacketsPage() {
   }
 
   async function updateRequirementFolder(requirement, folder, payload) {
-    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folder?.folder_id) {
+    const folderId = packetFolderId(folder);
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folderId) {
       return false;
     }
-    setFolderAction(`update:${folder.folder_id}`);
+    setFolderAction(`update:${folderId}`);
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.updatePacketRequirementFolder(
         caseId,
         selectedPacket.packet_id,
         requirement.requirement_id,
-        folder.folder_id,
+        folderId,
         payload,
         { token },
       );
@@ -2532,25 +2628,48 @@ export default function PacketsPage() {
     }
   }
 
-  async function deleteRequirementFolder(requirement, folder) {
-    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folder?.folder_id) {
+  async function deleteRequirementFolder(requirement, folder, folderLinks = []) {
+    const folderId = packetFolderId(folder);
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folderId) {
       return;
     }
-    setFolderAction(`delete:${folder.folder_id}`);
+    const linkedItems = Array.isArray(folderLinks) ? folderLinks.filter((link) => linkRecordId(link)) : [];
+    if (linkedItems.length) {
+      const confirmed = typeof window.confirm === 'function'
+        ? window.confirm(`Remove "${folder.label || 'this folder'}"? The ${linkedItems.length} linked document(s) will stay in this packet item and in Documents. Only the folder grouping will be removed.`)
+        : true;
+      if (!confirmed) {
+        return;
+      }
+    }
+    setFolderAction(`delete:${folderId}`);
     try {
       const token = await getAccessToken();
+      let latestMoveResult = null;
+      for (const link of linkedItems) {
+        latestMoveResult = await evidenceApi.updatePacketRequirementDocumentLink(
+          caseId,
+          selectedPacket.packet_id,
+          requirement.requirement_id,
+          linkRecordId(link),
+          { folder_id: null },
+          { token },
+        );
+      }
       const result = await evidenceApi.deletePacketRequirementFolder(
         caseId,
         selectedPacket.packet_id,
         requirement.requirement_id,
-        folder.folder_id,
+        folderId,
         { token },
       );
       recordFingerprint(result, 'Delete packet folder');
       setState((current) => ({
         ...current,
-        packet: result.data?.packet || current.packet,
-        notice: result.data?.message || 'Packet folder deleted. Case documents were not deleted.',
+        packet: result.data?.packet || latestMoveResult?.data?.packet || current.packet,
+        notice: linkedItems.length
+          ? `${folder.label || 'Packet folder'} removed. The ${linkedItems.length} document link(s) stayed on this checklist item; case documents were not deleted.`
+          : result.data?.message || 'Packet folder deleted. Case documents were not deleted.',
         fingerprint: result.requestFingerprintId,
       }));
     } catch (error) {
