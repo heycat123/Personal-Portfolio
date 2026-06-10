@@ -347,7 +347,7 @@ function googleDriveErrorTitle(error) {
 }
 
 function documentDisplayName(document) {
-  return document?.filename || document?.original_filename || document?.file_name || document?.document_id || document?.file_id || 'Document';
+  return document?.filename || document?.original_filename || document?.file_name || document?.document_id || document?.file_id || document?.upload_id || 'Document';
 }
 
 function documentFileId(document) {
@@ -398,7 +398,23 @@ function linkRecordId(link) {
 }
 
 function linkDocument(link, linkedDocuments = []) {
-  return link?.document || linkedDocuments.find((item) => documentFileId(item) === link?.file_id) || {};
+  if (link?.document) return link.document;
+  const linkIds = new Set([
+    link?.file_id,
+    link?.document_id,
+    link?.upload_id,
+    link?.matched_s3_upload_id,
+  ].filter(Boolean));
+  const contentHash = String(link?.content_hash || link?.snapshot_metadata_json?.content_hash || '').trim();
+  const matched = linkedDocuments.find((item) => (
+    linkIds.has(documentFileId(item)) ||
+    linkIds.has(item?.file_id) ||
+    linkIds.has(item?.document_id) ||
+    linkIds.has(item?.upload_id) ||
+    (contentHash && contentHash === String(item?.content_hash || '').trim())
+  ));
+  if (matched) return matched;
+  return link?.snapshot_metadata_json || {};
 }
 
 async function sha256File(selectedFile) {
@@ -2805,6 +2821,7 @@ export default function PacketsPage() {
       }
 
       if (uploadedFileIds.length) {
+        const newUploadCount = uploadedFileIds.length - reusedExistingCount;
         const linkResult = await evidenceApi.linkPacketRequirementDocuments(
           caseId,
           selectedPacket.packet_id,
@@ -2816,7 +2833,9 @@ export default function PacketsPage() {
           { token },
         );
         recordFingerprint(linkResult, 'Link packet uploads');
-        const processingResult = await startProcessingAfterPacketDocuments(token);
+        const processingResult = newUploadCount > 0
+          ? await startProcessingAfterPacketDocuments(token)
+          : null;
         setState((current) => ({
           ...current,
           packet: linkResult.data?.packet || current.packet,
@@ -2824,7 +2843,7 @@ export default function PacketsPage() {
             reusedExistingCount
               ? `${reusedExistingCount} file(s) were already in Documents, so Evidence AI linked the existing workspace copy.`
               : 'Uploaded files were added to Documents and linked to this packet item.',
-            uploadedFileIds.length > reusedExistingCount
+            newUploadCount > 0
               ? (processingResult?.job?.job_id || processingResult?.existing_job?.job_id
                 ? 'New uploads started processing automatically.'
                 : 'New uploads may continue processing in the background.')
