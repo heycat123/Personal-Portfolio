@@ -296,6 +296,12 @@ export const evidenceApi = {
       ...options,
       method: 'DELETE',
     }),
+  updatePacketRequirementDocumentLink: (caseId, packetId, requirementId, linkId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/links/${encodeURIComponent(linkId)}`), {
+      ...options,
+      method: 'PATCH',
+      body: payload,
+    }),
   createPacketRequirementFolder: (caseId, packetId, requirementId, payload, options) =>
     request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/folders`), {
       ...options,
