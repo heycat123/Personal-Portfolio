@@ -13,7 +13,6 @@ import {
   Info,
   Link2,
   Loader2,
-  NotepadText,
   PackageCheck,
   Paperclip,
   Plus,
@@ -498,42 +497,6 @@ function uploadWithProgress(url, { method = 'PUT', headers = {}, file, onProgres
     xhr.addEventListener('abort', () => reject(new Error('Upload was cancelled.')));
     xhr.send(file);
   });
-}
-
-function GuardrailPanel({ guardrails, completionDefinition }) {
-  const message = guardrails?.user_message ||
-    'This packet helps organize documents and notes for review. It does not decide what must be filed, served, exchanged, or omitted.';
-  const definition = completionDefinition || guardrails?.packet_complete_definition ||
-    'Packet complete means each checklist item has a document, note, skipped, or may-not-apply response. Review carefully before sharing, serving, or filing.';
-  return (
-    <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-      <div className="flex items-start gap-3">
-        <Info className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-        <div className="space-y-2">
-          <p className="font-semibold">Organizational checklist only</p>
-          <p>{message}</p>
-          <p>{definition} It does not mean the packet has been reviewed by a lawyer or accepted by any court.</p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ComingLaterPanel() {
-  return (
-    <section className="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 shadow-sm dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
-      <div className="flex items-start gap-3">
-        <NotepadText className="mt-0.5 shrink-0" size={18} aria-hidden="true" />
-        <div>
-          <p className="font-semibold">Checklist planning is available now</p>
-          <p className="mt-1">
-            Link existing case documents to checklist items, import from Google Drive, or upload files from this screen. Packet export,
-            sharing, and draft affidavit generation are coming later.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 function TemplatePicker({ templates, creating, onCreate, canContribute, templatesLoading, onRefresh }) {
@@ -1359,7 +1322,7 @@ function PacketCard({ packet, caseId }) {
 
 function PacketChecklistGuide({ groupedRequirements, activeSection }) {
   return (
-    <aside className="order-first rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-sm xl:order-none xl:sticky xl:top-4">
+    <aside className="order-first self-start rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-sm xl:order-none xl:sticky xl:top-5">
       <div className="border-b border-[var(--lakai-border)] pb-5">
         <p className="font-serif text-2xl font-semibold leading-tight text-[var(--lakai-text)]">Packet Progress</p>
         <p className="mt-1 text-sm font-semibold text-[var(--lakai-text-muted)]">Financial Disclosure</p>
@@ -3440,31 +3403,6 @@ export default function PacketsPage() {
           caseId={caseId}
           onClose={closePacketPreview}
         />
-
-        <div className="mb-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <GuardrailPanel
-            guardrails={selectedPacket.guardrails}
-            completionDefinition={coverage.definition || selectedPacket.packet_complete_definition}
-          />
-          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Packet status</p>
-                <div className="mt-2"><StatusBadge status={statusTone(selectedPacket.status)} label={packetStatusLabel(selectedPacket.status)} /></div>
-              </div>
-              <ClipboardCheck className="text-gray-400" size={24} aria-hidden="true" />
-            </div>
-            <ProgressMeter
-              className="mt-4"
-              value={coverage.percent}
-              label="Checklist coverage"
-              valueLabel={`${coverage.responded}/${coverage.total || 0}`}
-              detail={`${formatCount(coverage.open)} item(s) still need a document, note, skip, or may-not-apply response.`}
-            />
-          </section>
-        </div>
-
-        <ComingLaterPanel />
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="space-y-5">
