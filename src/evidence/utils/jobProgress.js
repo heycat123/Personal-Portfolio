@@ -368,6 +368,53 @@ function documentProgressSummary(job) {
   };
 }
 
+function documentScopeCurrentSummary(job) {
+  const scope = jobDocumentScope(job);
+  if (!scope || !Number.isFinite(Number(scope.total))) {
+    return null;
+  }
+  const total = Math.max(0, Number(scope.total) || 0);
+  const ready = Math.max(0, Number(scope.ready) || 0);
+  const processing = Math.max(0, Number(scope.processing) || 0);
+  const pending = Math.max(0, Number(scope.pending) || 0);
+  const failed = Math.max(0, Number(scope.failed) || 0);
+  return {
+    total,
+    ready,
+    processing,
+    pending,
+    failed,
+    allReady: total > 0 && ready >= total && processing === 0 && pending === 0 && failed === 0,
+    hasActiveWork: processing > 0 || pending > 0,
+    hasAttention: failed > 0,
+  };
+}
+
+function simpleJobStatusLabel(userStatus, status, cancelRequested) {
+  if (cancelRequested) {
+    return 'Cancel requested';
+  }
+  if (userStatus === 'ready') {
+    return 'Complete';
+  }
+  if (userStatus === 'ready_with_review_needed') {
+    return 'Needs attention';
+  }
+  if (userStatus === 'failed') {
+    return 'Needs attention';
+  }
+  if (userStatus === 'processing') {
+    return 'Running';
+  }
+  if (userStatus === 'queued') {
+    return 'Queued';
+  }
+  if (userStatus === 'canceled' || userStatus === 'cancelled') {
+    return 'Canceled';
+  }
+  return fallbackStatusLabel(status);
+}
+
 export function jobCostSummary(job) {
   const result = resultPayload(job);
   const display = displayWrapper(job);
@@ -607,6 +654,7 @@ export function jobProgressModel(job) {
   const resolution = resolutionPayload(job, result, display);
   const recorded = requestRecorded(job, status, result);
   const documentSummary = documentProgressSummary(job);
+  const scopeSummary = documentScopeCurrentSummary(job);
   const failed = TERMINAL_ATTENTION.has(status);
   const cancelRequested = Boolean(job?.cancel_requested || result.cancel_requested || display.cancel_requested);
   const fullPropagationStatus = String(firstString(
@@ -615,24 +663,14 @@ export function jobProgressModel(job) {
     display.full_propagation_status,
   ) || '').toLowerCase();
   const workflowStatus = firstString(job?.workflow_status, result.workflow_status, display.workflow_status);
-  const fullPropagationComplete = [
-    'complete',
-    'completed',
-    'ready',
-    'full_propagation_complete',
-    'relationship_map_complete',
-    'source_propagation_complete',
-  ].includes(fullPropagationStatus);
   const propagationNeedsSupport = isDocumentTextSearchProcessing(job)
     && TERMINAL_SUCCESS.has(status)
     && ['relationship_map_worker_unavailable', 'failed', 'error', 'blocked', 'needs_attention'].includes(fullPropagationStatus);
   const propagationContinues = isDocumentTextSearchProcessing(job)
     && TERMINAL_SUCCESS.has(status)
+    && !scopeSummary?.allReady
     && !propagationNeedsSupport
-    && (
-      ['relationship_map_queued', 'relationship_map_reused'].includes(fullPropagationStatus)
-      || !fullPropagationComplete
-    );
+    && ['relationship_map_queued', 'relationship_map_reused'].includes(fullPropagationStatus);
   const propagationContinuationMessage = propagationContinues
     ? fullPropagationStatus
       ? 'Search step complete. Processing continues through relationship-map and source propagation.'
@@ -664,6 +702,7 @@ export function jobProgressModel(job) {
   ].filter(Boolean).join(' ').toLowerCase();
   const sourceSyncNeedsAttention = isSourceSyncFullPropagation(job)
     && !ACTIVE_STATUSES.has(status)
+    && !scopeSummary?.allReady
     && (
       sourceSyncAttentionText.includes('needs_review')
       || sourceSyncAttentionText.includes('needs review')
@@ -686,11 +725,17 @@ export function jobProgressModel(job) {
     ?? estimatedProgress?.progressPercent
     ?? backendPercent
     ?? (isDocumentProcessingRequest(job) && recorded ? 0 : fallbackPercent(status));
-  const progressPercent = propagationContinues ? Math.min(baseProgressPercent ?? 90, 90) : baseProgressPercent;
+  const scopeCompleteByCurrentReadiness = Boolean(scopeSummary?.allReady && TERMINAL_SUCCESS.has(status));
+  const progressPercent = scopeCompleteByCurrentReadiness
+    ? 100
+    : propagationContinues
+      ? Math.min(baseProgressPercent ?? 90, 90)
+      : baseProgressPercent;
   const progressEstimated = Boolean(estimatedProgress);
   const progressPercentLabel = estimatedProgress?.progressPercentLabel || `${progressPercent}%`;
   const displayStatusLabel = userFacingProcessingText(firstString(
     sourceSyncNeedsAttention ? 'Needs attention' : null,
+    scopeCompleteByCurrentReadiness ? 'Complete' : null,
     propagationContinues ? 'Processing' : null,
     propagationNeedsSupport ? 'Ready with review needed' : null,
     userJobStatus.display_label,
@@ -707,6 +752,7 @@ export function jobProgressModel(job) {
   ));
   const currentStep = userFacingProcessingText(firstString(
     sourceSyncNeedsAttention ? 'Full propagation needs review' : null,
+    scopeCompleteByCurrentReadiness ? 'Documents ready' : null,
     propagationContinues ? 'Relationship-map and source propagation' : null,
     propagationNeedsSupport ? 'Relationship-map propagation needs support' : null,
     userJobStatus.stage_label,
@@ -721,6 +767,7 @@ export function jobProgressModel(job) {
   ));
   const progressText = userFacingProcessingText(firstString(
     sourceSyncAttentionMessage,
+    scopeCompleteByCurrentReadiness ? 'This job is complete and the affected documents are ready.' : null,
     propagationContinuationMessage,
     userJobStatus.user_message,
     userJobStatus.message,
@@ -740,13 +787,16 @@ export function jobProgressModel(job) {
     || (isDocumentProcessingRequest(job)
       ? documentProcessingFallbackSteps(recorded || ACTIVE_STATUSES.has(status), failed)
       : fallbackSteps(cancelRequested ? 'cancelling' : status));
-  const effectiveSteps = sourceSyncNeedsAttention && steps.length
-    ? steps.map((step, index) => (
-      index === steps.length - 1
+  const readyAlignedSteps = scopeCompleteByCurrentReadiness && steps.length
+    ? steps.map((step) => ({ ...step, state: 'complete' }))
+    : steps;
+  const effectiveSteps = sourceSyncNeedsAttention && readyAlignedSteps.length
+    ? readyAlignedSteps.map((step, index) => (
+      index === readyAlignedSteps.length - 1
         ? { ...step, label: step.label === 'Ready / Needs review' ? 'Needs review' : step.label, state: 'blocked' }
         : step
     ))
-    : steps;
+    : readyAlignedSteps;
 
   const count = Number(
     result.requested_document_count
@@ -757,6 +807,7 @@ export function jobProgressModel(job) {
   );
   const userMessage = userFacingProcessingText(firstString(
     sourceSyncAttentionMessage,
+    scopeCompleteByCurrentReadiness ? 'This job is complete and the affected documents are ready.' : null,
     propagationContinuationMessage,
     userJobStatus.user_message,
     userJobStatus.message,
@@ -784,8 +835,10 @@ export function jobProgressModel(job) {
                 ? 'This job needs review before it can continue.'
                 : 'Refresh status or contact support if this does not change.');
 
-  const effectiveUserStatus = sourceSyncNeedsAttention
+  const effectiveUserStatus = sourceSyncNeedsAttention || (scopeSummary?.hasAttention && !ACTIVE_STATUSES.has(status))
     ? 'failed'
+    : scopeCompleteByCurrentReadiness
+      ? 'ready'
     : propagationContinues
     ? 'processing'
     : propagationNeedsSupport
@@ -809,15 +862,23 @@ export function jobProgressModel(job) {
     : workflowStatus === 'needs_review'
       ? 'pending'
     : documentSummary?.badgeStatus || fallbackBadgeStatus(cancelRequested ? 'cancelling' : status));
-  const statusLabel = badgeStatus === 'failed' && String(displayStatusLabel).toLowerCase() === 'needs review'
+  const simpleStatusLabel = ['ready', 'ready_with_review_needed', 'failed', 'processing', 'queued', 'canceled', 'cancelled']
+    .includes(effectiveUserStatus)
+    ? simpleJobStatusLabel(effectiveUserStatus, status, cancelRequested)
+    : null;
+  const statusLabel = simpleStatusLabel
+    || (scopeCompleteByCurrentReadiness
+    ? simpleJobStatusLabel('ready', status, cancelRequested)
+    : badgeStatus === 'failed' && String(displayStatusLabel).toLowerCase() === 'needs review'
     ? 'Needs attention'
-    : displayStatusLabel;
+    : displayStatusLabel);
   const nextActionLabel = actionText(firstObject(job?.next_action, result.next_action, display.next_action, resolution.next_action))
     || firstString(
       actionText(resolution.action_label),
       actionText(job?.next_action),
       actionText(result.next_action),
       actionText(display.next_action),
+      effectiveUserStatus === 'ready' ? 'No action needed' : null,
       isDocumentProcessingRequest(job) ? 'View processing status' : null,
       status === 'failed' ? 'Review job details' : null,
       'Refresh status',
@@ -865,6 +926,8 @@ export function jobProgressModel(job) {
     title: jobDisplayTitle(job),
     statusLabel,
     badgeStatus,
+    userStatus: effectiveUserStatus || status,
+    isCurrent: ['queued', 'processing'].includes(effectiveUserStatus) || ACTIVE_STATUSES.has(status),
     progressPercent,
     progressPercentLabel,
     progressEstimated,
