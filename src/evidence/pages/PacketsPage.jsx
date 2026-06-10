@@ -1935,6 +1935,7 @@ export default function PacketsPage() {
     }
     setDocumentPicker((current) => ({ ...current, localUploading: true }));
     const uploadedFileIds = [];
+    let reusedExistingCount = 0;
     try {
       const token = await getAccessToken();
       for (const item of items) {
@@ -1958,15 +1959,19 @@ export default function PacketsPage() {
         );
         recordFingerprint(presignResult, `Packet presign upload: ${selectedFile.name}`);
 
-        if (presignResult.data?.already_uploaded) {
-          const existingFileId = presignResult.data?.upload?.upload_id;
+        if (presignResult.data?.already_uploaded || presignResult.data?.duplicate) {
+          const existingFileId = presignResult.data?.upload?.upload_id
+            || presignResult.data?.next_action?.upload_id
+            || presignResult.data?.document?.file_id
+            || presignResult.data?.file_id;
           if (existingFileId) {
             uploadedFileIds.push(existingFileId);
+            reusedExistingCount += 1;
           }
           updateLocalUploadItem(item.id, {
             status: 'already_uploaded',
             progress: 90,
-            message: presignResult.data?.display_message || 'This exact file is already in the workspace.',
+            message: presignResult.data?.display_message || 'This file is already in Documents, so the existing copy will be linked.',
           });
           continue;
         }
@@ -2017,9 +2022,16 @@ export default function PacketsPage() {
         setState((current) => ({
           ...current,
           packet: linkResult.data?.packet || current.packet,
-          notice: processingResult?.job?.job_id || processingResult?.existing_job?.job_id
-            ? 'Uploaded files were added to Documents, linked to this packet item, and processing started automatically.'
-            : 'Uploaded files were added to Documents and linked to this packet item. Processing may continue in the background.',
+          notice: [
+            reusedExistingCount
+              ? `${reusedExistingCount} file(s) were already in Documents, so Evidence AI linked the existing workspace copy.`
+              : 'Uploaded files were added to Documents and linked to this packet item.',
+            uploadedFileIds.length > reusedExistingCount
+              ? (processingResult?.job?.job_id || processingResult?.existing_job?.job_id
+                ? 'New uploads started processing automatically.'
+                : 'New uploads may continue processing in the background.')
+              : null,
+          ].filter(Boolean).join(' '),
           fingerprint: linkResult.requestFingerprintId,
         }));
         setDocumentPicker((current) => ({
