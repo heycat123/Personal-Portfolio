@@ -12,7 +12,6 @@ import {
   FolderOpen,
   Info,
   Link2,
-  ListChecks,
   Loader2,
   NotepadText,
   PackageCheck,
@@ -382,10 +381,27 @@ function requirementAnchorId(requirementId) {
   return `packet-requirement-${String(requirementId || 'item').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 }
 
-function requirementLinkedCount(requirement) {
-  const linkedDocuments = Array.isArray(requirement?.linked_documents) ? requirement.linked_documents : [];
-  const links = Array.isArray(requirement?.links) ? requirement.links : [];
-  return Math.max(linkedDocuments.length, links.length);
+function packetSectionAnchorId(group) {
+  return `packet-section-${String(group || 'section').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
+
+function packetSectionShortLabel(group) {
+  const normalized = String(group || '').trim().toUpperCase();
+  const labels = {
+    'FINANCIAL AFFIDAVIT DRAFT/FORM': 'Financial affidavit',
+    'INCOME AND EMPLOYMENT': 'Income',
+    'TAX RETURNS AND TAX DOCUMENTS': 'Taxes',
+    'BANK AND ACCOUNT STATEMENTS': 'Bank accounts',
+    'DIGITAL WALLETS AND PAYMENT APPS': 'Digital wallets',
+    'DEBTS AND LIABILITIES': 'Debts',
+    'HOUSING AND RECURRING EXPENSES': 'Housing',
+    'INSURANCE, BENEFITS, AND RETIREMENT': 'Insurance & retirement',
+    'BUSINESS INTERESTS OR SELF-EMPLOYMENT': 'Business',
+    'CHILD-RELATED OR HOUSEHOLD SUPPORT EXPENSES': 'Child/household support',
+    'COURT ORDERS, AGREEMENTS, AND SUPPORT OBLIGATIONS': 'Court orders',
+    'NOTES AND QUESTIONS': 'Notes',
+  };
+  return labels[normalized] || humanizeKey(group);
 }
 
 function linkPlacement(link) {
@@ -1341,75 +1357,48 @@ function PacketCard({ packet, caseId }) {
   );
 }
 
-function PacketChecklistGuide({ coverage, groupedRequirements, activeRequirementId }) {
-  const requirements = groupedRequirements.flatMap(({ items }) => items);
-  const completedCount = requirements.filter((requirement) => COVERED_STATUSES.includes(normalizeStatus(requirement.status))).length;
-  const needsAttentionCount = requirements.filter((requirement) => normalizeStatus(requirement.status) === 'needs_attention').length;
-
+function PacketChecklistGuide({ groupedRequirements, activeSection }) {
   return (
-    <aside className="rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-4 shadow-sm lg:sticky lg:top-4">
-      <div className="flex items-start gap-3">
-        <span className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-full bg-[var(--lakai-primary)]/10 text-[var(--lakai-primary)]">
-          <ListChecks size={20} aria-hidden="true" />
-        </span>
-        <div>
-          <p className="text-sm font-semibold text-[var(--lakai-text)]">Packet guide</p>
-          <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
-            Track what is covered and what still needs a document, note, skip, or may-not-apply response.
-          </p>
-        </div>
+    <aside className="order-first rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-sm xl:order-none xl:sticky xl:top-4">
+      <div className="border-b border-[var(--lakai-border)] pb-5">
+        <p className="font-serif text-2xl font-semibold leading-tight text-[var(--lakai-text)]">Packet Progress</p>
+        <p className="mt-1 text-sm font-semibold text-[var(--lakai-text-muted)]">Financial Disclosure</p>
       </div>
-      <ProgressMeter
-        className="mt-4"
-        value={coverage.percent}
-        label="Checklist coverage"
-        valueLabel={`${coverage.responded}/${coverage.total || 0}`}
-        detail={`${formatCount(coverage.open)} item(s) still need a response.`}
-      />
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-2">
-          <p className="font-semibold text-[var(--lakai-text)]">{formatCount(requirements.length)}</p>
-          <p className="text-[var(--lakai-text-muted)]">Items</p>
-        </div>
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 dark:border-emerald-900/60 dark:bg-emerald-950/30">
-          <p className="font-semibold text-emerald-800 dark:text-emerald-100">{formatCount(completedCount)}</p>
-          <p className="text-emerald-800 dark:text-emerald-100">Covered</p>
-        </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 dark:border-amber-900/60 dark:bg-amber-950/30">
-          <p className="font-semibold text-amber-900 dark:text-amber-100">{formatCount(needsAttentionCount)}</p>
-          <p className="text-amber-900 dark:text-amber-100">Review</p>
-        </div>
-      </div>
-      <nav className="mt-4 space-y-4" aria-label="Packet checklist sections">
-        {groupedRequirements.map(({ group, items }) => (
-          <div key={group}>
-            <p className="mb-2 text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">{group}</p>
-            <div className="space-y-1.5">
-              {items.map((requirement) => {
-                const isActive = activeRequirementId === requirement.requirement_id;
-                return (
-                  <a
-                    key={requirement.requirement_id}
-                    href={`#${requirementAnchorId(requirement.requirement_id)}`}
-                    className={`block rounded-lg border px-3 py-2 text-sm transition ${
-                      isActive
-                        ? 'border-[var(--lakai-primary)] bg-[var(--lakai-primary)]/10 text-[var(--lakai-text)]'
-                        : 'border-transparent text-[var(--lakai-text-muted)] hover:border-[var(--lakai-border)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]'
-                    }`}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate font-semibold">{requirement.label}</span>
-                      <span className="shrink-0 text-xs">{requirementStatusLabel(requirement.status)}</span>
-                    </span>
-                    <span className="mt-1 block text-xs">
-                      {formatCount(requirementLinkedCount(requirement))} document(s)
-                    </span>
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <nav className="mt-6" aria-label="Packet progress sections">
+        <ol className="relative ml-2 space-y-5 border-l border-[var(--lakai-border)]">
+          {groupedRequirements.map(({ group, items }) => {
+            const isActive = activeSection === group;
+            const isComplete = items.length > 0 && items.every((requirement) => COVERED_STATUSES.includes(normalizeStatus(requirement.status)));
+            const label = packetSectionShortLabel(group);
+            return (
+              <li key={group} className="relative pl-6">
+                <span
+                  className={`absolute -left-[9px] top-0 inline-flex h-4 w-4 items-center justify-center rounded-full border bg-[var(--lakai-surface)] transition ${
+                    isActive
+                      ? 'border-[var(--lakai-accent)] text-[var(--lakai-accent)] shadow-[0_0_0_4px_rgba(160,120,32,0.12)]'
+                      : isComplete
+                        ? 'border-emerald-500 text-emerald-700 dark:text-emerald-300'
+                        : 'border-[var(--lakai-border)] text-[var(--lakai-text-muted)]'
+                  }`}
+                  aria-hidden="true"
+                >
+                  {isComplete ? <CheckCircle2 size={11} strokeWidth={2.25} /> : <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-[var(--lakai-accent)]' : 'bg-current opacity-40'}`} />}
+                </span>
+                <a
+                  href={`#${packetSectionAnchorId(group)}`}
+                  className={`block rounded-md px-1.5 py-0.5 text-sm font-semibold transition hover:text-[var(--lakai-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--lakai-primary)] ${
+                    isActive ? 'bg-[var(--lakai-accent)]/10 text-[var(--lakai-accent)] underline decoration-[var(--lakai-accent)]/40 underline-offset-4' : 'text-[var(--lakai-text-muted)]'
+                  }`}
+                  aria-current={isActive ? 'location' : undefined}
+                  aria-label={`${label}${isComplete ? ', complete' : ''}`}
+                >
+                  {label}
+                  {isComplete ? <span className="sr-only"> complete</span> : null}
+                </a>
+              </li>
+            );
+          })}
+        </ol>
       </nav>
     </aside>
   );
@@ -2358,7 +2347,7 @@ export default function PacketsPage() {
   const [unlinking, setUnlinking] = useState(null);
   const [movingLink, setMovingLink] = useState(null);
   const [folderAction, setFolderAction] = useState(null);
-  const [activeRequirementId, setActiveRequirementId] = useState(null);
+  const [activeSection, setActiveSection] = useState(null);
   const [preview, setPreview] = useState({
     open: false,
     loading: false,
@@ -2446,13 +2435,14 @@ export default function PacketsPage() {
   }, [loadPackets]);
 
   const selectedPacket = state.packet;
+  const selectedPacketId = selectedPacket?.packet_id;
   const coverage = useMemo(() => coverageFromPacket(selectedPacket), [selectedPacket]);
   const groupedRequirements = useMemo(
     () => groupRequirements(selectedPacket?.requirements || []),
     [selectedPacket?.requirements],
   );
-  const requirementIds = useMemo(
-    () => groupedRequirements.flatMap(({ items }) => items.map((requirement) => requirement.requirement_id).filter(Boolean)),
+  const packetSectionKeys = useMemo(
+    () => groupedRequirements.map(({ group }) => group).filter(Boolean),
     [groupedRequirements],
   );
   const activeGoogleConnection = useMemo(() => {
@@ -2464,11 +2454,11 @@ export default function PacketsPage() {
   }, [documentPicker.connectors]);
 
   useEffect(() => {
-    if (!selectedPacket || !requirementIds.length) {
-      setActiveRequirementId(null);
+    if (!selectedPacketId || !packetSectionKeys.length) {
+      setActiveSection(null);
       return undefined;
     }
-    setActiveRequirementId((current) => current || requirementIds[0]);
+    setActiveSection((current) => (current && packetSectionKeys.includes(current) ? current : packetSectionKeys[0]));
     if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
       return undefined;
     }
@@ -2477,21 +2467,21 @@ export default function PacketsPage() {
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((first, second) => first.boundingClientRect.top - second.boundingClientRect.top);
-        const nextId = visible[0]?.target?.dataset?.requirementId;
-        if (nextId) {
-          setActiveRequirementId(nextId);
+        const nextSection = visible[0]?.target?.dataset?.packetSection;
+        if (nextSection) {
+          setActiveSection(nextSection);
         }
       },
       { rootMargin: '-20% 0px -65% 0px', threshold: [0, 0.1, 0.4] },
     );
-    requirementIds.forEach((requirementId) => {
-      const element = document.getElementById(requirementAnchorId(requirementId));
+    packetSectionKeys.forEach((group) => {
+      const element = document.getElementById(packetSectionAnchorId(group));
       if (element) {
         observer.observe(element);
       }
     });
     return () => observer.disconnect();
-  }, [requirementIds, selectedPacket]);
+  }, [packetSectionKeys, selectedPacketId]);
 
   function startPacketWorkflow() {
     setShowCreateFlow(true);
@@ -3498,7 +3488,12 @@ export default function PacketsPage() {
             </div>
 
             {groupedRequirements.map(({ group, items }) => (
-              <section key={group} className="space-y-3">
+              <section
+                key={group}
+                id={packetSectionAnchorId(group)}
+                data-packet-section={group}
+                className="scroll-mt-5 space-y-3"
+              >
                 <div className="flex items-center gap-2">
                   <FileText size={16} className="text-gray-500 dark:text-gray-400" aria-hidden="true" />
                   <h4 className="text-sm font-semibold uppercase text-gray-600 dark:text-gray-300">{group}</h4>
@@ -3529,9 +3524,8 @@ export default function PacketsPage() {
           </section>
 
           <PacketChecklistGuide
-            coverage={coverage}
             groupedRequirements={groupedRequirements}
-            activeRequirementId={activeRequirementId}
+            activeSection={activeSection}
           />
         </div>
 
