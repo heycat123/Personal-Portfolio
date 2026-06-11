@@ -17,6 +17,8 @@ import {
   Search,
   Send,
   SlidersHorizontal,
+  ThumbsDown,
+  ThumbsUp,
   UsersRound,
   Wrench,
   X,
@@ -72,6 +74,32 @@ function queryJobConversationId(job) {
 
 function queryJobFingerprint(job) {
   return job?.result_json?.request_fingerprint_id || job?.request_fingerprint_id || null;
+}
+
+function persistedMessageId(value) {
+  const normalized = String(value || '');
+  return normalized.startsWith('qmsg_') ? normalized : null;
+}
+
+function compactPayload(payload) {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== null && value !== undefined && value !== ''));
+}
+
+function queryFeedbackPayload({ message, rating, activeConversationId }) {
+  const result = message?.result || {};
+  const job = message?.job || {};
+  return compactPayload({
+    rating,
+    job_id: job.job_id || result.job_id || result.query_job_id,
+    request_fingerprint_id: message?.fingerprint?.id || message?.request_fingerprint_id || result.request_fingerprint_id,
+    conversation_id: message?.conversation_id || result.conversation_id || activeConversationId,
+    user_message_id: persistedMessageId(message?.user_message_id),
+    assistant_message_id: persistedMessageId(message?.assistant_message_id || message?.id),
+    reason_code: rating === 'thumbs_down' ? 'thumbs_down' : null,
+    route: typeof window === 'undefined' ? null : `${window.location.pathname}${window.location.search}`,
+    severity: rating === 'thumbs_down' ? 'medium' : 'low',
+    create_github_issue: rating === 'thumbs_down',
+  });
 }
 
 function queryJobFromEvent(event, previousJob = {}) {
@@ -436,7 +464,20 @@ function AgenticSummary({ result, t }) {
   );
 }
 
-function QueryMessage({ message, caseId, currentUserName, onCopyAnswer, copied, onOpenCitation, onOpenCitationList, showDiagnostics, showCitations = true, t }) {
+function QueryMessage({
+  message,
+  caseId,
+  currentUserName,
+  onCopyAnswer,
+  copied,
+  onOpenCitation,
+  onOpenCitationList,
+  onSubmitFeedback,
+  feedback,
+  showDiagnostics,
+  showCitations = true,
+  t,
+}) {
   if (message.role === 'user') {
     return (
       <div className="flex min-w-0 max-w-full justify-end gap-3">
@@ -464,6 +505,20 @@ function QueryMessage({ message, caseId, currentUserName, onCopyAnswer, copied, 
     : result?.display_guidance?.message || result?.display_guidance?.summary || null;
   const jobId = message.job?.job_id;
   const jobLabel = queryJobDisplayMessage(message.job);
+  const selectedRating = feedback?.rating || message.feedback?.rating || null;
+  const feedbackMessage = feedback?.message || message.feedback?.display_message || null;
+  const feedbackError = feedback?.error || null;
+  const feedbackSaving = Boolean(feedback?.saving);
+  const feedbackButtonClass = (rating) => {
+    const selected = selectedRating === rating;
+    return [
+      'inline-flex h-8 w-8 items-center justify-center rounded-md border text-xs font-semibold transition',
+      selected
+        ? 'border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100'
+        : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300 dark:hover:border-sky-900 dark:hover:bg-sky-950/30 dark:hover:text-sky-100',
+      feedbackSaving ? 'cursor-wait opacity-70' : '',
+    ].join(' ');
+  };
   return (
     <div className="flex min-w-0 max-w-full justify-start">
       <div className="min-w-0 w-full max-w-full overflow-hidden rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-[#101820] sm:max-w-[92%] sm:p-4">
@@ -513,7 +568,43 @@ function QueryMessage({ message, caseId, currentUserName, onCopyAnswer, copied, 
                   label="Query fingerprint"
                 />
               ) : null}
+              {result?.answer ? (
+                <div className="ml-auto flex items-center gap-1" aria-label={t('Rate this answer')}>
+                  <button
+                    type="button"
+                    onClick={() => onSubmitFeedback?.(message, 'thumbs_up')}
+                    disabled={feedbackSaving}
+                    className={feedbackButtonClass('thumbs_up')}
+                    title={t('Helpful answer')}
+                    aria-label={t('Helpful answer')}
+                    aria-pressed={selectedRating === 'thumbs_up'}
+                  >
+                    {feedbackSaving && selectedRating === 'thumbs_up' ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ThumbsUp size={14} aria-hidden="true" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSubmitFeedback?.(message, 'thumbs_down')}
+                    disabled={feedbackSaving}
+                    className={feedbackButtonClass('thumbs_down')}
+                    title={t('Report answer for review')}
+                    aria-label={t('Report answer for review')}
+                    aria-pressed={selectedRating === 'thumbs_down'}
+                  >
+                    {feedbackSaving && selectedRating === 'thumbs_down' ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <ThumbsDown size={14} aria-hidden="true" />}
+                  </button>
+                </div>
+              ) : null}
             </div>
+            {feedbackMessage || feedbackError ? (
+              <div className={`mb-3 rounded-md border px-3 py-2 text-xs ${
+                feedbackError
+                  ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100'
+              }`}
+              >
+                {feedbackError ? t('Feedback could not be saved. Try again.') : t(feedbackMessage)}
+              </div>
+            ) : null}
             <InlineAnswer answer={result?.answer} citations={citations} onOpenCitation={onOpenCitation} />
             {needsMoreSourceMaterial ? (
               <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
@@ -821,6 +912,7 @@ function conversationPreviewText(conversation, t) {
 }
 
 function messagesFromConversation(conversation) {
+  let previousUserMessageId = null;
   return (conversation?.messages || []).map((message) => {
     if (message.role === 'assistant') {
       const result = message.query_result_json && Object.keys(message.query_result_json).length
@@ -828,6 +920,9 @@ function messagesFromConversation(conversation) {
         : { answer: message.content, citations: [] };
       return {
         id: message.message_id,
+        assistant_message_id: message.message_id,
+        user_message_id: previousUserMessageId,
+        conversation_id: conversation?.conversation_id,
         role: 'assistant',
         result,
         fingerprint: {
@@ -836,8 +931,11 @@ function messagesFromConversation(conversation) {
         },
       };
     }
+    previousUserMessageId = message.message_id;
     return {
       id: message.message_id,
+      user_message_id: message.message_id,
+      conversation_id: conversation?.conversation_id,
       role: 'user',
       content: message.content,
     };
@@ -1170,6 +1268,7 @@ export default function QueryPage() {
     return window.localStorage.getItem(chatHistoryCollapsedStorageKey(caseId)) === 'true';
   });
   const [copiedAnswer, setCopiedAnswer] = useState(false);
+  const [feedbackState, setFeedbackState] = useState({});
   const [readinessState, setReadinessState] = useState({
     loading: true,
     health: null,
@@ -1289,6 +1388,7 @@ export default function QueryPage() {
   useEffect(() => {
     let cancelled = false;
     setMessages([]);
+    setFeedbackState({});
     setState({ running: false, error: null, result: null, fingerprint: null });
     const savedConversationId = typeof window === 'undefined' ? null : window.localStorage.getItem(conversationStorageKey(caseId));
     setActiveConversationId(savedConversationId);
@@ -1309,6 +1409,7 @@ export default function QueryPage() {
   const startNewConversation = useCallback(() => {
     setActiveConversationId(null);
     setMessages([]);
+    setFeedbackState({});
     setQuestion('');
     setState({ running: false, error: null, result: null, fingerprint: null });
     if (typeof window !== 'undefined') {
@@ -1326,6 +1427,68 @@ export default function QueryPage() {
     setCopiedAnswer(true);
     window.setTimeout(() => setCopiedAnswer(false), 1400);
   }, []);
+
+  const submitAnswerFeedback = useCallback(async (message, rating) => {
+    const messageKey = message?.id || `${rating}-${Date.now()}`;
+    const payload = queryFeedbackPayload({ message, rating, activeConversationId });
+    const hasIdentifier = Boolean(
+      payload.job_id
+      || payload.request_fingerprint_id
+      || payload.conversation_id
+      || payload.user_message_id
+      || payload.assistant_message_id,
+    );
+    if (!hasIdentifier) {
+      setFeedbackState((current) => ({
+        ...current,
+        [messageKey]: {
+          rating,
+          saving: false,
+          error: new Error('This answer does not have enough saved metadata to report yet.'),
+        },
+      }));
+      return;
+    }
+
+    setFeedbackState((current) => ({
+      ...current,
+      [messageKey]: { ...(current[messageKey] || {}), rating, saving: true, error: null },
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createQueryFeedback(caseId, payload, { token });
+      recordFingerprint(result, rating === 'thumbs_down' ? 'Query issue feedback' : 'Query feedback');
+      const displayMessage = result.data?.display_message
+        || (rating === 'thumbs_down' ? 'Reported for review.' : 'Feedback saved.');
+      setFeedbackState((current) => ({
+        ...current,
+        [messageKey]: {
+          rating,
+          saving: false,
+          error: null,
+          message: displayMessage,
+          trigger: result.data?.trigger,
+        },
+      }));
+      setMessages((current) => current.map((item) => (
+        item.id === messageKey
+          ? {
+              ...item,
+              feedback: {
+                rating,
+                display_message: displayMessage,
+                trigger: result.data?.trigger,
+              },
+            }
+          : item
+      )));
+    } catch (error) {
+      setFeedbackState((current) => ({
+        ...current,
+        [messageKey]: { ...(current[messageKey] || {}), rating, saving: false, error },
+      }));
+    }
+  }, [activeConversationId, caseId, getAccessToken, recordFingerprint]);
 
   const pollQueryJob = useCallback(async ({ initialJob, token, assistantId, fingerprint }) => {
     let latestJob = initialJob;
@@ -1815,6 +1978,8 @@ export default function QueryPage() {
                 copied={copiedAnswer}
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
+                onSubmitFeedback={submitAnswerFeedback}
+                feedback={feedbackState[message.id]}
                 showDiagnostics={showDiagnostics}
                 showCitations={chatSettings.showCitations}
                 t={t}
