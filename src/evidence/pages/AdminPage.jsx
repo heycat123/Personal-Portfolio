@@ -1,4 +1,4 @@
-import { Check, Copy, Info, KeyRound, Mail, RefreshCw, ShieldCheck, Sparkles, Trash2, UserPlus, UserX, X } from 'lucide-react';
+import { BrainCircuit, Check, Copy, FlaskConical, Info, KeyRound, LockKeyhole, Mail, RefreshCw, ShieldCheck, Sparkles, Trash2, UserPlus, UserX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
@@ -29,6 +29,176 @@ function invitationStatus(invitation) {
   return String(invitation?.status || invitation?.invitation_status || '').trim().toLowerCase();
 }
 
+function runtimeBadgeClass(active) {
+  return active
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100'
+    : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-white/5 dark:text-gray-300';
+}
+
+function availabilityLabel(value) {
+  return value ? 'Available' : 'Unavailable';
+}
+
+function AiRuntimePanel({ runtime, loading, error, t }) {
+  const current = runtime?.current || {};
+  const availability = runtime?.availability || {};
+  const selection = runtime?.selection || {};
+  const guardrails = runtime?.guardrails || {};
+  const providers = runtime?.providers || [];
+  const currentProvider = current.provider || providers.find((provider) => provider.current)?.provider || '';
+  const activeProvider = providers.find((provider) => provider.provider === currentProvider) || providers.find((provider) => provider.current);
+  const chips = [
+    ['Query generation', availability.query_generation_available],
+    ['Embeddings', availability.query_embedding_available],
+    ['Gemini configured', availability.gemini_configured],
+    ['DeepSeek configured', availability.deepseek_configured],
+    ['DeepSeek base URL', availability.deepseek_base_url_configured],
+  ];
+
+  return (
+    <section className="mb-5 rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-md border border-gray-200 p-2 text-gray-600 dark:border-gray-700 dark:text-gray-300">
+            <BrainCircuit size={18} aria-hidden="true" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('AI Runtime')}</h3>
+            <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-400">
+              {t('Read-only provider status for Ask Documents generation. Provider changes are controlled by backend runtime configuration.')}
+            </p>
+          </div>
+        </div>
+        <StatusBadge status={loading ? 'pending' : 'succeeded'} label={loading ? t('loading') : t('read only')} />
+      </div>
+
+      {loading && !runtime ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="h-24 animate-pulse rounded-lg bg-gray-100 dark:bg-white/10" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="font-semibold">{t('AI runtime status is not available right now.')}</div>
+          <div className="mt-1">{error.message || t('Refresh Admin after backend access is available.')}</div>
+        </div>
+      ) : runtime ? (
+        <>
+          <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-black/20">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t('Current provider')}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-xl font-semibold text-gray-950 dark:text-white">
+                  {current.provider_label || activeProvider?.label || current.provider || t('Not configured')}
+                </span>
+                {activeProvider?.provider === 'deepseek' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                    <FlaskConical size={13} aria-hidden="true" />
+                    {t('Experimental')}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-3 grid gap-2 text-sm text-gray-700 dark:text-gray-300 sm:grid-cols-2">
+                <div>
+                  <span className="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{t('Query model')}</span>
+                  <span className="font-mono">{current.query_model || activeProvider?.generation_model || t('Not reported')}</span>
+                </div>
+                <div>
+                  <span className="block text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{t('Mode')}</span>
+                  <span>{selection.mode || t('Runtime configuration')}</span>
+                </div>
+              </div>
+            </div>
+
+            <label className="block rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#0b1117]">
+              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t('Provider selector')}</span>
+              <select
+                value={currentProvider}
+                disabled
+                className="mt-2 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-white/10 dark:text-gray-300"
+              >
+                {providers.length ? (
+                  providers.map((provider) => (
+                    <option key={provider.provider} value={provider.provider}>
+                      {provider.label || provider.provider}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">{t('No provider options reported')}</option>
+                )}
+              </select>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                {selection.user_message || t('AI provider selection is currently controlled by backend runtime configuration.')}
+              </p>
+            </label>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {chips.map(([label, value]) => {
+              const available = Boolean(value);
+              return (
+                <span
+                  key={label}
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${runtimeBadgeClass(available)}`}
+                >
+                  {available ? <Check size={13} aria-hidden="true" /> : <X size={13} aria-hidden="true" />}
+                  {t(label)}: {t(availabilityLabel(available))}
+                </span>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {providers.map((provider) => (
+              <div key={provider.provider} className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold text-gray-950 dark:text-white">{provider.label || provider.provider}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {provider.current ? <StatusBadge status="succeeded" label={t('Active')} /> : null}
+                    <StatusBadge status={provider.configured ? 'succeeded' : 'failed'} label={provider.configured ? t('Configured') : t('Not configured')} />
+                  </div>
+                </div>
+                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  {provider.generation_model ? (
+                    <div>{t('Generation model')}: <span className="font-mono">{provider.generation_model}</span></div>
+                  ) : null}
+                  {provider.base_url_configured !== undefined ? (
+                    <div>{t('Base URL')}: {provider.base_url_configured ? t('Configured') : t('Not configured')}</div>
+                  ) : null}
+                  {provider.capabilities?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {provider.capabilities.map((capability) => (
+                        <span key={capability} className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700 dark:bg-white/10 dark:text-gray-300">
+                          {capability}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {provider.notes ? <p className="mt-2">{provider.notes}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-100 sm:flex-row sm:items-start">
+            <LockKeyhole className="mt-0.5 shrink-0" size={16} aria-hidden="true" />
+            <p>
+              {guardrails.gemini_embeddings_ocr_audio_remain_default
+                ? t('Gemini still handles embeddings, OCR, and audio transcription. API keys and secret values are not exposed in this panel.')
+                : t('API keys and secret values are not exposed in this panel.')}
+            </p>
+          </div>
+        </>
+      ) : (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+          {t('AI runtime status is not available right now. Refresh Admin after backend access is available.')}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminPage() {
   const { caseId } = useParams();
   const { getAccessToken } = useEvidenceAuth();
@@ -42,6 +212,8 @@ export default function AdminPage() {
     invitations: [],
     emailMessages: [],
     deliveryConfig: null,
+    aiRuntime: null,
+    aiRuntimeError: null,
     error: null,
     result: null,
     invitationResult: null,
@@ -77,16 +249,20 @@ export default function AdminPage() {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const token = await getAccessToken();
-      const [usersResult, membershipsResult, invitationsResult, emailMessagesResult] = await Promise.all([
+      const [usersResult, membershipsResult, invitationsResult, emailMessagesResult, aiRuntimeResult] = await Promise.all([
         evidenceApi.getAdminUsers({ token }),
         evidenceApi.getCaseMemberships(caseId, { token }),
         evidenceApi.getCaseInvitations(caseId, { token }),
         evidenceApi.getCaseEmailMessages(caseId, { token }),
+        evidenceApi.getAiRuntime(caseId, { token }).catch((error) => ({ data: null, error })),
       ]);
       recordFingerprint(usersResult, 'Admin users');
       recordFingerprint(membershipsResult, 'Case memberships');
       recordFingerprint(invitationsResult, 'Case invitations');
       recordFingerprint(emailMessagesResult, 'Email communications');
+      if (!aiRuntimeResult.error) {
+        recordFingerprint(aiRuntimeResult, 'AI runtime');
+      }
       setState((current) => ({
         ...current,
         loading: false,
@@ -95,7 +271,9 @@ export default function AdminPage() {
         invitations: invitationsResult.data?.invitations || [],
         emailMessages: emailMessagesResult.data?.email_messages || [],
         deliveryConfig: emailMessagesResult.data?.delivery_config || null,
-        fingerprint: emailMessagesResult.requestFingerprintId || invitationsResult.requestFingerprintId || membershipsResult.requestFingerprintId || usersResult.requestFingerprintId,
+        aiRuntime: aiRuntimeResult.error ? null : aiRuntimeResult.data || null,
+        aiRuntimeError: aiRuntimeResult.error || null,
+        fingerprint: aiRuntimeResult.requestFingerprintId || emailMessagesResult.requestFingerprintId || invitationsResult.requestFingerprintId || membershipsResult.requestFingerprintId || usersResult.requestFingerprintId,
       }));
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -647,6 +825,8 @@ export default function AdminPage() {
       />
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Admin action failed" error={state.error} /></div> : null}
+
+      <AiRuntimePanel runtime={state.aiRuntime} loading={state.loading} error={state.aiRuntimeError} t={t} />
 
       <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
