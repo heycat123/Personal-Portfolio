@@ -507,8 +507,12 @@ function QueryMessage({
   const jobLabel = queryJobDisplayMessage(message.job);
   const selectedRating = feedback?.rating || message.feedback?.rating || null;
   const feedbackMessage = feedback?.message || message.feedback?.display_message || null;
+  const feedbackTrigger = feedback?.trigger || message.feedback?.trigger || null;
+  const feedbackGithubIssue = feedback?.githubIssue || message.feedback?.github_issue || null;
   const feedbackError = feedback?.error || null;
   const feedbackSaving = Boolean(feedback?.saving);
+  const githubIssueUrl = feedbackGithubIssue?.html_url || feedbackGithubIssue?.url || null;
+  const githubIssueCreated = feedbackGithubIssue?.status === 'created' && githubIssueUrl;
   const feedbackButtonClass = (rating) => {
     const selected = selectedRating === rating;
     return [
@@ -602,7 +606,23 @@ function QueryMessage({
                   : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100'
               }`}
               >
-                {feedbackError ? t('Feedback could not be saved. Try again.') : t(feedbackMessage)}
+                <div>{feedbackError ? t('Feedback could not be saved. Try again.') : t(feedbackMessage)}</div>
+                {!feedbackError && selectedRating === 'thumbs_down' && feedbackTrigger === 'local_report' ? (
+                  <div className="mt-1 text-[11px] opacity-85">
+                    {t('Saved for backend review. GitHub issue creation is not configured yet.')}
+                  </div>
+                ) : null}
+                {!feedbackError && githubIssueCreated ? (
+                  <a
+                    href={githubIssueUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold underline"
+                  >
+                    <ExternalLink size={11} aria-hidden="true" />
+                    {t('Open GitHub issue')}
+                  </a>
+                ) : null}
               </div>
             ) : null}
             <InlineAnswer answer={result?.answer} citations={citations} onOpenCitation={onOpenCitation} />
@@ -1460,6 +1480,7 @@ export default function QueryPage() {
       recordFingerprint(result, rating === 'thumbs_down' ? 'Query issue feedback' : 'Query feedback');
       const displayMessage = result.data?.display_message
         || (rating === 'thumbs_down' ? 'Reported for review.' : 'Feedback saved.');
+      const githubIssue = result.data?.github_issue || null;
       setFeedbackState((current) => ({
         ...current,
         [messageKey]: {
@@ -1468,6 +1489,7 @@ export default function QueryPage() {
           error: null,
           message: displayMessage,
           trigger: result.data?.trigger,
+          githubIssue,
         },
       }));
       setMessages((current) => current.map((item) => (
@@ -1478,6 +1500,7 @@ export default function QueryPage() {
                 rating,
                 display_message: displayMessage,
                 trigger: result.data?.trigger,
+                github_issue: githubIssue,
               },
             }
           : item
