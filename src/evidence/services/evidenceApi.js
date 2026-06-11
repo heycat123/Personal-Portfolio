@@ -526,6 +526,7 @@ export const evidenceApi = {
   getCaseMemberships: (caseId, options) => request(casePath(caseId, '/memberships'), options),
   getCaseInvitations: (caseId, options) => request(casePath(caseId, '/invitations'), options),
   getCaseEmailMessages: (caseId, options) => request(casePath(caseId, '/email-messages'), options),
+  getAiRuntime: (caseId, options) => request(casePath(caseId, '/admin/ai-runtime'), options),
   createCaseInvitation: (caseId, payload, options) =>
     request(casePath(caseId, '/invitations'), { ...options, method: 'POST', body: payload }),
   cancelCaseInvitation: (caseId, invitationId, options) =>
