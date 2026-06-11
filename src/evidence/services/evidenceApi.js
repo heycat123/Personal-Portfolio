@@ -564,6 +564,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
   createQueryJob: (caseId, payload, options) =>
     request(casePath(caseId, '/query/jobs'), { ...options, method: 'POST', body: payload }),
+  createQueryFeedback: (caseId, payload, options) =>
+    request(casePath(caseId, '/query/feedback'), { ...options, method: 'POST', body: payload }),
   queryHelp: (caseId, payload, options) =>
     request(casePath(caseId, '/help/query'), { ...options, method: 'POST', body: payload }),
   createSupportRecord: (caseId, payload, options) =>
