@@ -1,5 +1,5 @@
 import { Archive, Ban, RefreshCw, RotateCcw } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DataTable from '../components/DataTable';
 import ErrorPanel from '../components/ErrorPanel';
@@ -78,6 +78,46 @@ function jobIsCurrent(job) {
   return Boolean(progress.isCurrent || progress.canCancel || isActiveJob(job));
 }
 
+function JobsLoadingContent({ t }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]"
+    >
+      <div className="flex flex-col gap-2 border-b border-gray-100 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-gray-950 dark:text-white">{t('Loading jobs')}</p>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            {t('Fetching the latest document and batch processing records. You can keep working in other parts of the workspace.')}
+          </p>
+        </div>
+        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-100">
+          <RefreshCw className="animate-spin" size={13} aria-hidden="true" />
+          {t('Checking status')}
+        </span>
+      </div>
+      <div className="mt-4 space-y-3">
+        {[0, 1, 2, 3].map((item) => (
+          <div key={item} className="grid gap-4 rounded-lg border border-gray-100 p-3 dark:border-gray-800 md:grid-cols-[1fr_12rem_10rem]">
+            <div className="min-w-0">
+              <div className="h-4 w-48 max-w-full animate-pulse rounded bg-gray-200 dark:bg-gray-800" />
+              <div className="mt-3 h-3 w-3/4 animate-pulse rounded bg-gray-100 dark:bg-gray-900" />
+              <div className="mt-3 h-1.5 w-full max-w-md animate-pulse rounded bg-gray-100 dark:bg-gray-900" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 w-20 animate-pulse rounded bg-gray-100 dark:bg-gray-900" />
+              <div className="h-3 w-28 animate-pulse rounded bg-gray-100 dark:bg-gray-900" />
+              <div className="h-3 w-24 animate-pulse rounded bg-gray-100 dark:bg-gray-900" />
+            </div>
+            <div className="h-9 w-28 animate-pulse rounded-md bg-gray-100 dark:bg-gray-900" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function JobsPage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
@@ -85,6 +125,7 @@ export default function JobsPage() {
   const { recordFingerprint } = useApiStatus();
   const { t } = useLocaleSettings();
   const { canSeeOperations, debugEnabled } = useOperatorMode();
+  const listRequestInFlightRef = useRef(false);
   const [state, setState] = useState({
     loading: true,
     actionJobId: null,
@@ -98,6 +139,10 @@ export default function JobsPage() {
   const [showJobHistory, setShowJobHistory] = useState(false);
 
   const loadJobs = useCallback(async ({ quiet = false } = {}) => {
+    if (listRequestInFlightRef.current) {
+      return null;
+    }
+    listRequestInFlightRef.current = true;
     if (!quiet) {
       setState((current) => ({ ...current, loading: true, error: null }));
     }
@@ -117,8 +162,12 @@ export default function JobsPage() {
           correlationId: result.correlationId,
         },
       }));
+      return result;
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
+      return null;
+    } finally {
+      listRequestInFlightRef.current = false;
     }
   }, [caseId, getAccessToken, recordFingerprint]);
 
@@ -139,6 +188,7 @@ export default function JobsPage() {
 
   const liveJobs = useJobStatusPolling({
     caseId,
+    enabled: Boolean(caseId && !state.loading),
     intervalMs: 5000,
     runImmediately: false,
     onJobsChange: handleLiveJobs,
@@ -341,10 +391,11 @@ export default function JobsPage() {
             <button
               type="button"
               onClick={() => loadJobs()}
+              disabled={state.loading}
               className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100 dark:border-gray-700 dark:bg-[#101820] dark:text-gray-100 dark:hover:bg-white/10"
             >
-              <RefreshCw size={16} aria-hidden="true" />
-              {t('Refresh')}
+              <RefreshCw className={state.loading ? 'animate-spin' : ''} size={16} aria-hidden="true" />
+              {state.loading ? t('Loading') : t('Refresh')}
             </button>
           </div>
         }
@@ -427,6 +478,7 @@ export default function JobsPage() {
         rows={displayJobs}
         rowKey={(job) => job.job_id}
         loading={state.loading}
+        loadingContent={<JobsLoadingContent t={t} />}
         emptyTitle={state.loading ? t('Loading jobs') : t(showJobHistory ? (canSeeOperations ? 'No jobs returned' : 'No processing jobs returned') : 'No current jobs running')}
         onRowSelect={(job) => navigate(`/evidence/cases/${caseId}/jobs/${job.job_id}`)}
         mobileTitle={(job) => (
