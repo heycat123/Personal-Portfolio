@@ -72,6 +72,7 @@ const REQUIREMENT_STATUS_OPTIONS = [
 
 const REQUIREMENT_STATUS_MAP = Object.fromEntries(REQUIREMENT_STATUS_OPTIONS.map((item) => [item.value, item]));
 const COVERED_STATUSES = ['added', 'may_not_apply', 'skipped'];
+const ATTENTION_STATUSES = ['needs_attention'];
 const GOOGLE_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const REQUIREMENT_UPLOAD_GUIDANCE = {
   financial_affidavit_draft_form: [
@@ -473,8 +474,27 @@ function localUploadItemsFromFiles(files = []) {
   }));
 }
 
+function localUploadFooterText(items = [], localUploading = false) {
+  const count = items.length;
+  if (!count) {
+    return 'Select files to start upload.';
+  }
+  const failedCount = items.filter((item) => item.status === 'failed').length;
+  if (failedCount) {
+    return `${failedCount} file(s) need attention. Fix the issue or choose the file again.`;
+  }
+  if (localUploading) {
+    return `${count} file(s) uploading, registering, or linking. Readiness appears in Documents after processing.`;
+  }
+  return `${count} file(s) selected.`;
+}
+
 function uploadWithProgress(url, { method = 'PUT', headers = {}, file, onProgress }) {
   return new Promise((resolve, reject) => {
+    if (!url) {
+      reject(new Error('Upload could not start because the secure upload URL was missing.'));
+      return;
+    }
     const xhr = new XMLHttpRequest();
     xhr.open(method, url);
     Object.entries(headers || {}).forEach(([key, value]) => {
@@ -1158,23 +1178,27 @@ function PacketDocumentPicker({
 
             <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
               {localUploadItems.length ? (
-                localUploadItems.map((item) => (
-                  <div key={item.id} className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{item.name}</p>
-                        <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{formatBytes(item.size)} · {item.message || 'Ready to upload.'}</p>
+                localUploadItems.map((item) => {
+                  const failed = item.status === 'failed';
+                  const linkedOrReused = ['already_uploaded', 'linked'].includes(item.status);
+                  return (
+                    <div key={item.id} className={`rounded-lg border p-3 ${failed ? 'border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30' : 'border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)]'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{item.name}</p>
+                          <p className={`mt-1 text-xs ${failed ? 'text-red-700 dark:text-red-300' : 'text-[var(--lakai-text-muted)]'}`}>{formatBytes(item.size)} - {item.message || 'Ready to upload.'}</p>
+                        </div>
+                        {linkedOrReused ? <CheckCircle2 className="shrink-0 text-amber-600" size={18} aria-hidden="true" /> : null}
                       </div>
-                      {item.progress >= 100 ? <CheckCircle2 className="shrink-0 text-emerald-600" size={18} aria-hidden="true" /> : null}
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                        <div
+                          className={`h-full rounded-full transition-all ${failed ? 'bg-red-500' : 'bg-[var(--lakai-primary)]'}`}
+                          style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
-                      <div
-                        className="h-full rounded-full bg-[var(--lakai-primary)] transition-all"
-                        style={{ width: `${Math.max(0, Math.min(100, item.progress || 0))}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <EmptyState title="No files selected" description="Choose files from this computer to upload and link here." />
               )}
@@ -1182,7 +1206,7 @@ function PacketDocumentPicker({
 
             <div className="flex flex-col gap-3 border-t border-[var(--lakai-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-[var(--lakai-text-muted)]">
-                {localUploadItems.length ? `${localUploadItems.length} file(s) ready.` : 'Select files to start upload.'}
+                {localUploadFooterText(localUploadItems, localUploading)}
               </p>
               <button
                 type="button"
@@ -1320,7 +1344,7 @@ function PacketCard({ packet, caseId }) {
   );
 }
 
-function PacketChecklistGuide({ groupedRequirements, activeSection }) {
+function PacketChecklistGuide({ groupedRequirements, activeSection, requirementDraftStatuses }) {
   return (
     <aside className="order-first self-start rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-sm xl:order-none xl:sticky xl:top-5">
       <div className="border-b border-[var(--lakai-border)] pb-5">
@@ -1331,7 +1355,9 @@ function PacketChecklistGuide({ groupedRequirements, activeSection }) {
         <ol className="relative ml-2 space-y-5 border-l border-[var(--lakai-border)]">
           {groupedRequirements.map(({ group, items }) => {
             const isActive = activeSection === group;
-            const isComplete = items.length > 0 && items.every((requirement) => COVERED_STATUSES.includes(normalizeStatus(requirement.status)));
+            const effectiveStatuses = items.map((requirement) => normalizeStatus(requirementDraftStatuses?.[requirement.requirement_id] ?? requirement.status));
+            const needsAttention = effectiveStatuses.some((status) => ATTENTION_STATUSES.includes(status));
+            const isComplete = !needsAttention && effectiveStatuses.length > 0 && effectiveStatuses.every((status) => COVERED_STATUSES.includes(status));
             const label = packetSectionShortLabel(group);
             return (
               <li key={group} className="relative pl-6">
@@ -1341,11 +1367,13 @@ function PacketChecklistGuide({ groupedRequirements, activeSection }) {
                       ? 'border-[var(--lakai-accent)] text-[var(--lakai-accent)] shadow-[0_0_0_4px_rgba(160,120,32,0.12)]'
                       : isComplete
                         ? 'border-emerald-500 text-emerald-700 dark:text-emerald-300'
+                        : needsAttention
+                          ? 'border-amber-500 text-amber-700 dark:text-amber-300'
                         : 'border-[var(--lakai-border)] text-[var(--lakai-text-muted)]'
                   }`}
                   aria-hidden="true"
                 >
-                  {isComplete ? <CheckCircle2 size={11} strokeWidth={2.25} /> : <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-[var(--lakai-accent)]' : 'bg-current opacity-40'}`} />}
+                  {isComplete ? <CheckCircle2 size={11} strokeWidth={2.25} /> : <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-[var(--lakai-accent)]' : needsAttention ? 'bg-amber-500 opacity-100' : 'bg-current opacity-40'}`} />}
                 </span>
                 <a
                   href={`#${packetSectionAnchorId(group)}`}
@@ -1353,10 +1381,11 @@ function PacketChecklistGuide({ groupedRequirements, activeSection }) {
                     isActive ? 'bg-[var(--lakai-accent)]/10 text-[var(--lakai-accent)] underline decoration-[var(--lakai-accent)]/40 underline-offset-4' : 'text-[var(--lakai-text-muted)]'
                   }`}
                   aria-current={isActive ? 'location' : undefined}
-                  aria-label={`${label}${isComplete ? ', complete' : ''}`}
+                  aria-label={`${label}${isComplete ? ', complete' : needsAttention ? ', needs attention' : ''}`}
                 >
                   {label}
                   {isComplete ? <span className="sr-only"> complete</span> : null}
+                  {needsAttention ? <span className="sr-only"> needs attention</span> : null}
                 </a>
               </li>
             );
@@ -1384,6 +1413,7 @@ function RequirementEditor({
   onPreviewDocument,
   onMoveDocumentLink,
   movingLink,
+  onStatusDraftChange,
 }) {
   const [status, setStatus] = useState(requirement.status || 'needed');
   const [note, setNote] = useState(requirement.user_note || '');
@@ -1889,7 +1919,11 @@ function RequirementEditor({
           <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Status</span>
           <select
             value={status}
-            onChange={(event) => setStatus(event.target.value)}
+            onChange={(event) => {
+              const nextStatus = event.target.value;
+              setStatus(nextStatus);
+              onStatusDraftChange?.(requirementId, nextStatus);
+            }}
             disabled={!canContribute || rowSaving}
             className="mt-1 min-h-11 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:disabled:bg-black/30"
           >
@@ -2311,6 +2345,7 @@ export default function PacketsPage() {
   const [movingLink, setMovingLink] = useState(null);
   const [folderAction, setFolderAction] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
+  const [requirementDraftStatuses, setRequirementDraftStatuses] = useState({});
   const [preview, setPreview] = useState({
     open: false,
     loading: false,
@@ -2417,6 +2452,20 @@ export default function PacketsPage() {
   }, [documentPicker.connectors]);
 
   useEffect(() => {
+    setRequirementDraftStatuses({});
+  }, [selectedPacketId]);
+
+  const handleRequirementStatusDraftChange = useCallback((requirementId, nextStatus) => {
+    if (!requirementId) {
+      return;
+    }
+    setRequirementDraftStatuses((current) => ({
+      ...current,
+      [requirementId]: nextStatus,
+    }));
+  }, []);
+
+  useEffect(() => {
     if (!selectedPacketId || !packetSectionKeys.length) {
       setActiveSection(null);
       return undefined;
@@ -2502,6 +2551,14 @@ export default function PacketsPage() {
       const token = await getAccessToken();
       const result = await evidenceApi.updatePacketRequirement(caseId, nextPacketId, requirementId, payload, { token });
       recordFingerprint(result, 'Update packet item');
+      setRequirementDraftStatuses((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, requirementId)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[requirementId];
+        return next;
+      });
       setState((current) => ({
         ...current,
         savingRequirement: null,
@@ -3052,8 +3109,8 @@ export default function PacketsPage() {
           }
           updateLocalUploadItem(item.id, {
             status: 'already_uploaded',
-            progress: 90,
-            message: presignResult.data?.display_message || 'This file is already in Documents, so the existing copy will be linked.',
+            progress: 75,
+            message: presignResult.data?.display_message || 'This file is already in Documents. Linking the existing copy to this packet item.',
           });
           continue;
         }
@@ -3083,8 +3140,8 @@ export default function PacketsPage() {
         }
         updateLocalUploadItem(item.id, {
           status: 'registered',
-          progress: 90,
-          message: registerResult.data?.display_message || 'Processing started. Linking to packet item.',
+          progress: 85,
+          message: registerResult.data?.display_message || 'Secure copy registered. Linking to this packet item; processing continues in Documents.',
         });
       }
 
@@ -3132,7 +3189,19 @@ export default function PacketsPage() {
         setDocumentPicker((current) => ({ ...current, localUploading: false }));
       }
     } catch (error) {
-      setDocumentPicker((current) => ({ ...current, localUploading: false }));
+      setDocumentPicker((current) => ({
+        ...current,
+        localUploading: false,
+        localUploadItems: current.localUploadItems.map((item) => (
+          ['ready', 'hashing', 'preparing', 'uploading', 'registering', 'registered'].includes(item.status)
+            ? {
+              ...item,
+              status: 'failed',
+              message: friendlyError(error),
+            }
+            : item
+        )),
+      }));
       setState((current) => ({ ...current, error }));
     }
   }
@@ -3455,6 +3524,7 @@ export default function PacketsPage() {
                     onPreviewDocument={previewPacketDocument}
                     onMoveDocumentLink={movePacketDocumentLink}
                     movingLink={movingLink}
+                    onStatusDraftChange={handleRequirementStatusDraftChange}
                   />
                 ))}
               </section>
@@ -3464,6 +3534,7 @@ export default function PacketsPage() {
           <PacketChecklistGuide
             groupedRequirements={groupedRequirements}
             activeSection={activeSection}
+            requirementDraftStatuses={requirementDraftStatuses}
           />
         </div>
 
