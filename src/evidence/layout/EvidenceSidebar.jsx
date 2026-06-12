@@ -38,7 +38,12 @@ const NAV_ITEMS = [
   { group: 'Operations', label: 'Admin', path: 'admin', icon: ShieldCheck, requiresAdmin: true },
 ];
 
-export default function EvidenceSidebar({ open = false, onClose }) {
+export default function EvidenceSidebar({
+  open = false,
+  onClose,
+  jobsAttentionCount = 0,
+  jobsAttentionLabel = 'failed processing job(s) need attention',
+}) {
   const { activeCase } = useCaseContext();
   const { signOut, user } = useEvidenceAuth();
   const { t } = useLocaleSettings();
@@ -129,6 +134,7 @@ export default function EvidenceSidebar({ open = false, onClose }) {
               <div className="space-y-1">
                 {items.map((item) => {
                   const Icon = item.icon;
+                  const showJobsAttention = item.path === 'jobs' && jobsAttentionCount > 0;
                   return (
                     <NavLink
                       key={item.to || item.path}
@@ -142,8 +148,27 @@ export default function EvidenceSidebar({ open = false, onClose }) {
                         }`
                       }
                     >
-                      <Icon size={16} aria-hidden="true" />
-                      {t(item.label)}
+                      {({ isActive }) => (
+                        <>
+                          <Icon size={16} aria-hidden="true" />
+                          <span className="min-w-0 flex-1 truncate">{t(item.label)}</span>
+                          {showJobsAttention ? (
+                            <span
+                              className={`ml-auto inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none ring-1 ${
+                                isActive
+                                  ? 'bg-white text-red-700 ring-red-200'
+                                  : 'bg-red-50 text-red-700 ring-red-200'
+                              }`}
+                              title={t(jobsAttentionLabel)}
+                              aria-label={t('{count} failed processing job(s) need attention', {
+                                count: jobsAttentionCount,
+                              })}
+                            >
+                              {jobsAttentionCount > 9 ? '9+' : jobsAttentionCount}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </NavLink>
                   );
                 })}

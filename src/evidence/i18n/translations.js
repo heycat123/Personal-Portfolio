@@ -112,6 +112,7 @@ export const UI_TRANSLATIONS = {
     Intake: 'Entrada',
     'Intake Status': 'Status da entrada',
     Jobs: 'Tarefas',
+    '{count} failed processing job(s) need attention': '{count} tarefa(s) de processamento com falha precisam de atencao',
     'Lak.ai': 'Lak.ai',
     Language: 'Idioma',
     'Last fingerprint {id}': 'Última impressão {id}',
