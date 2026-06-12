@@ -453,6 +453,88 @@ function artifactTitle(artifact) {
   return artifact?.title || artifact?.metadata_json?.title || 'Generated answer artifact';
 }
 
+function artifactContent(artifact) {
+  const content = artifact?.content_json;
+  return content && typeof content === 'object' ? content : {};
+}
+
+function artifactAnswer(artifact) {
+  const content = artifactContent(artifact);
+  return String(content.answer || content.query_response?.answer || artifact?.answer_preview || '').trim();
+}
+
+function artifactQuestion(artifact) {
+  const content = artifactContent(artifact);
+  return String(content.question || artifact?.question || '').trim();
+}
+
+function artifactCitations(artifact) {
+  const content = artifactContent(artifact);
+  const queryResponse = content.query_response && typeof content.query_response === 'object' ? content.query_response : {};
+  const citations = Array.isArray(content.citations)
+    ? content.citations
+    : (Array.isArray(queryResponse.citations) ? queryResponse.citations : queryResponse.source_references);
+  return Array.isArray(citations) ? citations.filter((item) => item && typeof item === 'object') : [];
+}
+
+function isInternalCitationMarker(value) {
+  const normalized = String(value || '').trim().replace(/^\[/, '').replace(/\]$/, '').replace(/\s+/g, '').toLowerCase();
+  return /^e\d{1,4}$/.test(normalized);
+}
+
+function packetCitationTarget(citation) {
+  return citation?.source_target && typeof citation.source_target === 'object' ? citation.source_target : {};
+}
+
+function packetCitationPage(citation) {
+  const target = packetCitationTarget(citation);
+  return target.page_number || target.page || citation?.page_number || citation?.page || null;
+}
+
+function packetCitationLabel(citation, index = 1) {
+  if (typeof citation === 'string') {
+    return citation;
+  }
+  const target = packetCitationTarget(citation);
+  const fields = [
+    citation?.display_label,
+    citation?.source_label,
+    citation?.title,
+    citation?.document_title,
+    citation?.filename,
+    citation?.file_name,
+    target.display_label,
+    target.source_label,
+    target.title,
+    target.document_title,
+    target.filename,
+    target.file_name,
+    citation?.label,
+    citation?.citation_label,
+  ];
+  const label = fields.map((value) => String(value || '').trim()).find((value) => value && !isInternalCitationMarker(value));
+  if (label) return label;
+  const sourceType = String(target.source_type || citation?.source_type || 'Source').replace(/_/g, ' ');
+  const page = packetCitationPage(citation);
+  return page ? `${humanizeKey(sourceType)}, p. ${page}` : `Source ${index}`;
+}
+
+function packetCitationOpenTarget(citation) {
+  if (!citation || typeof citation === 'string') return null;
+  const target = packetCitationTarget(citation);
+  const documentId = target.file_id || target.document_id || target.source_document_id ||
+    citation.file_id || citation.document_id || citation.source_document_id ||
+    target.content_hash || citation.content_hash || citation.file_hash;
+  if (documentId) {
+    return { type: 'document', documentId, page: packetCitationPage(citation), sourceTarget: target };
+  }
+  const sourceType = String(target.source_type || citation.source_type || '').toLowerCase();
+  if (sourceType.includes('communication') || target.message_id || citation.message_id || target.conversation_id || citation.conversation_id) {
+    return { type: 'communication' };
+  }
+  return null;
+}
+
 async function sha256File(selectedFile) {
   if (!window.crypto?.subtle) {
     return null;
@@ -1310,6 +1392,169 @@ function PacketDocumentPreviewDialog({
   );
 }
 
+function PacketArtifactCitationButton({ citation, index, onOpenCitation }) {
+  const label = packetCitationLabel(citation, index);
+  const canOpen = Boolean(packetCitationOpenTarget(citation));
+  return (
+    <button
+      type="button"
+      onClick={canOpen ? () => onOpenCitation(citation, index) : undefined}
+      disabled={!canOpen}
+      className="mx-0.5 inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 align-baseline text-xs font-semibold text-sky-900 hover:border-sky-400 hover:bg-sky-100 disabled:cursor-default disabled:border-gray-200 disabled:bg-gray-50 disabled:text-gray-600"
+      title={label}
+    >
+      <FileText size={12} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 max-w-[calc(100vw-6rem)] truncate sm:max-w-[18rem]">{label}</span>
+    </button>
+  );
+}
+
+function PacketArtifactAnswer({ answer, citations, onOpenCitation }) {
+  const citationLookup = new Map();
+  citations.forEach((citation, index) => {
+    [`e${index + 1}`, `E${index + 1}`, `[E${index + 1}]`, citation?.packet_item_id, citation?.citation_label]
+      .filter(Boolean)
+      .forEach((key) => citationLookup.set(String(key).trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, ''), { citation, index }));
+  });
+  const parts = String(answer || 'No answer captured for this artifact.').split(/(\[[^\]\n]{1,260}\])/g);
+  return (
+    <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-6 text-[var(--lakai-text)]">
+      {parts.map((part, partIndex) => {
+        if (!part.startsWith('[') || !part.endsWith(']')) {
+          return <span key={`${partIndex}-${part.slice(0, 20)}`}>{part}</span>;
+        }
+        const inner = part.slice(1, -1);
+        const matches = [...inner.matchAll(/\be\s*(\d{1,4})\b/gi)]
+          .map((match) => citationLookup.get(`e${Number(match[1])}`))
+          .filter(Boolean);
+        const uniqueMatches = matches.filter((match, index, all) => all.findIndex((item) => item.citation === match.citation) === index);
+        if (!uniqueMatches.length) {
+          const direct = citationLookup.get(inner.trim().toLowerCase());
+          if (direct) uniqueMatches.push(direct);
+        }
+        if (!uniqueMatches.length) {
+          return <span key={`${partIndex}-${part}`}>{part}</span>;
+        }
+        return (
+          <span key={`${partIndex}-${part}`} className="inline">
+            [
+            {uniqueMatches.map((match, index) => (
+              <span key={`${partIndex}-${match.index}`} className="inline">
+                {index > 0 ? ' ' : ''}
+                <PacketArtifactCitationButton citation={match.citation} index={match.index + 1} onOpenCitation={onOpenCitation} />
+              </span>
+            ))}
+            ]
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function PacketArtifactPreviewDialog({
+  open,
+  artifact,
+  selectedCitation,
+  onOpenCitation,
+  onClearCitation,
+  onClose,
+}) {
+  if (!open || !artifact) {
+    return null;
+  }
+  const title = artifactTitle(artifact);
+  const question = artifactQuestion(artifact);
+  const answer = artifactAnswer(artifact);
+  const citations = artifactCitations(artifact);
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-12 backdrop-blur-sm sm:p-6 sm:pt-16">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="packet-artifact-preview-title"
+        className="w-full max-w-5xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
+      >
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">Generated packet artifact</p>
+            <h2 id="packet-artifact-preview-title" className="mt-1 break-words text-xl font-semibold text-[var(--lakai-text)]">
+              {title}
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+              <span>Not source evidence</span>
+              <span>No propagation</span>
+              <span>{citations.length} source citation{citations.length === 1 ? '' : 's'}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+          >
+            <X size={16} aria-hidden="true" />
+            Close
+          </button>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-4">
+            {question ? (
+              <section className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+                <p className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">Question</p>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[var(--lakai-text)]">{question}</p>
+              </section>
+            ) : null}
+            <section className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
+              <p className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">Answer</p>
+              <div className="mt-3">
+                <PacketArtifactAnswer answer={answer} citations={citations} onOpenCitation={onOpenCitation} />
+              </div>
+            </section>
+            <section className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950">
+              This artifact is review material saved into the packet. It is not a source document and should not be OCRed, embedded, graphed, or propagated as evidence.
+            </section>
+          </div>
+
+          <aside className="space-y-3">
+            <section className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+              <p className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">Source citations</p>
+              {citations.length ? (
+                <div className="mt-3 space-y-2">
+                  {citations.map((citation, index) => (
+                    <button
+                      key={`${packetCitationLabel(citation, index + 1)}-${index}`}
+                      type="button"
+                      onClick={() => onOpenCitation(citation, index + 1)}
+                      className="w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-left text-xs font-semibold text-[var(--lakai-text)] transition hover:border-[var(--lakai-primary)] hover:bg-white"
+                    >
+                      {packetCitationLabel(citation, index + 1)}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-[var(--lakai-text-muted)]">No citations were captured for this artifact.</p>
+              )}
+            </section>
+            {selectedCitation ? (
+              <section className="rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">Citation detail</p>
+                  <button type="button" onClick={onClearCitation} className="text-xs font-semibold text-[var(--lakai-primary)]">Clear</button>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-[var(--lakai-text)]">{packetCitationLabel(selectedCitation)}</p>
+                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-gray-950 p-3 text-xs leading-5 text-white">
+                  {selectedCitation.message_text_preview || selectedCitation.page_text_preview || selectedCitation.citation || JSON.stringify(selectedCitation, null, 2)}
+                </pre>
+              </section>
+            ) : null}
+          </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PacketCard({ packet, caseId }) {
   const coverage = coverageFromPacket(packet);
   return (
@@ -1416,6 +1661,7 @@ function RequirementEditor({
   onDropFiles,
   onUnlinkDocument,
   onPreviewDocument,
+  onPreviewArtifact,
   onMoveDocumentLink,
   movingLink,
   onStatusDraftChange,
@@ -1705,6 +1951,14 @@ function RequirementEditor({
           <span className="shrink-0 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-800 dark:border-sky-900/70 dark:bg-sky-950/50 dark:text-sky-100">
             Review material
           </span>
+          <button
+            type="button"
+            onClick={() => onPreviewArtifact?.(artifact)}
+            className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-sky-200 bg-white px-2 text-xs font-semibold text-sky-800 transition hover:border-sky-400 hover:bg-sky-50 dark:border-sky-900/70 dark:bg-sky-950/50 dark:text-sky-100"
+          >
+            <Eye size={14} aria-hidden="true" />
+            Read artifact
+          </button>
         </div>
       </div>
     );
@@ -2108,6 +2362,11 @@ export default function PacketsPage() {
     previewUrl: null,
     previewContentType: null,
   });
+  const [artifactPreview, setArtifactPreview] = useState({
+    open: false,
+    artifact: null,
+    selectedCitation: null,
+  });
 
   useEffect(() => () => {
     if (preview.previewUrl) {
@@ -2401,6 +2660,37 @@ export default function PacketsPage() {
         previewContentType: null,
       };
     });
+  }
+
+  function closePacketArtifactPreview() {
+    setArtifactPreview({ open: false, artifact: null, selectedCitation: null });
+  }
+
+  function previewPacketArtifact(artifact) {
+    setArtifactPreview({
+      open: true,
+      artifact,
+      selectedCitation: null,
+    });
+  }
+
+  function openPacketArtifactCitation(citation) {
+    const target = packetCitationOpenTarget(citation);
+    if (target?.type === 'document' && target.documentId) {
+      previewPacketDocument(
+        {
+          file_id: target.documentId,
+          original_filename: packetCitationLabel(citation),
+          source_label: packetCitationLabel(citation),
+        },
+        { file_id: target.documentId },
+      );
+      return;
+    }
+    setArtifactPreview((current) => ({
+      ...current,
+      selectedCitation: citation,
+    }));
   }
 
   async function previewPacketDocument(document, link = null) {
@@ -3194,6 +3484,14 @@ export default function PacketsPage() {
           caseId={caseId}
           onClose={closePacketPreview}
         />
+        <PacketArtifactPreviewDialog
+          open={artifactPreview.open}
+          artifact={artifactPreview.artifact}
+          selectedCitation={artifactPreview.selectedCitation}
+          onOpenCitation={openPacketArtifactCitation}
+          onClearCitation={() => setArtifactPreview((current) => ({ ...current, selectedCitation: null }))}
+          onClose={closePacketArtifactPreview}
+        />
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="space-y-5">
@@ -3243,6 +3541,7 @@ export default function PacketsPage() {
                     onDropFiles={dropFilesOnPacketFolder}
                     onUnlinkDocument={unlinkDocument}
                     onPreviewDocument={previewPacketDocument}
+                    onPreviewArtifact={previewPacketArtifact}
                     onMoveDocumentLink={movePacketDocumentLink}
                     movingLink={movingLink}
                     onStatusDraftChange={handleRequirementStatusDraftChange}
