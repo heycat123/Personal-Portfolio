@@ -297,6 +297,14 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  exportPacketQueryAnswerArtifact: (caseId, packetId, requirementId, artifactId, params = {}, options = {}) =>
+    requestBlob(
+      casePath(
+        caseId,
+        `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/artifacts/${encodeURIComponent(artifactId)}/export.zip`,
+      ),
+      { ...options, query: params },
+    ),
   unlinkPacketRequirementDocument: (caseId, packetId, requirementId, linkId, options) =>
     request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/links/${encodeURIComponent(linkId)}`), {
       ...options,
