@@ -3,6 +3,7 @@ import {
   Bot,
   Check,
   Clipboard,
+  Download,
   ExternalLink,
   FileText,
   History,
@@ -12,6 +13,7 @@ import {
   LockKeyhole,
   Menu,
   MessageSquare,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Search,
@@ -100,6 +102,31 @@ function queryFeedbackPayload({ message, rating, activeConversationId }) {
     severity: rating === 'thumbs_down' ? 'medium' : 'low',
     create_github_issue: rating === 'thumbs_down',
   });
+}
+
+function queryAnswerExportPayload({ message, activeConversationId }) {
+  const result = message?.result || {};
+  const job = message?.job || {};
+  return compactPayload({
+    job_id: job.job_id || result.job_id || result.query_job_id,
+    request_fingerprint_id: message?.fingerprint?.id || message?.request_fingerprint_id || result.request_fingerprint_id,
+    conversation_id: message?.conversation_id || result.conversation_id || activeConversationId,
+    user_message_id: persistedMessageId(message?.user_message_id),
+    assistant_message_id: persistedMessageId(message?.assistant_message_id || message?.id),
+    acknowledge_sensitive_export: true,
+  });
+}
+
+function downloadFileName(value, fallback) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    return decodeURIComponent(raw.replace(/^["']|["']$/g, ''));
+  } catch {
+    return raw.replace(/^["']|["']$/g, '') || fallback;
+  }
 }
 
 function queryJobFromEvent(event, previousJob = {}) {
@@ -473,6 +500,8 @@ function QueryMessage({
   onOpenCitation,
   onOpenCitationList,
   onSubmitFeedback,
+  onExportAnswer,
+  answerExport,
   feedback,
   showDiagnostics,
   showCitations = true,
@@ -511,6 +540,9 @@ function QueryMessage({
   const feedbackGithubIssue = feedback?.githubIssue || message.feedback?.github_issue || null;
   const feedbackError = feedback?.error || null;
   const feedbackSaving = Boolean(feedback?.saving);
+  const exportSaving = Boolean(answerExport?.saving);
+  const exportError = answerExport?.error || null;
+  const exportMessage = answerExport?.message || null;
   const githubIssueUrl = feedbackGithubIssue?.html_url || feedbackGithubIssue?.url || null;
   const githubIssueCreated = feedbackGithubIssue?.status === 'created' && githubIssueUrl;
   const feedbackButtonClass = (rating) => {
@@ -573,6 +605,40 @@ function QueryMessage({
                 />
               ) : null}
               {result?.answer ? (
+                <details className="relative">
+                  <summary
+                    className="inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-gray-700 transition marker:hidden hover:border-sky-300 hover:bg-sky-50 hover:text-sky-900 dark:border-gray-800 dark:bg-black/20 dark:text-gray-200 dark:hover:border-sky-900 dark:hover:bg-sky-950/30 dark:hover:text-sky-100"
+                    title={t('Answer actions')}
+                    aria-label={t('Answer actions')}
+                  >
+                    {exportSaving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <MoreHorizontal size={15} aria-hidden="true" />}
+                  </summary>
+                  <div className="absolute left-0 z-30 mt-2 w-56 overflow-hidden rounded-md border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-800 dark:bg-[#101820]">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.currentTarget.closest('details')?.removeAttribute('open');
+                        onExportAnswer?.(message);
+                      }}
+                      disabled={exportSaving}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left font-semibold text-gray-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-wait disabled:opacity-60 dark:text-gray-100 dark:hover:bg-sky-950/30 dark:hover:text-sky-100"
+                    >
+                      <Download size={14} aria-hidden="true" />
+                      {exportSaving ? t('Preparing download') : t('Download answer artifact')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled
+                      className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-2 text-left font-semibold text-gray-400 dark:text-gray-500"
+                      title={t('Packet artifact saving is next; generated answers will not be uploaded as source evidence.')}
+                    >
+                      <FileText size={14} aria-hidden="true" />
+                      {t('Export to packet folder')}
+                    </button>
+                  </div>
+                </details>
+              ) : null}
+              {result?.answer ? (
                 <div className="ml-auto flex items-center gap-1" aria-label={t('Rate this answer')}>
                   <button
                     type="button"
@@ -623,6 +689,16 @@ function QueryMessage({
                     {t('Open GitHub issue')}
                   </a>
                 ) : null}
+              </div>
+            ) : null}
+            {exportMessage || exportError ? (
+              <div className={`mb-3 rounded-md border px-3 py-2 text-xs ${
+                exportError
+                  ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100'
+              }`}
+              >
+                {exportError ? t('Answer artifact could not be exported. Try again.') : t(exportMessage)}
               </div>
             ) : null}
             <InlineAnswer answer={result?.answer} citations={citations} onOpenCitation={onOpenCitation} />
@@ -1289,6 +1365,7 @@ export default function QueryPage() {
   });
   const [copiedAnswer, setCopiedAnswer] = useState(false);
   const [feedbackState, setFeedbackState] = useState({});
+  const [answerExportState, setAnswerExportState] = useState({});
   const [readinessState, setReadinessState] = useState({
     loading: true,
     health: null,
@@ -1512,6 +1589,62 @@ export default function QueryPage() {
       }));
     }
   }, [activeConversationId, caseId, getAccessToken, recordFingerprint]);
+
+  const exportAnswerArtifact = useCallback(async (message) => {
+    const messageKey = message?.id || `export-${Date.now()}`;
+    const payload = queryAnswerExportPayload({ message, activeConversationId });
+    const hasIdentifier = Boolean(
+      payload.job_id
+      || payload.request_fingerprint_id
+      || payload.conversation_id
+      || payload.user_message_id
+      || payload.assistant_message_id,
+    );
+    if (!hasIdentifier) {
+      setAnswerExportState((current) => ({
+        ...current,
+        [messageKey]: {
+          saving: false,
+          error: new Error('This answer does not have enough saved metadata to export yet.'),
+        },
+      }));
+      return;
+    }
+    const confirmed = window.confirm(t('This downloads a generated answer artifact with source-reference metadata. It will not be uploaded as source evidence or propagated. Continue?'));
+    if (!confirmed) {
+      return;
+    }
+    setAnswerExportState((current) => ({
+      ...current,
+      [messageKey]: { ...(current[messageKey] || {}), saving: true, error: null, message: null },
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.exportQueryAnswer(caseId, payload, { token });
+      const blobUrl = window.URL.createObjectURL(result.blob);
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = downloadFileName(result.fileName, 'evidence-answer-export.zip');
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      recordFingerprint(result, 'Query answer export');
+      setAnswerExportState((current) => ({
+        ...current,
+        [messageKey]: {
+          saving: false,
+          error: null,
+          message: 'Answer artifact downloaded. Keep it as generated review material, not source evidence.',
+        },
+      }));
+    } catch (error) {
+      setAnswerExportState((current) => ({
+        ...current,
+        [messageKey]: { ...(current[messageKey] || {}), saving: false, error },
+      }));
+    }
+  }, [activeConversationId, caseId, getAccessToken, recordFingerprint, t]);
 
   const pollQueryJob = useCallback(async ({ initialJob, token, assistantId, fingerprint }) => {
     let latestJob = initialJob;
@@ -2002,6 +2135,8 @@ export default function QueryPage() {
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
                 onSubmitFeedback={submitAnswerFeedback}
+                onExportAnswer={exportAnswerArtifact}
+                answerExport={answerExportState[message.id]}
                 feedback={feedbackState[message.id]}
                 showDiagnostics={showDiagnostics}
                 showCitations={chatSettings.showCitations}
