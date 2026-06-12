@@ -117,6 +117,16 @@ function queryAnswerExportPayload({ message, activeConversationId }) {
   });
 }
 
+function defaultAnswerArtifactTitle(message) {
+  const result = message?.result || {};
+  const answer = String(result.answer || message?.content || '').trim();
+  if (!answer) {
+    return 'Ask Documents answer';
+  }
+  const firstLine = answer.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || answer;
+  return `Ask answer - ${firstLine.replace(/^#+\s*/, '').slice(0, 90)}`;
+}
+
 function downloadFileName(value, fallback) {
   const raw = String(value || '').trim();
   if (!raw) {
@@ -501,7 +511,9 @@ function QueryMessage({
   onOpenCitationList,
   onSubmitFeedback,
   onExportAnswer,
+  onSaveAnswerToPacket,
   answerExport,
+  packetArtifact,
   feedback,
   showDiagnostics,
   showCitations = true,
@@ -541,8 +553,11 @@ function QueryMessage({
   const feedbackError = feedback?.error || null;
   const feedbackSaving = Boolean(feedback?.saving);
   const exportSaving = Boolean(answerExport?.saving);
+  const packetArtifactSaving = Boolean(packetArtifact?.saving);
   const exportError = answerExport?.error || null;
   const exportMessage = answerExport?.message || null;
+  const packetArtifactError = packetArtifact?.error || null;
+  const packetArtifactMessage = packetArtifact?.messageText || null;
   const githubIssueUrl = feedbackGithubIssue?.html_url || feedbackGithubIssue?.url || null;
   const githubIssueCreated = feedbackGithubIssue?.status === 'created' && githubIssueUrl;
   const feedbackButtonClass = (rating) => {
@@ -628,12 +643,16 @@ function QueryMessage({
                     </button>
                     <button
                       type="button"
-                      disabled
-                      className="flex w-full cursor-not-allowed items-center gap-2 px-3 py-2 text-left font-semibold text-gray-400 dark:text-gray-500"
-                      title={t('Packet artifact saving is next; generated answers will not be uploaded as source evidence.')}
+                      onClick={(event) => {
+                        event.currentTarget.closest('details')?.removeAttribute('open');
+                        onSaveAnswerToPacket?.(message);
+                      }}
+                      disabled={packetArtifactSaving}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left font-semibold text-gray-800 hover:bg-sky-50 hover:text-sky-900 disabled:cursor-wait disabled:opacity-60 dark:text-gray-100 dark:hover:bg-sky-950/30 dark:hover:text-sky-100"
+                      title={t('Save this generated answer to a packet folder without uploading it as source evidence.')}
                     >
-                      <FileText size={14} aria-hidden="true" />
-                      {t('Export to packet folder')}
+                      {packetArtifactSaving ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
+                      {packetArtifactSaving ? t('Saving to packet') : t('Export to packet folder')}
                     </button>
                   </div>
                 </details>
@@ -699,6 +718,16 @@ function QueryMessage({
               }`}
               >
                 {exportError ? t('Answer artifact could not be exported. Try again.') : t(exportMessage)}
+              </div>
+            ) : null}
+            {packetArtifactMessage || packetArtifactError ? (
+              <div className={`mb-3 rounded-md border px-3 py-2 text-xs ${
+                packetArtifactError
+                  ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100'
+              }`}
+              >
+                {packetArtifactError ? t('Answer artifact could not be saved to the packet. Try again.') : t(packetArtifactMessage)}
               </div>
             ) : null}
             <InlineAnswer answer={result?.answer} citations={citations} onOpenCitation={onOpenCitation} />
@@ -1310,6 +1339,157 @@ function ChatSettingsDrawer({ open, onClose, settings, onChange, t }) {
   );
 }
 
+function PacketArtifactDialog({
+  state,
+  onClose,
+  onPacketChange,
+  onRequirementChange,
+  onFolderChange,
+  onTitleChange,
+  onSave,
+  t,
+}) {
+  if (!state.open) {
+    return null;
+  }
+  const packets = state.packets || [];
+  const requirements = state.packet?.requirements || [];
+  const selectedRequirement = requirements.find((item) => item.requirement_id === state.selectedRequirementId) || null;
+  const folders = Array.isArray(selectedRequirement?.user_folders) ? selectedRequirement.user_folders : [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/45 p-4 pt-16 backdrop-blur-sm sm:p-6 sm:pt-20">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="answer-packet-artifact-title"
+        className="w-full max-w-2xl rounded-2xl border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-normal text-[var(--lakai-text-muted)]">{t('Generated packet artifact')}</p>
+            <h2 id="answer-packet-artifact-title" className="mt-1 font-serif text-2xl font-semibold text-[var(--lakai-primary-strong)]">
+              {t('Save answer to packet')}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--lakai-text-muted)]">
+              {t('This saves the generated answer as packet review material. It will not be uploaded as source evidence or sent through OCR, vector indexing, graph extraction, or source propagation.')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={state.saving}
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border border-[var(--lakai-border)] text-[var(--lakai-text)] hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label={t('Close')}
+            title={t('Close')}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+
+        {state.error ? (
+          <div className="mt-4">
+            <ErrorPanel title="Packet artifact failed" error={{ message: state.error?.message || String(state.error) }} />
+          </div>
+        ) : null}
+
+        {state.loading ? (
+          <div className="mt-5 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-4 text-sm text-[var(--lakai-text-muted)]">
+            <div className="flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              {t('Loading packet folders')}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-4">
+            {!packets.length ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                {t('Create a packet first, then return here to save this answer into a packet folder.')}
+              </div>
+            ) : null}
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">{t('Packet')}</span>
+              <select
+                value={state.selectedPacketId || ''}
+                onChange={(event) => onPacketChange(event.target.value)}
+                disabled={state.saving || !packets.length}
+                className="mt-1 min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {packets.map((packet) => (
+                  <option key={packet.packet_id} value={packet.packet_id}>{packet.name || 'Packet'}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">{t('Checklist item')}</span>
+              <select
+                value={state.selectedRequirementId || ''}
+                onChange={(event) => onRequirementChange(event.target.value)}
+                disabled={state.saving || !requirements.length}
+                className="mt-1 min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {requirements.map((requirement) => (
+                  <option key={requirement.requirement_id} value={requirement.requirement_id}>
+                    {requirement.group_label ? `${requirement.group_label} / ` : ''}{requirement.label || requirement.requirement_id}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">{t('Folder')}</span>
+              <select
+                value={state.selectedFolderId || ''}
+                onChange={(event) => onFolderChange(event.target.value)}
+                disabled={state.saving || !selectedRequirement}
+                className="mt-1 min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="">{t('Checklist item only')}</option>
+                {folders.map((folder) => (
+                  <option key={folder.folder_id} value={folder.folder_id}>{folder.label || 'Folder'}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">{t('Artifact title')}</span>
+              <input
+                type="text"
+                value={state.title || ''}
+                onChange={(event) => onTitleChange(event.target.value)}
+                maxLength={180}
+                placeholder={t('Ask Documents answer')}
+                disabled={state.saving}
+                className="mt-1 min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </label>
+            <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
+              {t('Generated answer artifacts stay in the packet as review material. They are not added to Documents and will not be searched as original evidence.')}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={state.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-[var(--lakai-border)] px-4 py-2 text-sm font-semibold text-[var(--lakai-text)] hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {t('Cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={state.loading || state.saving || !state.selectedPacketId || !state.selectedRequirementId}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {state.saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+            {state.saving ? t('Saving') : t('Save to packet')}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function QueryPage() {
   const { caseId } = useParams();
   const { openMobileMenu } = useOutletContext() || {};
@@ -1366,6 +1546,19 @@ export default function QueryPage() {
   const [copiedAnswer, setCopiedAnswer] = useState(false);
   const [feedbackState, setFeedbackState] = useState({});
   const [answerExportState, setAnswerExportState] = useState({});
+  const [packetArtifactState, setPacketArtifactState] = useState({
+    open: false,
+    loading: false,
+    saving: false,
+    error: null,
+    message: null,
+    packets: [],
+    packet: null,
+    selectedPacketId: '',
+    selectedRequirementId: '',
+    selectedFolderId: '',
+    title: '',
+  });
   const [readinessState, setReadinessState] = useState({
     loading: true,
     health: null,
@@ -1645,6 +1838,133 @@ export default function QueryPage() {
       }));
     }
   }, [activeConversationId, caseId, getAccessToken, recordFingerprint, t]);
+
+  const openPacketArtifactDialog = useCallback(async (message) => {
+    const messageKey = message?.id || `packet-artifact-${Date.now()}`;
+    const payload = queryAnswerExportPayload({ message, activeConversationId });
+    const hasIdentifier = Boolean(
+      payload.job_id
+      || payload.request_fingerprint_id
+      || payload.conversation_id
+      || payload.user_message_id
+      || payload.assistant_message_id,
+    );
+    if (!hasIdentifier) {
+      setPacketArtifactState((current) => ({
+        ...current,
+        open: true,
+        loading: false,
+        saving: false,
+        message,
+        error: new Error('This answer does not have enough saved metadata to save into a packet yet.'),
+      }));
+      return;
+    }
+    setPacketArtifactState({
+      open: true,
+      loading: true,
+      saving: false,
+      error: null,
+      message,
+      messageKey,
+      packets: [],
+      packet: null,
+      selectedPacketId: '',
+      selectedRequirementId: '',
+      selectedFolderId: '',
+      title: defaultAnswerArtifactTitle(message),
+    });
+    try {
+      const token = await getAccessToken();
+      const packetsResult = await evidenceApi.getPackets(caseId, { token });
+      recordFingerprint(packetsResult, 'Query packet artifact packets');
+      const packets = packetsResult.data?.packets || [];
+      const selectedPacketId = packets[0]?.packet_id || '';
+      let packet = null;
+      if (selectedPacketId) {
+        const packetResult = await evidenceApi.getPacket(caseId, selectedPacketId, { token });
+        recordFingerprint(packetResult, 'Query packet artifact packet detail');
+        packet = packetResult.data?.packet || null;
+      }
+      const firstRequirement = packet?.requirements?.[0] || null;
+      setPacketArtifactState((current) => ({
+        ...current,
+        loading: false,
+        error: null,
+        packets,
+        packet,
+        selectedPacketId,
+        selectedRequirementId: firstRequirement?.requirement_id || '',
+        selectedFolderId: '',
+      }));
+    } catch (error) {
+      setPacketArtifactState((current) => ({ ...current, loading: false, error }));
+    }
+  }, [activeConversationId, caseId, getAccessToken, recordFingerprint]);
+
+  const changePacketArtifactPacket = useCallback(async (packetId) => {
+    setPacketArtifactState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      selectedPacketId: packetId,
+      selectedRequirementId: '',
+      selectedFolderId: '',
+      packet: null,
+    }));
+    try {
+      const token = await getAccessToken();
+      const packetResult = await evidenceApi.getPacket(caseId, packetId, { token });
+      recordFingerprint(packetResult, 'Query packet artifact packet detail');
+      const packet = packetResult.data?.packet || null;
+      const firstRequirement = packet?.requirements?.[0] || null;
+      setPacketArtifactState((current) => ({
+        ...current,
+        loading: false,
+        packet,
+        selectedRequirementId: firstRequirement?.requirement_id || '',
+        selectedFolderId: '',
+      }));
+    } catch (error) {
+      setPacketArtifactState((current) => ({ ...current, loading: false, error }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint]);
+
+  const saveAnswerToPacketArtifact = useCallback(async () => {
+    const current = packetArtifactState;
+    const message = current.message;
+    const messageKey = current.messageKey || message?.id || `packet-artifact-${Date.now()}`;
+    const payload = {
+      ...queryAnswerExportPayload({ message, activeConversationId }),
+      title: current.title || defaultAnswerArtifactTitle(message),
+      folder_id: current.selectedFolderId || null,
+      acknowledge_sensitive_export: true,
+    };
+    setPacketArtifactState((stateValue) => ({ ...stateValue, saving: true, error: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.createPacketQueryAnswerArtifact(
+        caseId,
+        current.selectedPacketId,
+        current.selectedRequirementId,
+        payload,
+        { token },
+      );
+      recordFingerprint(result, 'Query answer packet artifact');
+      setPacketArtifactState((stateValue) => ({
+        ...stateValue,
+        open: false,
+        saving: false,
+        error: null,
+        message,
+        messageKey,
+        packet: result.data?.packet || stateValue.packet,
+        messageText: result.data?.message || 'Answer artifact saved to packet. It was not uploaded as source evidence.',
+      }));
+    } catch (error) {
+      setPacketArtifactState((stateValue) => ({ ...stateValue, saving: false, error }));
+    }
+  }, [activeConversationId, caseId, getAccessToken, packetArtifactState, recordFingerprint]);
 
   const pollQueryJob = useCallback(async ({ initialJob, token, assistantId, fingerprint }) => {
     let latestJob = initialJob;
@@ -2136,7 +2456,9 @@ export default function QueryPage() {
                 onOpenCitationList={openCitationList}
                 onSubmitFeedback={submitAnswerFeedback}
                 onExportAnswer={exportAnswerArtifact}
+                onSaveAnswerToPacket={openPacketArtifactDialog}
                 answerExport={answerExportState[message.id]}
+                packetArtifact={packetArtifactState.message?.id === message.id ? packetArtifactState : null}
                 feedback={feedbackState[message.id]}
                 showDiagnostics={showDiagnostics}
                 showCitations={chatSettings.showCitations}
@@ -2273,6 +2595,25 @@ export default function QueryPage() {
         onClose={() => setChatSettingsOpen(false)}
         settings={chatSettings}
         onChange={setChatSettings}
+        t={t}
+      />
+      <PacketArtifactDialog
+        state={packetArtifactState}
+        onClose={() => setPacketArtifactState((current) => ({ ...current, open: false }))}
+        onPacketChange={changePacketArtifactPacket}
+        onRequirementChange={(requirementId) => setPacketArtifactState((current) => ({
+          ...current,
+          selectedRequirementId: requirementId,
+          selectedFolderId: '',
+          error: null,
+        }))}
+        onFolderChange={(folderId) => setPacketArtifactState((current) => ({
+          ...current,
+          selectedFolderId: folderId,
+          error: null,
+        }))}
+        onTitleChange={(title) => setPacketArtifactState((current) => ({ ...current, title }))}
+        onSave={saveAnswerToPacketArtifact}
         t={t}
       />
       <CitationDrawer drawer={drawer} caseId={caseId} onClose={() => setDrawer((current) => ({ ...current, open: false }))} t={t} />

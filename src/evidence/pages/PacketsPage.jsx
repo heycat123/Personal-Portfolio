@@ -433,6 +433,26 @@ function linkDocument(link, linkedDocuments = []) {
   return link?.snapshot_metadata_json || {};
 }
 
+function artifactPlacement(artifact) {
+  if (artifact?.packet_placement && typeof artifact.packet_placement === 'object') return artifact.packet_placement;
+  const metadataPlacement = artifact?.metadata_json?.packet_placement;
+  if (metadataPlacement && typeof metadataPlacement === 'object') return metadataPlacement;
+  return {};
+}
+
+function artifactFolderId(artifact) {
+  const placement = artifactPlacement(artifact);
+  return artifact?.folder_id || artifact?.packet_folder_id || artifact?.user_folder_id || placement.folder_id || '';
+}
+
+function artifactRecordId(artifact) {
+  return artifact?.packet_artifact_id || artifact?.artifact_id || artifact?.id || '';
+}
+
+function artifactTitle(artifact) {
+  return artifact?.title || artifact?.metadata_json?.title || 'Generated answer artifact';
+}
+
 async function sha256File(selectedFile) {
   if (!window.crypto?.subtle) {
     return null;
@@ -1417,13 +1437,20 @@ function RequirementEditor({
   const rowSaving = saving === requirementId;
   const linkedDocuments = Array.isArray(requirement.linked_documents) ? requirement.linked_documents : [];
   const links = Array.isArray(requirement.links) ? requirement.links : [];
+  const generatedArtifacts = Array.isArray(requirement.artifacts)
+    ? requirement.artifacts
+    : (Array.isArray(requirement.generated_artifacts) ? requirement.generated_artifacts : []);
   const linkedDocumentCount = Math.max(linkedDocuments.length, links.length);
+  const generatedArtifactCount = generatedArtifacts.length;
+  const packetItemCount = linkedDocumentCount + generatedArtifactCount;
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
   const standardFolders = standardFoldersForRequirement(requirement);
   const existingFolderLabels = new Set(userFolders.map((folder) => folderLabelKey(folder.label)));
   const missingStandardFolders = standardFolders.filter((folder) => !existingFolderLabels.has(folderLabelKey(folder.label)));
   const linksByFolderId = new Map(userFolders.map((folder) => [packetFolderId(folder), []]).filter(([folderId]) => folderId));
+  const artifactsByFolderId = new Map(userFolders.map((folder) => [packetFolderId(folder), []]).filter(([folderId]) => folderId));
   const unfiledLinks = [];
+  const unfiledArtifacts = [];
   links.forEach((link) => {
     const folderId = linkFolderId(link);
     if (folderId && linksByFolderId.has(folderId)) {
@@ -1431,6 +1458,14 @@ function RequirementEditor({
       return;
     }
     unfiledLinks.push(link);
+  });
+  generatedArtifacts.forEach((artifact) => {
+    const folderId = artifactFolderId(artifact);
+    if (folderId && artifactsByFolderId.has(folderId)) {
+      artifactsByFolderId.get(folderId).push(artifact);
+      return;
+    }
+    unfiledArtifacts.push(artifact);
   });
   const fallbackUnfiledDocuments = links.length ? [] : linkedDocuments.map((document) => ({ document, file_id: documentFileId(document) }));
   const checklistLinks = [...unfiledLinks, ...fallbackUnfiledDocuments];
@@ -1442,6 +1477,7 @@ function RequirementEditor({
       label: 'Checklist item only',
       description: 'Documents linked to this checklist item without a folder yet.',
       links: checklistLinks,
+      artifacts: unfiledArtifacts,
     },
     ...userFolders.map((folder) => ({
       key: `folder:${packetFolderId(folder)}`,
@@ -1451,6 +1487,7 @@ function RequirementEditor({
       description: folder.description || '',
       folder,
       links: linksByFolderId.get(packetFolderId(folder)) || [],
+      artifacts: artifactsByFolderId.get(packetFolderId(folder)) || [],
     })),
     ...missingStandardFolders.map((folder) => ({
       key: `standard:${folderLabelKey(folder.label)}`,
@@ -1460,6 +1497,7 @@ function RequirementEditor({
       description: folder.description || 'Create this standard folder when it helps organize the packet.',
       folder,
       links: [],
+      artifacts: [],
     })),
   ];
   const moveFolderOptions = [
@@ -1473,10 +1511,10 @@ function RequirementEditor({
     ? templateGuidance
     : REQUIREMENT_UPLOAD_GUIDANCE[requirementId] || [];
   const attentionDetail = attentionReason ||
-    (linkedDocumentCount
+    (packetItemCount
       ? 'Review the folders below and add anything still missing for this checklist item.'
       : (uploadGuidance[0] || 'Add documents, add a note, or mark this item as may not apply.'));
-  const showAttentionPanel = status === 'needs_attention' || !linkedDocumentCount || status === 'needed';
+  const showAttentionPanel = status === 'needs_attention' || !packetItemCount || status === 'needed';
   const statusPillClass = {
     added: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-100',
     may_not_apply: 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-800 dark:bg-white/5 dark:text-gray-200',
@@ -1484,6 +1522,12 @@ function RequirementEditor({
     needs_attention: 'border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100',
     needed: 'border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100',
   }[status] || 'border-amber-300 bg-amber-100 text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100';
+  const packetItemSummary = packetItemCount
+    ? [
+      linkedDocumentCount ? `${linkedDocumentCount} document${linkedDocumentCount === 1 ? '' : 's'}` : null,
+      generatedArtifactCount ? `${generatedArtifactCount} generated artifact${generatedArtifactCount === 1 ? '' : 's'}` : null,
+    ].filter(Boolean).join(', ')
+    : 'No items added';
 
   async function ensureFolderForCard(card) {
     if (!card) {
@@ -1627,14 +1671,57 @@ function RequirementEditor({
     );
   }
 
+  function renderGeneratedArtifactCard(artifact, folderLabel = null) {
+    const artifactId = artifactRecordId(artifact);
+    const title = artifactTitle(artifact);
+    const answerPreview = artifact.answer_preview || artifact.metadata_json?.answer_preview || '';
+    const citationCount = Number(artifact.citation_count ?? artifact.metadata_json?.citation_count ?? 0);
+    return (
+      <div
+        key={artifactId || title}
+        className="ml-8 rounded-sm border border-sky-200 bg-sky-50/70 px-3 py-2 dark:border-sky-900/70 dark:bg-sky-950/30"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <ClipboardCheck size={14} className="shrink-0 text-sky-700 dark:text-sky-300" aria-hidden="true" />
+              <p className="min-w-0 truncate text-sm font-semibold text-[var(--lakai-text)]" title={title}>
+                {title}
+              </p>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
+              <span>Generated answer artifact</span>
+              <span>Not source evidence</span>
+              <span>No propagation</span>
+              {citationCount ? <span>{citationCount} source citation{citationCount === 1 ? '' : 's'}</span> : null}
+              {folderLabel ? <span>{folderLabel}</span> : null}
+            </div>
+            {answerPreview ? (
+              <p className="mt-2 line-clamp-2 text-xs leading-5 text-[var(--lakai-text-muted)]">
+                {answerPreview}
+              </p>
+            ) : null}
+          </div>
+          <span className="shrink-0 rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-semibold text-sky-800 dark:border-sky-900/70 dark:bg-sky-950/50 dark:text-sky-100">
+            Review material
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   function renderFolderTile(card) {
     const isChecklistOnly = card.type === 'base';
     const isSuggested = card.type === 'suggested';
     const isDragTarget = dragOverFolderId === card.key;
-    const folderCountLabel = isSuggested ? 'Add when needed' : (card.links.length ? `${card.links.length} doc${card.links.length === 1 ? '' : 's'}` : 'Empty');
+    const cardLinks = Array.isArray(card.links) ? card.links : [];
+    const cardArtifacts = Array.isArray(card.artifacts) ? card.artifacts : [];
+    const cardItemCount = cardLinks.length + cardArtifacts.length;
+    const folderCountLabel = isSuggested ? 'Add when needed' : (cardItemCount ? `${cardItemCount} item${cardItemCount === 1 ? '' : 's'}` : 'Empty');
     const canEditFolder = canContribute && card.type === 'folder';
     const folderId = card.folderId || packetFolderId(card.folder);
     const actionBusy = folderAction?.endsWith(`:${folderId}`);
+    const folderHasGeneratedArtifacts = cardArtifacts.length > 0;
     return (
       <div
         key={card.key}
@@ -1655,14 +1742,14 @@ function RequirementEditor({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <span className={`mt-0.5 inline-flex min-h-6 min-w-6 items-center justify-center ${
-              isChecklistOnly ? 'text-[var(--lakai-text-muted)]' : card.links.length ? 'text-[var(--lakai-accent)]' : 'text-[var(--lakai-text-muted)]'
+              isChecklistOnly ? 'text-[var(--lakai-text-muted)]' : cardItemCount ? 'text-[var(--lakai-accent)]' : 'text-[var(--lakai-text-muted)]'
             }`}>
-              <Folder size={19} fill={card.links.length ? 'currentColor' : 'none'} aria-hidden="true" />
+              <Folder size={19} fill={cardItemCount ? 'currentColor' : 'none'} aria-hidden="true" />
             </span>
             <div className="min-w-0">
               <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{card.label}</p>
               {card.description ? <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{card.description}</p> : null}
-              {card.links.length ? null : (
+              {cardItemCount ? null : (
                 <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
                   {isSuggested ? 'Create this folder when it helps your packet.' : 'Drop files here or add documents to this folder.'}
                 </p>
@@ -1671,7 +1758,7 @@ function RequirementEditor({
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-              card.links.length
+              cardItemCount
                 ? 'bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
                 : 'bg-[var(--lakai-surface-muted)] text-[var(--lakai-text-muted)]'
             }`}>
@@ -1692,10 +1779,10 @@ function RequirementEditor({
                 {canEditFolder ? (
                   <button
                     type="button"
-                    disabled={Boolean(folderAction)}
+                    disabled={Boolean(folderAction) || folderHasGeneratedArtifacts}
                     onClick={() => onDeleteFolder(requirement, card.folder, card.links)}
                     className="inline-flex min-h-9 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
-                    title="Remove this packet folder. Case documents are not deleted."
+                    title={folderHasGeneratedArtifacts ? 'Remove generated artifacts from this folder before deleting it.' : 'Remove this packet folder. Case documents are not deleted.'}
                   >
                     {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : 'Remove'}
                   </button>
@@ -1704,9 +1791,10 @@ function RequirementEditor({
             ) : null}
           </div>
         </div>
-        {card.links.length ? (
+        {cardItemCount ? (
           <div className="mt-3 space-y-2">
-            {card.links.map((link) => renderLinkedDocumentCard(link, isChecklistOnly ? null : card.label))}
+            {cardLinks.map((link) => renderLinkedDocumentCard(link, isChecklistOnly ? null : card.label))}
+            {cardArtifacts.map((artifact) => renderGeneratedArtifactCard(artifact, isChecklistOnly ? null : card.label))}
           </div>
         ) : null}
       </div>
@@ -1742,7 +1830,7 @@ function RequirementEditor({
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-current" size={14} aria-hidden="true" />
             </label>
             <span className="text-sm text-[var(--lakai-text-muted)]">
-              {linkedDocumentCount ? `${linkedDocumentCount} document${linkedDocumentCount === 1 ? '' : 's'} added` : 'No documents added'}
+              {packetItemSummary}
             </span>
           </div>
           {requirement.description ? <p className="mt-2 text-sm text-[var(--lakai-text-muted)]">{requirement.description}</p> : null}
