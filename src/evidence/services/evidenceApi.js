@@ -291,6 +291,12 @@ export const evidenceApi = {
       method: 'POST',
       body: payload,
     }),
+  createPacketQueryAnswerArtifact: (caseId, packetId, requirementId, payload, options) =>
+    request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/artifacts/query-answer`), {
+      ...options,
+      method: 'POST',
+      body: payload,
+    }),
   unlinkPacketRequirementDocument: (caseId, packetId, requirementId, linkId, options) =>
     request(casePath(caseId, `/packets/${encodeURIComponent(packetId)}/requirements/${encodeURIComponent(requirementId)}/links/${encodeURIComponent(linkId)}`), {
       ...options,
