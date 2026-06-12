@@ -3,6 +3,7 @@ import {
   ChevronDown,
   CheckCircle2,
   ClipboardCheck,
+  Download,
   Eye,
   FileText,
   FileUp,
@@ -301,6 +302,16 @@ function friendlyError(error) {
   if (detail?.user_message) return detail.user_message;
   if (detail?.display_message) return detail.display_message;
   return error?.message || 'Packet request failed.';
+}
+
+function downloadFileName(value, fallback) {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  try {
+    return decodeURIComponent(raw.replace(/^filename="?|"?$/gi, '')) || fallback;
+  } catch {
+    return raw || fallback;
+  }
 }
 
 function googleDriveReconnectDetail(error) {
@@ -1330,7 +1341,7 @@ function PacketDocumentPreviewDialog({
   const name = documentDisplayName(document);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-12 backdrop-blur-sm sm:p-6 sm:pt-16">
+    <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-12 backdrop-blur-sm sm:p-6 sm:pt-16">
       <section
         role="dialog"
         aria-modal="true"
@@ -1456,8 +1467,10 @@ function PacketArtifactPreviewDialog({
   open,
   artifact,
   selectedCitation,
+  exportingArtifactId,
   onOpenCitation,
   onClearCitation,
+  onExportArtifact,
   onClose,
 }) {
   if (!open || !artifact) {
@@ -1487,14 +1500,25 @@ function PacketArtifactPreviewDialog({
               <span>{citations.length} source citation{citations.length === 1 ? '' : 's'}</span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
-          >
-            <X size={16} aria-hidden="true" />
-            Close
-          </button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onExportArtifact?.(artifact)}
+              disabled={exportingArtifactId === artifactRecordId(artifact)}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exportingArtifactId === artifactRecordId(artifact) ? <Loader2 className="animate-spin" size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}
+              Download ZIP
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+            >
+              <X size={16} aria-hidden="true" />
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -1662,6 +1686,8 @@ function RequirementEditor({
   onUnlinkDocument,
   onPreviewDocument,
   onPreviewArtifact,
+  onExportArtifact,
+  exportingArtifactId,
   onMoveDocumentLink,
   movingLink,
   onStatusDraftChange,
@@ -1958,6 +1984,15 @@ function RequirementEditor({
           >
             <Eye size={14} aria-hidden="true" />
             Read artifact
+          </button>
+          <button
+            type="button"
+            onClick={() => onExportArtifact?.(requirement, artifact)}
+            disabled={exportingArtifactId === artifactId}
+            className="inline-flex min-h-9 shrink-0 items-center justify-center gap-1 rounded-md border border-sky-200 bg-white px-2 text-xs font-semibold text-sky-800 transition hover:border-sky-400 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-900/70 dark:bg-sky-950/50 dark:text-sky-100"
+          >
+            {exportingArtifactId === artifactId ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Download size={14} aria-hidden="true" />}
+            Download ZIP
           </button>
         </div>
       </div>
@@ -2367,6 +2402,7 @@ export default function PacketsPage() {
     artifact: null,
     selectedCitation: null,
   });
+  const [exportingArtifactId, setExportingArtifactId] = useState(null);
 
   useEffect(() => () => {
     if (preview.previewUrl) {
@@ -2691,6 +2727,54 @@ export default function PacketsPage() {
       ...current,
       selectedCitation: citation,
     }));
+  }
+
+  async function exportPacketArtifact(requirementOrArtifact, maybeArtifact = null) {
+    const requirement = maybeArtifact ? requirementOrArtifact : null;
+    const artifact = maybeArtifact || requirementOrArtifact;
+    const artifactId = artifactRecordId(artifact);
+    const requirementId = requirement?.requirement_id || artifact?.requirement_id || artifact?.packet_requirement_id || '';
+    if (!artifactId || !requirementId || !packetId) {
+      setState((current) => ({
+        ...current,
+        error: new Error('This generated artifact does not include enough packet metadata to export yet.'),
+      }));
+      return;
+    }
+    const confirmed = window.confirm('This downloads a generated answer artifact with source-reference metadata. It is not source evidence and will not be propagated. Continue?');
+    if (!confirmed) {
+      return;
+    }
+    setExportingArtifactId(artifactId);
+    setState((current) => ({ ...current, error: null, notice: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.exportPacketQueryAnswerArtifact(
+        caseId,
+        packetId,
+        requirementId,
+        artifactId,
+        { acknowledge_sensitive_export: true },
+        { token },
+      );
+      const blobUrl = window.URL.createObjectURL(result.blob);
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = downloadFileName(result.fileName, 'packet-answer-artifact.zip');
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      recordFingerprint(result, 'Packet query answer artifact export');
+      setState((current) => ({
+        ...current,
+        notice: 'Generated answer artifact downloaded as a ZIP. Keep it as packet review material, not source evidence.',
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+    } finally {
+      setExportingArtifactId(null);
+    }
   }
 
   async function previewPacketDocument(document, link = null) {
@@ -3488,8 +3572,10 @@ export default function PacketsPage() {
           open={artifactPreview.open}
           artifact={artifactPreview.artifact}
           selectedCitation={artifactPreview.selectedCitation}
+          exportingArtifactId={exportingArtifactId}
           onOpenCitation={openPacketArtifactCitation}
           onClearCitation={() => setArtifactPreview((current) => ({ ...current, selectedCitation: null }))}
+          onExportArtifact={exportPacketArtifact}
           onClose={closePacketArtifactPreview}
         />
 
@@ -3542,6 +3628,8 @@ export default function PacketsPage() {
                     onUnlinkDocument={unlinkDocument}
                     onPreviewDocument={previewPacketDocument}
                     onPreviewArtifact={previewPacketArtifact}
+                    onExportArtifact={exportPacketArtifact}
+                    exportingArtifactId={exportingArtifactId}
                     onMoveDocumentLink={movePacketDocumentLink}
                     movingLink={movingLink}
                     onStatusDraftChange={handleRequirementStatusDraftChange}
