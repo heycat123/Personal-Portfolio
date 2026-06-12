@@ -39,14 +39,54 @@ function availabilityLabel(value) {
   return value ? 'Available' : 'Unavailable';
 }
 
-function AiRuntimePanel({ runtime, loading, error, t }) {
+function aiProviderOptions(selection, providers) {
+  const rawOptions = Array.isArray(selection.provider_options)
+    ? selection.provider_options
+    : Array.isArray(selection.options)
+      ? selection.options
+      : providers || [];
+  const byProvider = new Map();
+  rawOptions.forEach((option) => {
+    if (option?.provider) {
+      byProvider.set(option.provider, option);
+    }
+  });
+  providers.forEach((provider) => {
+    if (provider?.provider && !byProvider.has(provider.provider)) {
+      byProvider.set(provider.provider, provider);
+    }
+  });
+  return Array.from(byProvider.values());
+}
+
+function providerModels(option, provider) {
+  const models = option?.query_models || option?.models || option?.available_query_models || [];
+  if (models.length) return models;
+  const fallback = option?.default_query_model || option?.generation_model || provider?.generation_model;
+  return fallback ? [fallback] : [];
+}
+
+function AiRuntimePanel({ runtime, loading, error, saving, saveError, saveMessage, onSave, t }) {
   const current = runtime?.current || {};
   const availability = runtime?.availability || {};
   const selection = runtime?.selection || {};
   const guardrails = runtime?.guardrails || {};
   const providers = runtime?.providers || [];
-  const currentProvider = current.provider || providers.find((provider) => provider.current)?.provider || '';
+  const providerOptions = aiProviderOptions(selection, providers);
+  const currentProvider = selection.override?.provider || current.provider || providers.find((provider) => provider.current)?.provider || '';
   const activeProvider = providers.find((provider) => provider.provider === currentProvider) || providers.find((provider) => provider.current);
+  const currentModel = selection.override?.query_model || current.query_model || activeProvider?.generation_model || '';
+  const [draftProvider, setDraftProvider] = useState(currentProvider);
+  const [draftModel, setDraftModel] = useState(currentModel);
+  const selectedOption = providerOptions.find((provider) => provider.provider === draftProvider) || {};
+  const selectedProvider = providers.find((provider) => provider.provider === draftProvider) || {};
+  const selectedModels = providerModels(selectedOption, selectedProvider);
+  const canUpdate = Boolean(selection.self_service_available && selection.write_endpoint_available && selection.current_user_can_update);
+  const selectedDisabledReason = selectedOption.disabled_reason || selectedProvider.disabled_reason || '';
+  const selectedConfigured = selectedOption.configured ?? selectedProvider.configured ?? true;
+  const selectedProviderDisabled = selectedConfigured === false || Boolean(selectedDisabledReason);
+  const unchanged = draftProvider === currentProvider && draftModel === currentModel;
+  const saveDisabled = !canUpdate || selectedProviderDisabled || !draftProvider || !draftModel || unchanged || saving;
   const chips = [
     ['Query generation', availability.query_generation_available],
     ['Embeddings', availability.query_embedding_available],
@@ -65,11 +105,13 @@ function AiRuntimePanel({ runtime, loading, error, t }) {
           <div>
             <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('AI Runtime')}</h3>
             <p className="max-w-3xl text-sm text-gray-600 dark:text-gray-400">
-              {t('Read-only provider status for Ask Documents generation. Provider changes are controlled by backend runtime configuration.')}
+              {canUpdate
+                ? t('Choose which configured AI provider Ask Documents uses for this case. Provider secrets stay on the backend.')
+                : t('Provider status for Ask Documents generation. Provider changes are controlled by authorized admin settings.')}
             </p>
           </div>
         </div>
-        <StatusBadge status={loading ? 'pending' : 'succeeded'} label={loading ? t('loading') : t('read only')} />
+        <StatusBadge status={loading ? 'pending' : 'succeeded'} label={loading ? t('loading') : canUpdate ? t('case editable') : t('read only')} />
       </div>
 
       {loading && !runtime ? (
@@ -111,27 +153,91 @@ function AiRuntimePanel({ runtime, loading, error, t }) {
               </div>
             </div>
 
-            <label className="block rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#0b1117]">
-              <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t('Provider selector')}</span>
-              <select
-                value={currentProvider}
-                disabled
-                className="mt-2 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 disabled:cursor-not-allowed dark:border-gray-700 dark:bg-white/10 dark:text-gray-300"
-              >
-                {providers.length ? (
-                  providers.map((provider) => (
-                    <option key={provider.provider} value={provider.provider}>
-                      {provider.label || provider.provider}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">{t('No provider options reported')}</option>
-                )}
-              </select>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                {selection.user_message || t('AI provider selection is currently controlled by backend runtime configuration.')}
-              </p>
-            </label>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-[#0b1117]">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{t('Provider selector')}</div>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">{t('Provider')}</span>
+                  <select
+                    value={draftProvider}
+                    disabled={!canUpdate || saving}
+                    onChange={(event) => {
+                      const nextProvider = event.target.value;
+                      const nextOption = providerOptions.find((provider) => provider.provider === nextProvider) || {};
+                      const nextProviderDetail = providers.find((provider) => provider.provider === nextProvider) || {};
+                      const nextModels = providerModels(nextOption, nextProviderDetail);
+                      setDraftProvider(nextProvider);
+                      setDraftModel(nextOption.default_query_model || nextModels[0] || '');
+                    }}
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:disabled:bg-white/10 dark:disabled:text-gray-400"
+                  >
+                    {providerOptions.length ? (
+                      providerOptions.map((provider) => (
+                        <option
+                          key={provider.provider}
+                          value={provider.provider}
+                          disabled={provider.configured === false || Boolean(provider.disabled_reason)}
+                        >
+                          {provider.label || provider.provider}
+                          {provider.configured === false || provider.disabled_reason ? ` - ${provider.disabled_reason || t('not configured')}` : ''}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">{t('No provider options reported')}</option>
+                    )}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">{t('Query model')}</span>
+                  <select
+                    value={draftModel}
+                    disabled={!canUpdate || saving || selectedProviderDisabled || !selectedModels.length}
+                    onChange={(event) => setDraftModel(event.target.value)}
+                    className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-950 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600 dark:border-gray-700 dark:bg-[#0b1117] dark:text-gray-100 dark:disabled:bg-white/10 dark:disabled:text-gray-400"
+                  >
+                    {selectedModels.length ? (
+                      selectedModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">{t('No model options reported')}</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {canUpdate
+                    ? t('This setting applies only to this case workspace. Save changes before testing Ask Documents.')
+                    : selection.user_message || selection.disabled_reason || t('AI provider selection is not available for this account.')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onSave?.({ provider: draftProvider, query_model: draftModel })}
+                  disabled={saveDisabled}
+                  className="inline-flex min-h-[40px] items-center justify-center rounded-md bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-500 dark:hover:bg-sky-400"
+                >
+                  {saving ? t('Saving...') : t('Save provider')}
+                </button>
+              </div>
+              {selectedDisabledReason ? (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                  {selectedDisabledReason}
+                </div>
+              ) : null}
+              {saveError ? (
+                <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-100">
+                  {saveError.message || t('AI runtime update failed.')}
+                </div>
+              ) : null}
+              {saveMessage ? (
+                <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100">
+                  {saveMessage}
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -214,6 +320,9 @@ export default function AdminPage() {
     deliveryConfig: null,
     aiRuntime: null,
     aiRuntimeError: null,
+    aiRuntimeSaving: false,
+    aiRuntimeSaveError: null,
+    aiRuntimeSaveMessage: null,
     error: null,
     result: null,
     invitationResult: null,
@@ -283,6 +392,34 @@ export default function AdminPage() {
   useEffect(() => {
     loadAdmin();
   }, [loadAdmin]);
+
+  const saveAiRuntime = useCallback(async (payload) => {
+    setState((current) => ({
+      ...current,
+      aiRuntimeSaving: true,
+      aiRuntimeSaveError: null,
+      aiRuntimeSaveMessage: null,
+    }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updateAiRuntime(caseId, payload, { token });
+      recordFingerprint(result, 'Update AI runtime');
+      setState((current) => ({
+        ...current,
+        aiRuntimeSaving: false,
+        aiRuntime: result.data || current.aiRuntime,
+        aiRuntimeError: null,
+        aiRuntimeSaveMessage: result.data?.display_message || result.data?.message || t('AI provider updated for this case.'),
+        fingerprint: result.requestFingerprintId || current.fingerprint,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        aiRuntimeSaving: false,
+        aiRuntimeSaveError: error,
+      }));
+    }
+  }, [caseId, getAccessToken, recordFingerprint, t]);
 
   async function handleCreateUser(event) {
     event.preventDefault();
@@ -826,7 +963,17 @@ export default function AdminPage() {
 
       {state.error ? <div className="mb-5"><ErrorPanel title="Admin action failed" error={state.error} /></div> : null}
 
-      <AiRuntimePanel runtime={state.aiRuntime} loading={state.loading} error={state.aiRuntimeError} t={t} />
+      <AiRuntimePanel
+        key={`${state.aiRuntime?.selection?.override?.provider || state.aiRuntime?.current?.provider || 'none'}:${state.aiRuntime?.selection?.override?.query_model || state.aiRuntime?.current?.query_model || 'none'}`}
+        runtime={state.aiRuntime}
+        loading={state.loading}
+        error={state.aiRuntimeError}
+        saving={state.aiRuntimeSaving}
+        saveError={state.aiRuntimeSaveError}
+        saveMessage={state.aiRuntimeSaveMessage}
+        onSave={saveAiRuntime}
+        t={t}
+      />
 
       <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-[#101820]">

@@ -284,6 +284,7 @@ export function jobProcessingDocumentStatus(document) {
     label: explicitLabel || labels[rawStatus] || humanizeKey(rawStatus),
     badgeStatus: badgeStatuses[rawStatus] || 'unknown',
     message: userFacingProcessingText(explicitMessage || 'Waiting for document propagation.'),
+    nextAction: firstObject(document?.next_action, document?.propagation_status?.next_action, document?.resolution?.next_action),
     progressPercent: clampPercent(document?.progress_percent) ?? documentProgressFallback(rawStatus),
   };
 }

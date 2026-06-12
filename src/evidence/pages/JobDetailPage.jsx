@@ -817,6 +817,11 @@ export default function JobDetailPage() {
                     const fileId = document?.file_id || document?.fileId || document?.id;
                     const canInspect = Boolean(fileId);
                     const cleanupBusy = state.cleanupLoadingFileId === fileId;
+                    const documentNextAction = documentStatus.nextAction || {};
+                    const documentNextActionId = String(documentNextAction.action_id || '').toLowerCase();
+                    const documentNextActionLabel = documentNextAction.label || documentNextAction.action_label || documentNextAction.title;
+                    const rowCanRetry = canRetry && ['restart_processing', 'finish_full_propagation', 'update_relationship_map'].includes(documentNextActionId);
+                    const rowNeedsRelink = documentNextActionId === 'reupload_or_relink_file';
                     const showDocumentProgress = documentStatus.badgeStatus === 'running'
                       || (['queued', 'pending'].includes(documentStatus.badgeStatus) && documentStatus.progressPercent < 100);
                     return (
@@ -880,7 +885,36 @@ export default function JobDetailPage() {
                             <p className="mt-1">{t(documentStatus.message)}</p>
                           </div>
                         )}
-                        <div className="flex items-start justify-start md:justify-end">
+                        <div className="flex flex-wrap items-start justify-start gap-2 md:justify-end">
+                          {documentNextActionLabel ? (
+                            rowCanRetry ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void retryJob();
+                                }}
+                                disabled={Boolean(state.actionLoading)}
+                                className="inline-flex items-center gap-2 rounded-md border border-sky-700 bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <RotateCcw size={14} aria-hidden="true" />
+                                {state.actionLoading === 'retry' ? t('Retrying') : t(progress?.retryActionLabel || documentNextActionLabel)}
+                              </button>
+                            ) : rowNeedsRelink ? (
+                              <Link
+                                to={`/evidence/cases/${caseId}/documents`}
+                                onClick={(event) => event.stopPropagation()}
+                                className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-50 dark:border-sky-900/70 dark:bg-[#101820] dark:text-sky-100 dark:hover:bg-sky-950/30"
+                              >
+                                <FileText size={14} aria-hidden="true" />
+                                {t(documentNextActionLabel)}
+                              </Link>
+                            ) : (
+                              <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+                                {t(documentNextActionLabel)}
+                              </span>
+                            )
+                          ) : null}
                           <button
                             type="button"
                             onClick={(event) => {
