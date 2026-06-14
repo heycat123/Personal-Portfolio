@@ -2,13 +2,25 @@ name: Frontend CI
 
 on:
   pull_request:
-  push:
-    branches-ignore:
-      - master
+    paths:
+      - ".github/workflows/frontend-ci.yml"
+      - ".github/workflows/deploy-frontend.yml"
+      - "Dockerfile"
+      - "Dockerfile.runtime"
+      - "nginx.conf"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+      - "tailwind.config.js"
+      - "postcss.config.js"
+      - "eslint.config.js"
+      - "index.html"
+      - "src/**"
+      - "public/**"
+      - "amplify/**"
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: hom-central-frontend-ci
   VITE_API_URL: ${{ vars.VITE_API_URL || 'http://18.222.93.147:3000' }}
   VITE_EVIDENCE_API_BASE_URL: ${{ vars.VITE_EVIDENCE_API_BASE_URL || '/evidence-api' }}
   VITE_EVIDENCE_AUTH_MODE: ${{ vars.VITE_EVIDENCE_AUTH_MODE || 'cognito' }}
@@ -51,10 +63,3 @@ jobs:
           VITE_COGNITO_USER_POOL_ID: ${{ env.VITE_COGNITO_USER_POOL_ID }}
           VITE_COGNITO_USER_POOL_CLIENT_ID: ${{ env.VITE_COGNITO_USER_POOL_CLIENT_ID }}
           VITE_EVIDENCE_SITE_VERSION: ${{ env.VITE_EVIDENCE_SITE_VERSION }}
-
-      - name: Build Docker image
-        run: |
-          docker build \
-            --file Dockerfile.runtime \
-            --tag "${IMAGE_NAME}:${GITHUB_SHA}" \
-            .
