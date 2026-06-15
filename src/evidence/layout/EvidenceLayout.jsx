@@ -55,6 +55,13 @@ export default function EvidenceLayout({ darkTheme, setDarkTheme }) {
   const { canSeeOperations } = useOperatorMode();
   const isAskDocumentsRoute = /\/evidence\/cases\/[^/]+\/query(?:\/|$)/.test(location.pathname);
 
+  useEffect(() => {
+    document.documentElement.classList.add('evidence-viewport-lock');
+    return () => {
+      document.documentElement.classList.remove('evidence-viewport-lock');
+    };
+  }, []);
+
   const loadJobsNavAlert = useCallback(async () => {
     if (!caseId || !canSeeOperations || authLoading || !isAuthenticated) {
       setJobsNavAlert(EMPTY_JOBS_NAV_ALERT);

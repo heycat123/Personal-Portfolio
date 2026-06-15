@@ -24,3 +24,10 @@ html.light body,
 html.light #root {
   background: #f6f7f9;
 }
+
+html.evidence-viewport-lock,
+html.evidence-viewport-lock body,
+html.evidence-viewport-lock #root {
+  height: 100%;
+  overflow: hidden;
+}
