@@ -156,7 +156,35 @@ function MetricsCard({ icon: Icon, label, value, detail }) {
   );
 }
 
-function MiniLineChart({ points, valueKey, label, valueSuffix = '' }) {
+function compactAxisLabel(value) {
+  const text = String(value || '');
+  if (!text) return 'run';
+  return text.length > 18 ? `${text.slice(0, 15)}...` : text;
+}
+
+function metricFailureReason(item, passed, budgetFailed, answerStatus) {
+  const backendReason = firstMetricValue(item, [
+    'failure_reason',
+    'failure_summary',
+    'failure_message',
+    'evaluation_reason',
+    'reason',
+    'review_note',
+  ]);
+  if (backendReason) return backendReason;
+  if (passed !== false) return 'Metric did not report a failure reason.';
+  if (budgetFailed) return 'Latency budget failed.';
+  const normalizedStatus = String(answerStatus || '').toLowerCase();
+  if (normalizedStatus.includes('answered')) {
+    return 'The query returned an answer, but the metric verdict did not meet the expected result or grounding criteria.';
+  }
+  if (normalizedStatus.includes('unavailable') || normalizedStatus.includes('insufficient')) {
+    return 'The response was unavailable or did not provide enough supported information for this metric.';
+  }
+  return 'The metric verdict was failed; no detailed failure reason was provided by the backend.';
+}
+
+function MiniLineChart({ points, valueKey, label, valueSuffix = '', yLabel = 'Value', xLabel = 'Run/deploy' }) {
   const values = points.map((point) => Number(point[valueKey])).filter((value) => Number.isFinite(value));
   if (!values.length) {
     return (
@@ -168,13 +196,23 @@ function MiniLineChart({ points, valueKey, label, valueSuffix = '' }) {
   const max = Math.max(...values, 1);
   const min = Math.min(...values, 0);
   const range = Math.max(max - min, 1);
-  const width = 360;
-  const height = 120;
+  const width = 440;
+  const height = 190;
+  const margin = { top: 14, right: 14, bottom: 42, left: 58 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const tickValues = [max, min + range / 2, min];
+  const xTicks = points.length <= 3
+    ? points.map((point, index) => ({ index, label: point.deploy || point.wave || point.key }))
+    : [
+      { index: 0, label: points[0]?.deploy || points[0]?.wave || points[0]?.key },
+      { index: points.length - 1, label: points[points.length - 1]?.deploy || points[points.length - 1]?.wave || points[points.length - 1]?.key },
+    ];
   const coordinates = points.map((point, index) => {
     const rawValue = Number(point[valueKey]);
     const value = Number.isFinite(rawValue) ? rawValue : min;
-    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
-    const y = height - ((value - min) / range) * height;
+    const x = margin.left + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
+    const y = margin.top + plotHeight - ((value - min) / range) * plotHeight;
     return `${x},${y}`;
   });
   const latest = values[values.length - 1];
@@ -184,42 +222,94 @@ function MiniLineChart({ points, valueKey, label, valueSuffix = '' }) {
         <span className="font-semibold text-gray-800 dark:text-gray-100">{label}</span>
         <span className="text-gray-600 dark:text-gray-400">{formatMetricNumber(latest)}{valueSuffix}</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-40 w-full rounded-md bg-gray-50 p-2 dark:bg-black/20" role="img" aria-label={label}>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-48 w-full rounded-md bg-gray-50 dark:bg-black/20" role="img" aria-label={`${label}. Y axis ${yLabel}. X axis ${xLabel}.`}>
+        <line x1={margin.left} y1={margin.top} x2={margin.left} y2={margin.top + plotHeight} className="stroke-gray-300 dark:stroke-gray-700" strokeWidth="1" />
+        <line x1={margin.left} y1={margin.top + plotHeight} x2={margin.left + plotWidth} y2={margin.top + plotHeight} className="stroke-gray-300 dark:stroke-gray-700" strokeWidth="1" />
+        <text x={14} y={margin.top + plotHeight / 2} transform={`rotate(-90 14 ${margin.top + plotHeight / 2})`} className="fill-gray-500 text-[10px] font-semibold uppercase dark:fill-gray-400">
+          {yLabel}
+        </text>
+        {tickValues.map((tick) => {
+          const y = margin.top + plotHeight - ((tick - min) / range) * plotHeight;
+          return (
+            <g key={`tick-${tick}`}>
+              <line x1={margin.left - 4} y1={y} x2={margin.left + plotWidth} y2={y} className="stroke-gray-200 dark:stroke-gray-800" strokeWidth="1" />
+              <text x={margin.left - 8} y={y + 4} textAnchor="end" className="fill-gray-500 text-[10px] dark:fill-gray-400">
+                {formatMetricNumber(tick, valueSuffix === '%' ? 0 : 1)}{valueSuffix}
+              </text>
+            </g>
+          );
+        })}
         <polyline fill="none" stroke="currentColor" strokeWidth="3" points={coordinates.join(' ')} className="text-sky-700 dark:text-sky-300" />
         {coordinates.map((coordinate, index) => {
           const [x, y] = coordinate.split(',').map(Number);
           return <circle key={`${coordinate}-${index}`} cx={x} cy={y} r="4" className="fill-white stroke-sky-700 dark:stroke-sky-300" strokeWidth="2" />;
         })}
+        {xTicks.map((tick) => {
+          const x = margin.left + (points.length === 1 ? plotWidth / 2 : (tick.index / (points.length - 1)) * plotWidth);
+          return (
+            <text key={`x-${tick.index}`} x={x} y={height - 18} textAnchor={tick.index === 0 ? 'start' : tick.index === points.length - 1 ? 'end' : 'middle'} className="fill-gray-500 text-[10px] dark:fill-gray-400">
+              {compactAxisLabel(tick.label)}
+            </text>
+          );
+        })}
+        <text x={margin.left + plotWidth / 2} y={height - 5} textAnchor="middle" className="fill-gray-500 text-[10px] font-semibold uppercase dark:fill-gray-400">
+          {xLabel}
+        </text>
       </svg>
     </div>
   );
 }
 
-function MiniBarChart({ points, valueKey, label }) {
+function MiniBarChart({ points, valueKey, label, yLabel = 'Count', xLabel = 'Run/deploy' }) {
   const values = points.map((point) => Number(point[valueKey])).filter((value) => Number.isFinite(value));
   const max = Math.max(...values, 1);
+  const tickValues = [max, max / 2, 0];
   return (
     <div>
       <div className="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-100">{label}</div>
-      <div className="flex h-40 items-end gap-2 rounded-md bg-gray-50 p-3 dark:bg-black/20" role="img" aria-label={label}>
-        {points.length ? points.map((point) => {
-          const value = Number(point[valueKey]) || 0;
-          return (
-            <div key={point.key} className="flex min-w-8 flex-1 flex-col items-center gap-2">
-              <div className="text-xs text-gray-500 dark:text-gray-400">{formatMetricNumber(value, 0)}</div>
-              <div
-                className="w-full rounded-t bg-amber-500"
-                style={{ height: `${Math.max(6, (value / max) * 100)}%` }}
-                title={`${point.deploy || point.key}: ${value}`}
-              />
+      {points.length ? (
+        <div className="rounded-md bg-gray-50 p-3 dark:bg-black/20" role="img" aria-label={`${label}. Y axis ${yLabel}. X axis ${xLabel}.`}>
+          <div className="grid h-40 grid-cols-[3rem_1fr] gap-2">
+            <div className="relative text-[10px] text-gray-500 dark:text-gray-400">
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 -rotate-90 font-semibold uppercase">{yLabel}</span>
+              {tickValues.map((tick) => (
+                <span key={tick} className="absolute right-1" style={{ bottom: `${(tick / max) * 100}%`, transform: 'translateY(50%)' }}>
+                  {formatMetricNumber(tick, 0)}
+                </span>
+              ))}
             </div>
-          );
-        }) : (
+            <div className="flex items-end gap-2 border-b border-l border-gray-300 pl-2 dark:border-gray-700">
+              {points.map((point) => {
+                const value = Number(point[valueKey]) || 0;
+                return (
+                  <div key={point.key} className="flex min-w-10 flex-1 flex-col items-center justify-end gap-2">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{formatMetricNumber(value, 0)}</div>
+                    <div
+                      className="w-full rounded-t bg-amber-500"
+                      style={{ height: `${Math.max(6, (value / max) * 100)}%` }}
+                      title={`${point.deploy || point.key}: ${value}`}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-[3rem_1fr] gap-2">
+            <div />
+            <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400">
+              <span>{compactAxisLabel(points[0]?.deploy || points[0]?.wave || points[0]?.key)}</span>
+              <span className="font-semibold uppercase">{xLabel}</span>
+              <span>{compactAxisLabel(points[points.length - 1]?.deploy || points[points.length - 1]?.wave || points[points.length - 1]?.key)}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-40 items-center justify-center rounded-md bg-gray-50 p-3 text-sm text-gray-500 dark:bg-black/20 dark:text-gray-400" role="img" aria-label={label}>
           <div className="flex h-full w-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
             No budget failure data yet
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -282,16 +372,16 @@ function QueryQualityMetricsPanel({ state, latestMetricRun, metricSummary, metri
 
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <MiniLineChart points={metricTrends} valueKey="avgLatency" label={t('Average latency by run/deploy')} valueSuffix="s" />
+              <MiniLineChart points={metricTrends} valueKey="avgLatency" label={t('Average latency by run/deploy')} valueSuffix="s" yLabel={t('Seconds')} xLabel={t('Deploy/run')} />
             </section>
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <MiniLineChart points={metricTrends} valueKey="passRate" label={t('Pass rate by run/deploy')} valueSuffix="%" />
+              <MiniLineChart points={metricTrends} valueKey="passRate" label={t('Pass rate by run/deploy')} valueSuffix="%" yLabel={t('Pass rate')} xLabel={t('Deploy/run')} />
             </section>
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <MiniBarChart points={metricTrends} valueKey="budgetFailures" label={t('Latency budget failures by run/deploy')} />
+              <MiniBarChart points={metricTrends} valueKey="budgetFailures" label={t('Latency budget failures by run/deploy')} yLabel={t('Failures')} xLabel={t('Deploy/run')} />
             </section>
             <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
-              <MiniLineChart points={metricTrends} valueKey="avgCitations" label={t('Average citation count by run/deploy')} />
+              <MiniLineChart points={metricTrends} valueKey="avgCitations" label={t('Average citation count by run/deploy')} yLabel={t('Citations')} xLabel={t('Deploy/run')} />
             </section>
           </div>
 
@@ -299,7 +389,7 @@ function QueryQualityMetricsPanel({ state, latestMetricRun, metricSummary, metri
             <div className="border-b border-gray-200 p-4 dark:border-gray-800">
               <h3 className="text-base font-semibold text-gray-950 dark:text-white">{t('Metric detail')}</h3>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                {t('Use this table to compare a test case across deploys, PRs, and waves.')}
+                {t('Metric result is the test verdict. Answer status describes what the query returned, so an answered row can still fail if it missed expectations or exceeded the latency budget.')}
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -311,11 +401,12 @@ function QueryQualityMetricsPanel({ state, latestMetricRun, metricSummary, metri
                     <th className="px-4 py-3">{t('Deploy')}</th>
                     <th className="px-4 py-3">{t('PR')}</th>
                     <th className="px-4 py-3">{t('Wave')}</th>
-                    <th className="px-4 py-3">{t('Passed')}</th>
-                    <th className="px-4 py-3">{t('Status')}</th>
+                    <th className="px-4 py-3">{t('Metric result')}</th>
+                    <th className="px-4 py-3">{t('Answer status')}</th>
                     <th className="px-4 py-3">{t('Elapsed')}</th>
-                    <th className="px-4 py-3">{t('Budget')}</th>
+                    <th className="px-4 py-3">{t('Latency budget')}</th>
                     <th className="px-4 py-3">{t('Citations')}</th>
+                    <th className="px-4 py-3">{t('Failure reason')}</th>
                     <th className="px-4 py-3">{t('Created')}</th>
                   </tr>
                 </thead>
@@ -324,6 +415,7 @@ function QueryQualityMetricsPanel({ state, latestMetricRun, metricSummary, metri
                     const passed = boolMetric(item, ['passed', 'pass', 'success']);
                     const status = firstMetricValue(item, ['status', 'answer_status', 'review_status']) || (passed === null ? 'not reported' : passed ? 'passed' : 'failed');
                     const budgetFailed = boolMetric(item, ['latency_budget_failed', 'latency_failed', 'budget_failed']);
+                    const failureReason = metricFailureReason(item, passed, budgetFailed, status);
                     return (
                       <tr key={`${firstMetricValue(item, ['metric_id', 'id', 'test_case_id']) || 'metric'}-${index}`} className="align-top">
                         <td className="max-w-sm px-4 py-3 font-semibold text-gray-950 dark:text-white">
@@ -338,6 +430,7 @@ function QueryQualityMetricsPanel({ state, latestMetricRun, metricSummary, metri
                         <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{formatMetricNumber(numberMetric(item, ['elapsed_seconds', 'latency_seconds', 'duration_seconds']))}s</td>
                         <td className="px-4 py-3"><StatusBadge status={budgetFailed ? 'failed' : budgetFailed === false ? 'succeeded' : 'pending'} label={budgetFailed === null ? t('Unknown') : budgetFailed ? t('Failed') : t('OK')} /></td>
                         <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{formatMetricNumber(numberMetric(item, ['citation_count', 'citations_count', 'source_reference_count']), 0)}</td>
+                        <td className="max-w-sm px-4 py-3 text-gray-700 dark:text-gray-300">{failureReason}</td>
                         <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{metricCreatedAt(item) ? formatDateTime(metricCreatedAt(item)) : '—'}</td>
                       </tr>
                     );
