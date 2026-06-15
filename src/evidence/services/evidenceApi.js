@@ -594,6 +594,10 @@ export const evidenceApi = {
     request(casePath(caseId, '/tests/baseline'), options),
   getBaselineTestRuns: (caseId, params = {}, options = {}) =>
     request(casePath(caseId, '/tests/baseline/runs'), { ...options, query: params }),
+  getQueryQualityMetricRuns: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/tests/metrics/query-quality/runs'), { ...options, query: params }),
+  getQueryQualityMetrics: (caseId, params = {}, options = {}) =>
+    request(casePath(caseId, '/tests/metrics/query-quality'), { ...options, query: params }),
   queueBaselineTestRun: (caseId, payload, options) =>
     request(casePath(caseId, '/tests/baseline/run'), { ...options, method: 'POST', body: payload }),
   createBaselineTestReview: (caseId, payload, options) =>
