@@ -173,6 +173,74 @@ function queryJobFromEvent(event, previousJob = {}) {
   };
 }
 
+function queryProgressEventFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  const type = String(payload.type || '').toLowerCase();
+  if (type === 'job_heartbeat') {
+    return null;
+  }
+  const details = payload.details && typeof payload.details === 'object' ? payload.details : {};
+  const job = payload.job && typeof payload.job === 'object' ? payload.job : {};
+  const label = payload.message
+    || details.display_message
+    || details.current_step
+    || job.display_message
+    || job.current_step
+    || null;
+  if (!label) {
+    return null;
+  }
+  return {
+    id: payload.event_id || `${type || 'job'}-${payload.created_at || ''}-${label}`,
+    type: payload.event_type || type || 'job_event',
+    label,
+    detail: details.current_step && details.current_step !== label ? details.current_step : null,
+    created_at: payload.created_at || job.updated_at || null,
+  };
+}
+
+function queryProgressEventFromJob(job) {
+  if (!job) {
+    return null;
+  }
+  const label = queryJobDisplayMessage(job);
+  if (!label) {
+    return null;
+  }
+  return {
+    id: `job-${job.job_id || 'query'}-${job.status || 'status'}-${job.progress_percent ?? ''}`,
+    type: job.status || 'job_status',
+    label,
+    detail: job.current_step && job.current_step !== label ? job.current_step : null,
+    created_at: job.updated_at || null,
+  };
+}
+
+function mergeQueryProgressEvents(existing = [], incoming = []) {
+  const merged = [...(existing || [])];
+  (incoming || []).filter(Boolean).forEach((event) => {
+    const key = String(event.id || `${event.type}-${event.label}-${event.created_at || ''}`);
+    if (!merged.some((item) => String(item.id || `${item.type}-${item.label}-${item.created_at || ''}`) === key)) {
+      merged.push(event);
+    }
+  });
+  return merged.slice(-8);
+}
+
+function queryProgressEventsForMessage(message) {
+  const events = message?.progressEvents || [];
+  if (events.length) {
+    return events;
+  }
+  return [
+    { id: 'default-saved', label: 'Question saved', type: 'queued' },
+    { id: 'default-searching', label: queryJobDisplayMessage(message?.job), type: 'running' },
+    { id: 'default-citations', label: 'Checking sources and citations', type: 'reviewing' },
+  ];
+}
+
 function Panel({ title, children }) {
   return (
     <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-[#101820]">
@@ -546,6 +614,8 @@ function QueryMessage({
     : result?.display_guidance?.message || result?.display_guidance?.summary || null;
   const jobId = message.job?.job_id;
   const jobLabel = queryJobDisplayMessage(message.job);
+  const progressPercent = Number(message.job?.progress_percent);
+  const progressEvents = queryProgressEventsForMessage(message);
   const selectedRating = feedback?.rating || message.feedback?.rating || null;
   const feedbackMessage = feedback?.message || message.feedback?.display_message || null;
   const feedbackTrigger = feedback?.trigger || message.feedback?.trigger || null;
@@ -582,6 +652,30 @@ function QueryMessage({
             <p className="text-sm text-gray-600 dark:text-gray-400">
               {t(jobLabel)}
             </p>
+            {Number.isFinite(progressPercent) && progressPercent > 0 ? (
+              <div className="space-y-1">
+                <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                  <div
+                    className="h-full rounded-full bg-sky-500 transition-all"
+                    style={{ width: `${Math.max(8, Math.min(100, progressPercent))}%` }}
+                  />
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">{Math.round(progressPercent)}% {t('complete')}</div>
+              </div>
+            ) : null}
+            <ol className="space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-gray-700 dark:border-gray-800 dark:bg-black/20 dark:text-gray-300">
+              {progressEvents.map((event, index) => (
+                <li key={event.id || `${event.label}-${index}`} className="flex gap-2">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-sky-200 bg-white text-[9px] font-bold text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
+                    {index + 1}
+                  </span>
+                  <span>
+                    <span className="font-medium">{t(event.label)}</span>
+                    {event.detail ? <span className="block text-gray-500 dark:text-gray-400">{t(event.detail)}</span> : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
             {jobId ? (
               <Link
                 to={`/evidence/cases/${caseId}/jobs/${jobId}`}
@@ -1038,12 +1132,13 @@ function conversationPreviewText(conversation, t) {
 
 function messagesFromConversation(conversation) {
   let previousUserMessageId = null;
-  return (conversation?.messages || []).map((message) => {
+  const renderedMessages = [];
+  (conversation?.messages || []).forEach((message) => {
     if (message.role === 'assistant') {
       const result = message.query_result_json && Object.keys(message.query_result_json).length
         ? message.query_result_json
         : { answer: message.content, citations: [] };
-      return {
+      renderedMessages.push({
         id: message.message_id,
         assistant_message_id: message.message_id,
         user_message_id: previousUserMessageId,
@@ -1054,17 +1149,42 @@ function messagesFromConversation(conversation) {
           id: message.request_fingerprint_id || result.request_fingerprint_id,
           correlationId: null,
         },
-      };
+      });
+      return;
     }
     previousUserMessageId = message.message_id;
-    return {
+    renderedMessages.push({
       id: message.message_id,
       user_message_id: message.message_id,
       conversation_id: conversation?.conversation_id,
       role: 'user',
       content: message.content,
-    };
+    });
+    const pendingJob = message.pending_query_job;
+    const pendingPayload = message.query_result_json && typeof message.query_result_json === 'object'
+      ? message.query_result_json
+      : {};
+    if (pendingJob?.job_id && queryJobIsActive(pendingJob)) {
+      const activity = (message.pending_query_activity || [])
+        .map(queryProgressEventFromPayload)
+        .filter(Boolean);
+      renderedMessages.push({
+        id: `assistant-${pendingJob.job_id}`,
+        user_message_id: message.message_id,
+        conversation_id: conversation?.conversation_id,
+        role: 'assistant',
+        running: true,
+        restoredFromJob: true,
+        job: pendingJob,
+        progressEvents: mergeQueryProgressEvents(activity, [queryProgressEventFromJob(pendingJob)]),
+        fingerprint: {
+          id: message.request_fingerprint_id || pendingPayload.request_fingerprint_id || queryJobFingerprint(pendingJob),
+          correlationId: null,
+        },
+      });
+    }
   });
+  return renderedMessages;
 }
 
 function ConversationList({
@@ -1566,12 +1686,14 @@ export default function QueryPage() {
   });
   const scrollRef = useRef(null);
   const mountedRef = useRef(true);
+  const queryJobWatchersRef = useRef({});
   const showDiagnostics = debugEnabled;
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      queryJobWatchersRef.current = {};
     };
   }, []);
 
@@ -1638,6 +1760,7 @@ export default function QueryPage() {
         const conversation = result.data?.conversation;
         const loadedMessages = messagesFromConversation(conversation);
         const latestAssistant = [...loadedMessages].reverse().find((message) => message.role === 'assistant' && message.result);
+        const activeAssistant = [...loadedMessages].reverse().find((message) => message.role === 'assistant' && message.running && queryJobIsActive(message.job));
         setMessages(loadedMessages);
         setActiveConversationId(conversation?.conversation_id || conversationId);
         if (typeof window !== 'undefined') {
@@ -1645,10 +1768,10 @@ export default function QueryPage() {
         }
         setState((current) => ({
           ...current,
-          running: false,
+          running: Boolean(activeAssistant),
           error: null,
           result: latestAssistant?.result || null,
-          fingerprint: latestAssistant?.fingerprint || null,
+          fingerprint: activeAssistant?.fingerprint || latestAssistant?.fingerprint || null,
         }));
         setConversationState((current) => ({ ...current, loading: false, error: null }));
         return conversation;
@@ -1983,6 +2106,7 @@ export default function QueryPage() {
                 ...message,
                 running: queryJobIsActive(latestJob),
                 job: latestJob,
+                progressEvents: mergeQueryProgressEvents(message.progressEvents, [queryProgressEventFromJob(latestJob)]),
                 fingerprint: {
                   id: jobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
                   correlationId: jobResult.correlationId,
@@ -2060,6 +2184,7 @@ export default function QueryPage() {
         return;
       }
       latestJob = queryJobFromEvent(payload, latestJob);
+      const progressEvent = queryProgressEventFromPayload(payload);
       setMessages((current) =>
         current.map((message) =>
           message.id === assistantId
@@ -2067,6 +2192,7 @@ export default function QueryPage() {
                 ...message,
                 running: !['job_complete', 'job_stream_timeout'].includes(type) && queryJobIsActive(latestJob),
                 job: latestJob,
+                progressEvents: mergeQueryProgressEvents(message.progressEvents, [progressEvent, queryProgressEventFromJob(latestJob)]),
                 fingerprint,
               }
             : message,
@@ -2085,6 +2211,117 @@ export default function QueryPage() {
     });
   }), [caseId]);
 
+  useEffect(() => {
+    const restoredMessage = messages.find((message) =>
+      message.restoredFromJob
+      && message.running
+      && message.job?.job_id
+      && queryJobIsActive(message.job),
+    );
+    if (!restoredMessage) {
+      return undefined;
+    }
+    const jobId = restoredMessage.job.job_id;
+    if (queryJobWatchersRef.current[jobId]) {
+      return undefined;
+    }
+    queryJobWatchersRef.current[jobId] = true;
+    let cancelled = false;
+    (async () => {
+      let latestJob = restoredMessage.job;
+      const fingerprint = restoredMessage.fingerprint || {
+        id: queryJobFingerprint(latestJob),
+        correlationId: null,
+      };
+      try {
+        const token = await getAccessToken();
+        const watched = await watchQueryJobWithEvents({
+          initialJob: latestJob,
+          token,
+          assistantId: restoredMessage.id,
+          fingerprint,
+        });
+        latestJob = watched.job || latestJob;
+        if (!watched.ok && mountedRef.current && !cancelled && queryJobIsActive(latestJob)) {
+          latestJob = await pollQueryJob({
+            initialJob: latestJob,
+            token,
+            assistantId: restoredMessage.id,
+            fingerprint,
+          });
+        }
+        if (!mountedRef.current || cancelled || !latestJob?.job_id) {
+          return;
+        }
+        const finalJobResult = await evidenceApi.getJob(caseId, latestJob.job_id, { token });
+        recordFingerprint(finalJobResult, 'Restored query job final status');
+        latestJob = finalJobResult.data;
+        const completedFingerprint = {
+          id: finalJobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
+          correlationId: finalJobResult.correlationId || fingerprint.correlationId,
+        };
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === restoredMessage.id
+              ? {
+                  ...message,
+                  running: queryJobIsActive(latestJob),
+                  job: latestJob,
+                  progressEvents: mergeQueryProgressEvents(message.progressEvents, [queryProgressEventFromJob(latestJob)]),
+                  fingerprint: completedFingerprint,
+                }
+              : message,
+          ),
+        );
+        const queryResponse = queryJobResponse(latestJob);
+        const completedConversationId = queryJobConversationId(latestJob) || restoredMessage.conversation_id || activeConversationId;
+        if (queryResponse) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === restoredMessage.id
+                ? {
+                    ...message,
+                    running: false,
+                    job: latestJob,
+                    result: queryResponse,
+                    fingerprint: completedFingerprint,
+                  }
+                : message,
+            ),
+          );
+          setState({
+            running: false,
+            error: null,
+            result: queryResponse,
+            fingerprint: completedFingerprint,
+          });
+          await refreshConversations();
+          if (completedConversationId) {
+            await loadConversation(completedConversationId);
+          }
+          return;
+        }
+        if (!queryJobIsActive(latestJob) && completedConversationId) {
+          await loadConversation(completedConversationId);
+          await refreshConversations();
+        }
+      } catch (error) {
+        if (!mountedRef.current || cancelled) {
+          return;
+        }
+        setMessages((current) =>
+          current.map((message) => (message.id === restoredMessage.id ? { ...message, running: false, error } : message)),
+        );
+        setState((current) => ({ ...current, running: false, error }));
+      } finally {
+        delete queryJobWatchersRef.current[jobId];
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConversationId, caseId, getAccessToken, loadConversation, messages, pollQueryJob, recordFingerprint, refreshConversations, watchQueryJobWithEvents]);
+
   const runQuery = useCallback(async () => {
     const trimmed = question.trim();
     if (!trimmed) {
@@ -2097,7 +2334,12 @@ export default function QueryPage() {
     setMessages((current) => [
       ...current,
       { id: `user-${timestamp}`, role: 'user', content: trimmed, authorName: currentUserName },
-      { id: assistantId, role: 'assistant', running: true },
+      {
+        id: assistantId,
+        role: 'assistant',
+        running: true,
+        progressEvents: [{ id: 'local-submit', label: 'Question submitted', type: 'queued' }],
+      },
     ]);
     setQuestion('');
     setState((current) => ({ ...current, running: true, error: null }));
@@ -2129,6 +2371,7 @@ export default function QueryPage() {
                 ...message,
                 running: true,
                 job: queuedJob,
+                progressEvents: mergeQueryProgressEvents(message.progressEvents, [queryProgressEventFromJob(queuedJob)]),
                 fingerprint,
               }
             : message,
@@ -2169,6 +2412,7 @@ export default function QueryPage() {
                   ...message,
                   running: queryJobIsActive(latestJob),
                   job: latestJob,
+                  progressEvents: mergeQueryProgressEvents(message.progressEvents, [queryProgressEventFromJob(latestJob)]),
                   fingerprint: {
                     id: finalJobResult.requestFingerprintId || queryJobFingerprint(latestJob) || fingerprint.id,
                     correlationId: finalJobResult.correlationId,
