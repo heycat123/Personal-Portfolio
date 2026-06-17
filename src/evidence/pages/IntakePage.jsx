@@ -70,6 +70,25 @@ function driveItemPath(pathStack, itemName) {
   return parts.length ? parts.join('/') : 'My Drive';
 }
 
+function driveItemDisplayPath(pathStack, driveItem) {
+  return driveItem?.path_hint || driveItemPath(pathStack, driveItem?.name);
+}
+
+function drivePathStackFromParents(parentFolders = []) {
+  const stack = [{ id: 'root', name: 'My Drive' }];
+  parentFolders.forEach((folder) => {
+    if (folder?.id && folder?.name && folder.id !== 'root') {
+      stack.push({ id: folder.id, name: folder.name });
+    }
+  });
+  return stack;
+}
+
+function canPreviewDriveItem(driveItem) {
+  const mimeType = driveItem?.mimeType || driveItem?.mime_type || '';
+  return mimeType === 'application/pdf' || isGoogleWorkspaceFile(driveItem);
+}
+
 async function sha256File(selectedFile) {
   if (!window.crypto?.subtle) {
     return null;
@@ -124,6 +143,11 @@ export default function IntakePage() {
     searchText: '',
     lastSearch: '',
     scanJob: null,
+    selectionMessage: null,
+    previewItem: null,
+    previewLoading: false,
+    previewUrl: null,
+    previewError: null,
   });
   const [driveReview, setDriveReview] = useState({
     loading: false,
@@ -240,6 +264,15 @@ export default function IntakePage() {
       }
     };
   }, [driveReview.previewUrl]);
+
+  useEffect(() => {
+    const url = driveBrowser.previewUrl;
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [driveBrowser.previewUrl]);
 
   const addFingerprint = useCallback((result, label) => {
     recordFingerprint(result, label);
@@ -397,6 +430,7 @@ export default function IntakePage() {
       folderId,
       pathStack: nextPathStack,
       lastSearch: '',
+      selectionMessage: null,
     }));
     try {
       const token = await getAccessToken();
@@ -429,7 +463,7 @@ export default function IntakePage() {
       return;
     }
 
-    setDriveBrowser((current) => ({ ...current, loading: true, error: null, mode: 'search', lastSearch: query }));
+    setDriveBrowser((current) => ({ ...current, loading: true, error: null, mode: 'search', lastSearch: query, selectionMessage: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.searchGoogleDrive(
@@ -457,6 +491,7 @@ export default function IntakePage() {
 
     const isFolder = driveItem.mimeType === GOOGLE_FOLDER_MIME_TYPE;
     const actionId = `${selectionMode}:${driveItem.id}`;
+    const pathHint = driveItemDisplayPath(driveBrowser.pathStack, driveItem);
     setDriveBrowser((current) => ({ ...current, action: actionId, error: null }));
     try {
       const token = await getAccessToken();
@@ -465,12 +500,13 @@ export default function IntakePage() {
         external_id: driveItem.id,
         selection_mode: selectionMode,
         display_name: driveItem.name,
-        path_hint: driveItemPath(driveBrowser.pathStack, driveItem.name),
+        path_hint: pathHint,
         metadata_json: {
           drive_file: driveItem,
           selected_from: driveBrowser.mode,
           parent_folder_id: driveBrowser.folderId,
-          path_hint: driveItemPath(driveBrowser.pathStack, driveItem.name),
+          parent_folders: driveItem.parent_folders || [],
+          path_hint: pathHint,
         },
       };
       const result = await evidenceApi.addSourceWatchItem(caseId, activeGoogleConnection.source_connection_id, payload, { token });
@@ -520,7 +556,7 @@ export default function IntakePage() {
       return;
     }
 
-    setDriveBrowser((current) => ({ ...current, action: 'resolve-watch-items', error: null }));
+    setDriveBrowser((current) => ({ ...current, action: 'resolve-watch-items', error: null, selectionMessage: null }));
     try {
       const token = await getAccessToken();
       const result = await evidenceApi.resolveGoogleDriveWatchItems(
@@ -531,12 +567,31 @@ export default function IntakePage() {
       );
       addFingerprint(result, 'Resolve source selections');
       await loadDriveWatchItems(activeGoogleConnection.source_connection_id);
+      setDriveReview((current) => {
+        if (current.previewUrl) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+        return {
+          ...current,
+          items: [],
+          summary: null,
+          selected: null,
+          previewLoading: false,
+          previewUrl: null,
+          previewError: null,
+        };
+      });
+      await openDriveFolder('root', 'My Drive', [{ id: 'root', name: 'My Drive' }]);
+      setDriveBrowser((current) => ({
+        ...current,
+        selectionMessage: result.data?.message || t('Selections verified. Review the Drive browser below, or sync files when ready.'),
+      }));
     } catch (error) {
       setDriveBrowser((current) => ({ ...current, error }));
     } finally {
       setDriveBrowser((current) => ({ ...current, action: null }));
     }
-  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken, loadDriveWatchItems]);
+  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken, loadDriveWatchItems, openDriveFolder, t]);
 
   const importDriveFile = useCallback(async (driveItem) => {
     if (!activeGoogleConnection?.source_connection_id || driveItem.mimeType === GOOGLE_FOLDER_MIME_TYPE) {
@@ -652,6 +707,43 @@ export default function IntakePage() {
     }
   }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken]);
 
+  const previewDriveBrowserFile = useCallback(async (driveItem) => {
+    if (!activeGoogleConnection?.source_connection_id || !driveItem?.id || !canPreviewDriveItem(driveItem)) {
+      return;
+    }
+
+    setDriveBrowser((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        ...current,
+        previewItem: driveItem,
+        previewLoading: true,
+        previewUrl: null,
+        previewError: null,
+      };
+    });
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.previewGoogleDriveFile(
+        caseId,
+        activeGoogleConnection.source_connection_id,
+        driveItem.id,
+        { token },
+      );
+      addFingerprint(result, 'Preview Google Drive file');
+      const nextUrl = URL.createObjectURL(result.blob);
+      setDriveBrowser((current) => ({
+        ...current,
+        previewLoading: false,
+        previewUrl: nextUrl,
+      }));
+    } catch (error) {
+      setDriveBrowser((current) => ({ ...current, previewLoading: false, previewError: error }));
+    }
+  }, [activeGoogleConnection?.source_connection_id, addFingerprint, caseId, getAccessToken]);
+
   const syncDriveFiles = useCallback(async () => {
     if (!activeGoogleConnection?.source_connection_id) {
       return;
@@ -759,6 +851,11 @@ export default function IntakePage() {
         pathStack: [{ id: 'root', name: 'My Drive' }],
         loading: false,
         watchLoading: false,
+        selectionMessage: null,
+        previewItem: null,
+        previewLoading: false,
+        previewUrl: null,
+        previewError: null,
       }));
       setDriveReview((current) => ({
         ...current,
@@ -1157,6 +1254,12 @@ export default function IntakePage() {
                   <div className="mt-2 text-xs">{t('Evidence AI will scan selected Drive files, copy new or changed files into the secure workspace, run text/OCR/transcript processing, update search records, update the relationship map, and check source coverage. If nothing changed, the job will stop after confirming the source is up to date.')}</div>
                 </div>
               ) : null}
+              {driveBrowser.selectionMessage ? (
+                <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-100">
+                  <div className="font-semibold">{t('Selections verified')}</div>
+                  <div className="mt-1">{driveBrowser.selectionMessage}</div>
+                </div>
+              ) : null}
               {driveReview.error ? (
                 <div className="mb-4">
                   <ErrorPanel title="Google Docs review failed" error={driveReview.error} />
@@ -1348,6 +1451,8 @@ export default function IntakePage() {
                         const isFolder = driveItem.mimeType === GOOGLE_FOLDER_MIME_TYPE;
                         const includeSelected = activeWatchItems.some((item) => item.external_id === driveItem.id && item.selection_mode === 'include');
                         const excludeSelected = activeWatchItems.some((item) => item.external_id === driveItem.id && item.selection_mode === 'exclude');
+                        const parentFolders = driveItem.parent_folders || [];
+                        const displayPath = driveItemDisplayPath(driveBrowser.pathStack, driveItem);
                         return (
                           <div key={driveItem.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-gray-100 px-3 py-3 last:border-0 dark:border-gray-800">
                             <div className="min-w-0">
@@ -1374,8 +1479,46 @@ export default function IntakePage() {
                                 <span>{isFolder ? t('Folder') : t(formatBytes(driveItem.size))}</span>
                                 {driveItem.modifiedTime ? <span>{new Date(driveItem.modifiedTime).toLocaleDateString()}</span> : null}
                               </div>
+                              {parentFolders.length ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                                  {parentFolders.map((folder, index) => (
+                                    <span key={`${driveItem.id}-${folder.id}-${index}`} className="inline-flex min-w-0 items-center gap-1">
+                                      {index > 0 ? <ChevronRight size={12} aria-hidden="true" /> : null}
+                                      <button
+                                        type="button"
+                                        onClick={() => openDriveFolder(
+                                          folder.id,
+                                          folder.name,
+                                          drivePathStackFromParents(parentFolders.slice(0, index + 1)),
+                                        )}
+                                        className="max-w-[13rem] truncate rounded px-1 py-0.5 font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10"
+                                        title={folder.name}
+                                      >
+                                        {folder.name}
+                                      </button>
+                                    </span>
+                                  ))}
+                                  <ChevronRight size={12} aria-hidden="true" />
+                                  <span className="max-w-[14rem] truncate" title={driveItem.name}>{driveItem.name}</span>
+                                </div>
+                              ) : displayPath && displayPath !== 'My Drive' ? (
+                                <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" title={displayPath}>
+                                  {displayPath}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="flex flex-wrap justify-end gap-2">
+                              {!isFolder && canPreviewDriveItem(driveItem) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => previewDriveBrowserFile(driveItem)}
+                                  disabled={Boolean(driveBrowser.action) || (driveBrowser.previewLoading && driveBrowser.previewItem?.id === driveItem.id)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-violet-300 px-2 py-1 text-xs font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-800 dark:text-violet-200 dark:hover:bg-violet-950/40"
+                                >
+                                  <Eye size={13} aria-hidden="true" />
+                                  {driveBrowser.previewLoading && driveBrowser.previewItem?.id === driveItem.id ? t('Loading') : t('Preview')}
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => addDriveWatchItem(driveItem, 'include')}
@@ -1416,6 +1559,60 @@ export default function IntakePage() {
                 </div>
 
                 <aside className="rounded-md border border-gray-200 p-3 dark:border-gray-800">
+                  {driveBrowser.previewItem ? (
+                    <div className="mb-4 rounded-md border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-900/50 dark:bg-violet-950/20">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-gray-950 dark:text-white">{driveBrowser.previewItem.name}</div>
+                          <div className="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" title={driveItemDisplayPath(driveBrowser.pathStack, driveBrowser.previewItem)}>
+                            {driveItemDisplayPath(driveBrowser.pathStack, driveBrowser.previewItem)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDriveBrowser((current) => {
+                            if (current.previewUrl) {
+                              URL.revokeObjectURL(current.previewUrl);
+                            }
+                            return {
+                              ...current,
+                              previewItem: null,
+                              previewLoading: false,
+                              previewUrl: null,
+                              previewError: null,
+                            };
+                          })}
+                          className="rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                        >
+                          {t('Close')}
+                        </button>
+                      </div>
+                      {driveBrowser.previewItem.webViewLink ? (
+                        <a
+                          href={driveBrowser.previewItem.webViewLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mb-3 inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10"
+                        >
+                          <ExternalLink size={13} aria-hidden="true" />
+                          {t('Open in Drive')}
+                        </a>
+                      ) : null}
+                      {driveBrowser.previewError ? (
+                        <ErrorPanel title="Preview failed" error={driveBrowser.previewError} />
+                      ) : driveBrowser.previewUrl ? (
+                        <iframe
+                          title={driveBrowser.previewItem.name}
+                          src={driveBrowser.previewUrl}
+                          className="h-[360px] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                        />
+                      ) : (
+                        <div className="flex h-[220px] items-center justify-center rounded-md border border-dashed border-violet-200 p-4 text-center text-sm text-gray-600 dark:border-violet-900/60 dark:text-gray-400">
+                          {driveBrowser.previewLoading ? t('Loading preview.') : t('Select Preview to inspect this Drive file.')}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h4 className="text-sm font-semibold text-gray-950 dark:text-white">{t('Selected Sources')}</h4>
                     <StatusBadge status="active" label={`${activeWatchItems.length}`} />
