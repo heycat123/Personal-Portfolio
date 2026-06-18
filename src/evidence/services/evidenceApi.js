@@ -580,6 +580,8 @@ export const evidenceApi = {
     request(casePath(caseId, '/query'), { ...options, method: 'POST', body: payload }),
   createQueryJob: (caseId, payload, options) =>
     request(casePath(caseId, '/query/jobs'), { ...options, method: 'POST', body: payload }),
+  cancelQueryJob: (caseId, jobId, options) =>
+    request(casePath(caseId, `/query/jobs/${encodeURIComponent(jobId)}/cancel`), { ...options, method: 'POST' }),
   exportQueryAnswer: (caseId, params = {}, options = {}) =>
     requestBlob(casePath(caseId, '/query/export.zip'), { ...options, query: params }),
   createQueryFeedback: (caseId, payload, options) =>

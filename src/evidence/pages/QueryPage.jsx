@@ -19,6 +19,7 @@ import {
   Search,
   Send,
   SlidersHorizontal,
+  Square,
   ThumbsDown,
   ThumbsUp,
   UsersRound,
@@ -76,6 +77,39 @@ function queryJobConversationId(job) {
 
 function queryJobFingerprint(job) {
   return job?.result_json?.request_fingerprint_id || job?.request_fingerprint_id || null;
+}
+
+function queryResultIsFailure(result) {
+  if (!result || typeof result !== 'object') {
+    return false;
+  }
+  const answerStatus = result.answer_status && typeof result.answer_status === 'object' ? result.answer_status : {};
+  const status = String(result.status || result.workflow_status || answerStatus.status || '').toLowerCase();
+  return Boolean(answerStatus.error)
+    || ['failed', 'query_timeout', 'query_unavailable', 'empty_answer', 'interrupted_needs_recovery', 'cancelled'].includes(status);
+}
+
+function queryFailureInfo({ error, result, job, fingerprint, assistantMessageId } = {}) {
+  const answerStatus = result?.answer_status && typeof result.answer_status === 'object' ? result.answer_status : {};
+  const resultStatus = String(result?.status || result?.workflow_status || answerStatus.status || job?.status || '').trim();
+  const message = error?.message
+    || answerStatus.user_message
+    || result?.display_message
+    || result?.answer
+    || job?.error_message
+    || queryJobDisplayMessage(job)
+    || 'Ask Documents could not finish this query.';
+  return {
+    message,
+    label: resultStatus === 'cancelled' ? 'Query stopped' : 'Query failed',
+    jobId: job?.job_id || result?.job_id || result?.query_job_id || result?.query_response?.job_id || null,
+    fingerprintId: fingerprint?.id || result?.request_fingerprint_id || queryJobFingerprint(job) || null,
+    correlationId: fingerprint?.correlationId || null,
+    errorClass: answerStatus.error_class || result?.error_class || job?.error_class || error?.name || null,
+    status: resultStatus || null,
+    assistantMessageId: assistantMessageId || result?.assistant_message_id || null,
+    canRetry: result?.can_retry ?? answerStatus.can_retry ?? true,
+  };
 }
 
 function persistedMessageId(value) {
@@ -578,21 +612,65 @@ function QueryMessage({
   onOpenCitation,
   onOpenCitationList,
   onSubmitFeedback,
+  onRetryQuery,
   onExportAnswer,
   onSaveAnswerToPacket,
   answerExport,
   packetArtifact,
   feedback,
+  retryDisabled,
   showDiagnostics,
   showCitations = true,
   t,
 }) {
+  if (message.hidden) {
+    return null;
+  }
+
   if (message.role === 'user') {
+    const failure = message.queryFailure;
     return (
       <div className="flex min-w-0 max-w-full justify-end gap-3">
-        <div className="min-w-0 max-w-[calc(100vw-5rem)] overflow-hidden break-words rounded-2xl rounded-tr-md bg-[var(--lakai-primary)] px-4 py-3 text-sm text-[var(--lakai-primary-text)] shadow-sm sm:max-w-[78%]">
-          <div className="mb-1 text-xs font-semibold opacity-80">{t('You')}</div>
-          {message.content}
+        <div className="flex min-w-0 max-w-[calc(100vw-5rem)] flex-col items-end gap-1 sm:max-w-[78%]">
+          <div className="w-full overflow-hidden break-words rounded-2xl rounded-tr-md bg-[var(--lakai-primary)] px-4 py-3 text-sm text-[var(--lakai-primary-text)] shadow-sm">
+            <div className="mb-1 text-xs font-semibold opacity-80">{t('You')}</div>
+            {message.content}
+          </div>
+          {failure ? (
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 pr-1 text-[11px] font-semibold text-red-700 dark:text-red-300">
+              {failure.canRetry ? (
+                <button
+                  type="button"
+                  onClick={() => onRetryQuery?.(message)}
+                  disabled={retryDisabled}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200 dark:hover:bg-red-950/50"
+                  title={t('Retry question')}
+                  aria-label={t('Retry question')}
+                >
+                  <RefreshCw size={12} aria-hidden="true" />
+                </button>
+              ) : null}
+              <span>{t(failure.label || 'Query failed')}</span>
+              <details className="relative">
+                <summary
+                  className="inline-flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 marker:hidden hover:border-red-300 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200 dark:hover:bg-red-950/50"
+                  title={t('Failure details')}
+                  aria-label={t('Failure details')}
+                >
+                  <AlertTriangle size={12} aria-hidden="true" />
+                </summary>
+                <div className="absolute right-0 z-30 mt-1 w-72 rounded-lg border border-red-200 bg-white p-3 text-left text-[11px] leading-5 text-red-950 shadow-lg dark:border-red-900/60 dark:bg-[#101820] dark:text-red-100">
+                  <div className="font-bold">{t(failure.message || 'Ask Documents could not finish this query.')}</div>
+                  <dl className="mt-2 space-y-1 font-mono text-[10px] font-medium text-red-900/80 dark:text-red-100/80">
+                    {failure.jobId ? <div><dt className="inline">job: </dt><dd className="inline break-all">{failure.jobId}</dd></div> : null}
+                    {failure.fingerprintId ? <div><dt className="inline">fingerprint: </dt><dd className="inline break-all">{failure.fingerprintId}</dd></div> : null}
+                    {failure.errorClass ? <div><dt className="inline">error: </dt><dd className="inline break-all">{failure.errorClass}</dd></div> : null}
+                    {failure.status ? <div><dt className="inline">status: </dt><dd className="inline break-all">{failure.status}</dd></div> : null}
+                  </dl>
+                </div>
+              </details>
+            </div>
+          ) : null}
         </div>
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--lakai-accent)] text-sm font-bold text-[var(--lakai-primary-strong)]">
           {initialsForName(message.authorName || currentUserName || t('You'))}
@@ -687,7 +765,7 @@ function QueryMessage({
             ) : null}
           </div>
         ) : message.error ? (
-          <ErrorPanel title="Query failed" error={message.error} />
+          null
         ) : (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1138,6 +1216,20 @@ function messagesFromConversation(conversation) {
       const result = message.query_result_json && Object.keys(message.query_result_json).length
         ? message.query_result_json
         : { answer: message.content, citations: [] };
+      if (queryResultIsFailure(result)) {
+        const previousUser = [...renderedMessages].reverse().find((item) => item.role === 'user' && item.id === previousUserMessageId);
+        if (previousUser) {
+          previousUser.queryFailure = queryFailureInfo({
+            result,
+            fingerprint: {
+              id: message.request_fingerprint_id || result.request_fingerprint_id,
+              correlationId: null,
+            },
+            assistantMessageId: message.message_id,
+          });
+          return;
+        }
+      }
       renderedMessages.push({
         id: message.message_id,
         assistant_message_id: message.message_id,
@@ -1688,6 +1780,19 @@ export default function QueryPage() {
   const mountedRef = useRef(true);
   const queryJobWatchersRef = useRef({});
   const showDiagnostics = debugEnabled;
+  const activeQueryMessage = useMemo(
+    () => [...messages].reverse().find((message) => message.role === 'assistant' && message.running && message.job?.job_id && queryJobIsActive(message.job)) || null,
+    [messages],
+  );
+  const activeQueryJob = activeQueryMessage?.job || null;
+  const activeQueryStopRequested = Boolean(activeQueryJob?.result_json?.cancel_requested);
+  const submitControlState = state.running
+    ? activeQueryJob?.job_id
+      ? activeQueryStopRequested
+        ? 'stopping'
+        : 'running'
+      : 'waiting_for_worker'
+    : 'idle';
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1782,6 +1887,67 @@ export default function QueryPage() {
     },
     [caseId, getAccessToken, recordFingerprint],
   );
+
+  const cancelActiveQuery = useCallback(async () => {
+    if (!activeQueryJob?.job_id) {
+      return;
+    }
+    const jobId = activeQueryJob.job_id;
+    setMessages((current) =>
+      current.map((message) =>
+        message.job?.job_id === jobId
+          ? {
+              ...message,
+              job: {
+                ...message.job,
+                result_json: {
+                  ...(message.job?.result_json || {}),
+                  cancel_requested: true,
+                  display_message: 'Stop requested. Ask Documents will stop at the next safe checkpoint.',
+                },
+              },
+              progressEvents: mergeQueryProgressEvents(message.progressEvents, [
+                { id: `cancel-${jobId}`, type: 'cancel_requested', label: 'Stop requested' },
+              ]),
+            }
+          : message,
+      ),
+    );
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.cancelQueryJob(caseId, jobId, { token });
+      recordFingerprint(result, 'Cancel query job');
+      const cancelledJob = result.data?.job || result.data || activeQueryJob;
+      setMessages((current) =>
+        current.map((message) =>
+          message.job?.job_id === jobId
+            ? {
+                ...message,
+                running: queryJobIsActive(cancelledJob),
+                job: cancelledJob,
+                progressEvents: mergeQueryProgressEvents(message.progressEvents, [queryProgressEventFromJob(cancelledJob)]),
+              }
+            : message,
+        ),
+      );
+      if (!queryJobIsActive(cancelledJob)) {
+        setState((current) => ({ ...current, running: false }));
+      }
+    } catch (error) {
+      setMessages((current) =>
+        current.map((message) =>
+          message.job?.job_id === jobId
+            ? {
+                ...message,
+                progressEvents: mergeQueryProgressEvents(message.progressEvents, [
+                  { id: `cancel-error-${jobId}`, type: 'cancel_error', label: error?.message || 'Stop request failed' },
+                ]),
+              }
+            : message,
+        ),
+      );
+    }
+  }, [activeQueryJob, caseId, getAccessToken, recordFingerprint]);
 
   const refreshConversations = useCallback(async () => {
     setConversationState((current) => ({ ...current, loading: true, error: null }));
@@ -2322,18 +2488,25 @@ export default function QueryPage() {
     };
   }, [activeConversationId, caseId, getAccessToken, loadConversation, messages, pollQueryJob, recordFingerprint, refreshConversations, watchQueryJobWithEvents]);
 
-  const runQuery = useCallback(async () => {
-    const trimmed = question.trim();
+  const runQuery = useCallback(async (questionOverride = null) => {
+    if (state.running) {
+      return;
+    }
+    const overrideText = typeof questionOverride === 'string' ? questionOverride : null;
+    const trimmed = (overrideText ?? question).trim();
     if (!trimmed) {
       setState((current) => ({ ...current, error: new Error('Enter a question before running a query.') }));
       return;
     }
 
     const timestamp = Date.now();
+    const userMessageId = `user-${timestamp}`;
     const assistantId = `assistant-${timestamp}`;
+    let latestJobForFailure = null;
+    let fingerprintForFailure = null;
     setMessages((current) => [
       ...current,
-      { id: `user-${timestamp}`, role: 'user', content: trimmed, authorName: currentUserName },
+      { id: userMessageId, role: 'user', content: trimmed, authorName: currentUserName },
       {
         id: assistantId,
         role: 'assistant',
@@ -2341,7 +2514,9 @@ export default function QueryPage() {
         progressEvents: [{ id: 'local-submit', label: 'Question submitted', type: 'queued' }],
       },
     ]);
-    setQuestion('');
+    if (overrideText === null) {
+      setQuestion('');
+    }
     setState((current) => ({ ...current, running: true, error: null }));
     try {
       const token = await getAccessToken();
@@ -2362,7 +2537,9 @@ export default function QueryPage() {
         id: result.requestFingerprintId || result.data?.request_fingerprint_id,
         correlationId: result.correlationId,
       };
+      fingerprintForFailure = fingerprint;
       const queuedJob = result.data?.job || result.data;
+      latestJobForFailure = queuedJob;
       const queuedConversationId = result.data?.conversation_id || queryJobConversationId(queuedJob);
       setMessages((current) =>
         current.map((message) =>
@@ -2396,8 +2573,10 @@ export default function QueryPage() {
       if (latestJob?.job_id && queryJobIsActive(latestJob)) {
         const watched = await watchQueryJobWithEvents({ initialJob: latestJob, token, assistantId, fingerprint });
         latestJob = watched.job || latestJob;
+        latestJobForFailure = latestJob;
         if (!watched.ok && mountedRef.current && queryJobIsActive(latestJob)) {
           latestJob = await pollQueryJob({ initialJob: latestJob, token, assistantId, fingerprint });
+          latestJobForFailure = latestJob;
         }
       }
 
@@ -2405,6 +2584,7 @@ export default function QueryPage() {
         const finalJobResult = await evidenceApi.getJob(caseId, latestJob.job_id, { token });
         recordFingerprint(finalJobResult, 'Query job final status');
         latestJob = finalJobResult.data;
+        latestJobForFailure = latestJob;
         setMessages((current) =>
           current.map((message) =>
             message.id === assistantId
@@ -2483,11 +2663,34 @@ export default function QueryPage() {
       throw new Error(message);
     } catch (error) {
       setMessages((current) =>
-        current.map((message) => (message.id === assistantId ? { ...message, running: false, error } : message)),
+        current.map((message) => {
+          if (message.id === assistantId) {
+            return { ...message, running: false, hidden: true, error };
+          }
+          if (message.id === userMessageId) {
+            return {
+              ...message,
+              queryFailure: queryFailureInfo({
+                error,
+                job: latestJobForFailure,
+                result: latestJobForFailure?.result_json,
+                fingerprint: fingerprintForFailure,
+              }),
+            };
+          }
+          return message;
+        }),
       );
-      setState((current) => ({ ...current, running: false, error }));
+      setState((current) => ({ ...current, running: false, error: null }));
     }
-  }, [activeConversationId, caseId, currentUserName, getAccessToken, loadConversation, pollQueryJob, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics, watchQueryJobWithEvents]);
+  }, [activeConversationId, caseId, currentUserName, getAccessToken, loadConversation, pollQueryJob, preferences.language, preferences.timeZone, question, recordFingerprint, refreshConversations, showDiagnostics, state.running, watchQueryJobWithEvents]);
+
+  const retryQueryMessage = useCallback((message) => {
+    if (state.running || !message?.content) {
+      return;
+    }
+    void runQuery(message.content);
+  }, [runQuery, state.running]);
 
   const openCitation = useCallback(
     async (citation) => {
@@ -2699,11 +2902,13 @@ export default function QueryPage() {
                 onOpenCitation={openCitation}
                 onOpenCitationList={openCitationList}
                 onSubmitFeedback={submitAnswerFeedback}
+                onRetryQuery={retryQueryMessage}
                 onExportAnswer={exportAnswerArtifact}
                 onSaveAnswerToPacket={openPacketArtifactDialog}
                 answerExport={answerExportState[message.id]}
                 packetArtifact={packetArtifactState.message?.id === message.id ? packetArtifactState : null}
                 feedback={feedbackState[message.id]}
+                retryDisabled={state.running}
                 showDiagnostics={showDiagnostics}
                 showCitations={chatSettings.showCitations}
                 t={t}
@@ -2746,12 +2951,23 @@ export default function QueryPage() {
             />
             <button
               type="button"
-              onClick={runQuery}
-              disabled={state.running}
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--lakai-primary)] px-3 text-sm font-semibold text-[var(--lakai-primary-text)] hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 lg:w-36"
+              onClick={submitControlState === 'running' ? cancelActiveQuery : () => runQuery()}
+              disabled={submitControlState === 'waiting_for_worker' || submitControlState === 'stopping'}
+              className={
+                submitControlState === 'running'
+                  ? 'inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60'
+                  : 'inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--lakai-primary)] text-[var(--lakai-primary-text)] shadow-sm hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60'
+              }
+              title={submitControlState === 'running' ? t('Stop query') : submitControlState === 'stopping' ? t('Stopping query') : submitControlState === 'waiting_for_worker' ? t('Waiting for worker') : t('Send question')}
+              aria-label={submitControlState === 'running' ? t('Stop query') : submitControlState === 'stopping' ? t('Stopping query') : submitControlState === 'waiting_for_worker' ? t('Waiting for worker') : t('Send question')}
             >
-              <Send size={16} aria-hidden="true" />
-              <span className="hidden sm:inline">{state.running ? t('Running') : t('Send')}</span>
+              {submitControlState === 'running' ? (
+                <Square size={16} fill="currentColor" strokeWidth={2.25} aria-hidden="true" />
+              ) : submitControlState === 'waiting_for_worker' || submitControlState === 'stopping' ? (
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Send size={18} aria-hidden="true" />
+              )}
             </button>
           </div>
           <div className="mt-2 hidden flex-wrap items-center gap-3 text-xs font-medium text-[var(--lakai-text-muted)] sm:flex">
