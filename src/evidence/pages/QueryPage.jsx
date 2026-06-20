@@ -465,29 +465,156 @@ function CitationChip({ citation, onOpenCitation }) {
   );
 }
 
+function normalizeMarkdownLine(line) {
+  return String(line || '')
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\u00e2\u20ac\u201d/g, '-')
+    .replace(/\u00e2\u20ac\u0153/g, '"')
+    .replace(/\u00e2\u20ac\ufffd/g, '"')
+    .trim();
+}
+
+function renderAnswerInline(text, citations, lookup, onOpenCitation, keyPrefix) {
+  const citationParts = String(text || '').split(/(\[[^\]\n]{2,260}\])/g);
+  return citationParts.flatMap((part, partIndex) => {
+    const bracketed = part.startsWith('[') && part.endsWith(']');
+    const matchedCitations = bracketed ? matchingCitationsForBracket(part, citations, lookup) : [];
+    if (matchedCitations.length) {
+      return [
+        <span key={`${keyPrefix}-citation-${partIndex}`} className="mx-0.5 inline-flex max-w-full flex-wrap items-center gap-1 align-baseline">
+          {matchedCitations.map((citation, citationIndex) => (
+            <CitationChip
+              key={`${keyPrefix}-citation-${partIndex}-${citationLabel(citation)}-${citationIndex}`}
+              citation={citation}
+              onOpenCitation={onOpenCitation}
+            />
+          ))}
+        </span>,
+      ];
+    }
+
+    const boldParts = part.split(/(\*\*[^*\n][^]*?\*\*)/g);
+    return boldParts.map((boldPart, boldIndex) => {
+      if (boldPart.startsWith('**') && boldPart.endsWith('**')) {
+        return (
+          <strong key={`${keyPrefix}-bold-${partIndex}-${boldIndex}`} className="font-semibold text-gray-950 dark:text-white">
+            {boldPart.slice(2, -2)}
+          </strong>
+        );
+      }
+      return <span key={`${keyPrefix}-text-${partIndex}-${boldIndex}`}>{boldPart}</span>;
+    });
+  });
+}
+
+function answerMarkdownBlocks(answer) {
+  const lines = String(answer || 'No answer returned.').split(/\r?\n/);
+  const blocks = [];
+  let paragraph = [];
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    const text = paragraph.join(' ').replace(/\s+/g, ' ').trim();
+    if (text) {
+      blocks.push({ type: 'paragraph', text });
+    }
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!listItems.length) {
+      return;
+    }
+    blocks.push({ type: 'list', items: listItems });
+    listItems = [];
+  };
+
+  lines.forEach((rawLine) => {
+    const line = normalizeMarkdownLine(rawLine);
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+
+    const headingMatch = line.match(/^#{1,4}\s+(.+)$/) || line.match(/^\*\*([^*]{2,90})\*\*:?\s*$/);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: 'heading', text: headingMatch[1].trim() });
+      return;
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      listItems.push(bulletMatch[1].trim());
+      return;
+    }
+
+    if (listItems.length) {
+      const lastIndex = listItems.length - 1;
+      listItems[lastIndex] = `${listItems[lastIndex]} ${line}`.trim();
+      return;
+    }
+
+    paragraph.push(line);
+  });
+
+  flushParagraph();
+  flushList();
+  return blocks;
+}
+
 function InlineAnswer({ answer, citations, onOpenCitation }) {
   const text = String(answer || 'No answer returned.');
   const lookup = citationLookup(citations);
-  const parts = text.split(/(\[[^\]\n]{2,260}\])/g);
+  const blocks = answerMarkdownBlocks(text);
   return (
-    <div className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-words leading-6 text-gray-900 dark:text-gray-100">
-      {parts.map((part, index) => {
-        const bracketed = part.startsWith('[') && part.endsWith(']');
-        const matchedCitations = bracketed ? matchingCitationsForBracket(part, citations, lookup) : [];
-        if (!matchedCitations.length) {
-          return <span key={`${index}-${part.slice(0, 24)}`}>{part}</span>;
+    <div className="answer-prose min-w-0 max-w-full space-y-4 overflow-hidden break-words text-[15px] leading-7 text-gray-900 dark:text-gray-100">
+      {blocks.map((block, index) => {
+        if (block.type === 'heading') {
+          return (
+            <h3
+              key={`heading-${index}-${block.text.slice(0, 24)}`}
+              className="pt-1 font-serif text-xl font-semibold tracking-tight text-[var(--lakai-primary-strong)] dark:text-sky-100"
+            >
+              {renderAnswerInline(block.text, citations, lookup, onOpenCitation, `heading-${index}`)}
+            </h3>
+          );
         }
+        if (block.type === 'list') {
+          return (
+            <ul key={`list-${index}`} className="space-y-2">
+              {block.items.map((item, itemIndex) => (
+                <li
+                  key={`list-${index}-${itemIndex}-${item.slice(0, 24)}`}
+                  className="flex min-w-0 gap-3 rounded-xl border border-gray-100 bg-white/70 px-3 py-2 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"
+                >
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden="true" />
+                  <span className="min-w-0">
+                    {renderAnswerInline(item, citations, lookup, onOpenCitation, `list-${index}-${itemIndex}`)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        const isOpening = index === 0;
         return (
-          <span key={`${index}-${part.slice(0, 24)}`} className="inline">
-            [
-            {matchedCitations.map((citation, citationIndex) => (
-              <span key={`${citationLabel(citation)}-${citationIndex}`} className="inline">
-                {citationIndex > 0 ? '; ' : ''}
-                <CitationChip citation={citation} onOpenCitation={onOpenCitation} />
-              </span>
-            ))}
-            ]
-          </span>
+          <p
+            key={`paragraph-${index}-${block.text.slice(0, 24)}`}
+            className={isOpening
+              ? 'rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 font-medium text-sky-950 shadow-sm dark:border-sky-900/60 dark:bg-sky-950/25 dark:text-sky-50'
+              : 'text-gray-800 dark:text-gray-200'
+            }
+          >
+            {renderAnswerInline(block.text, citations, lookup, onOpenCitation, `paragraph-${index}`)}
+          </p>
         );
       })}
     </div>
