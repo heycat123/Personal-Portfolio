@@ -374,6 +374,53 @@ function packetFolderId(folder) {
   return folder?.folder_id || folder?.packet_folder_id || folder?.user_folder_id || folder?.id || '';
 }
 
+function packetFolderParentId(folder) {
+  const metadata = metadataObject(folder?.metadata_json);
+  return folder?.parent_folder_id ||
+    folder?.parent_packet_folder_id ||
+    folder?.parent_user_folder_id ||
+    metadata.parent_folder_id ||
+    '';
+}
+
+function packetFolderOptionRows(folders = []) {
+  const folderById = new Map();
+  const childrenByParent = new Map();
+  folders.forEach((folder) => {
+    const folderId = packetFolderId(folder);
+    if (!folderId) return;
+    folderById.set(folderId, folder);
+  });
+  folders.forEach((folder) => {
+    const folderId = packetFolderId(folder);
+    if (!folderId) return;
+    const parentId = packetFolderParentId(folder);
+    if (parentId && folderById.has(parentId)) {
+      if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+      childrenByParent.get(parentId).push(folder);
+    } else {
+      if (!childrenByParent.has('')) childrenByParent.set('', []);
+      childrenByParent.get('').push(folder);
+    }
+  });
+
+  const rows = [];
+  const walk = (parentId = '', depth = 0) => {
+    const children = childrenByParent.get(parentId) || [];
+    children.forEach((folder) => {
+      const folderId = packetFolderId(folder);
+      rows.push({
+        value: folderId,
+        label: folder.label || 'Folder',
+        depth,
+      });
+      walk(folderId, depth + 1);
+    });
+  };
+  walk();
+  return rows;
+}
+
 function standardFoldersForRequirement(requirement) {
   return STANDARD_PACKET_FOLDERS[requirement?.requirement_id] || [];
 }
@@ -992,6 +1039,7 @@ function PacketDocumentPicker({
   const visibleDriveFiles = driveItems.filter((item) => item.mimeType !== GOOGLE_FOLDER_MIME_TYPE);
   const allVisibleDriveFilesSelected = visibleDriveFiles.length > 0 && visibleDriveFiles.every((item) => driveSelectedIds.includes(item.id));
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
+  const folderOptions = packetFolderOptionRows(userFolders);
 
   async function handleLocalDrop(event) {
     event.preventDefault();
@@ -1066,11 +1114,10 @@ function PacketDocumentPicker({
               className="min-h-11 w-full rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="">Checklist item only</option>
-              {userFolders.map((folder) => {
-                const folderId = packetFolderId(folder);
+              {folderOptions.map((folder) => {
                 return (
-                  <option key={folderId} value={folderId}>
-                    {folder.label || 'Folder'}
+                  <option key={folder.value} value={folder.value}>
+                    {`${'— '.repeat(folder.depth)}${folder.label || 'Folder'}`}
                   </option>
                 );
               })}
@@ -1917,7 +1964,9 @@ function RequirementEditor({
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderLabel, setNewFolderLabel] = useState('');
   const [newFolderDescription, setNewFolderDescription] = useState('');
+  const [newFolderParent, setNewFolderParent] = useState(null);
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
+  const [collapsedFolderKeys, setCollapsedFolderKeys] = useState(() => new Set());
 
   const changed =
     status !== (requirement.status || 'needed') ||
@@ -1935,8 +1984,22 @@ function RequirementEditor({
   const generatedArtifactCount = generatedArtifacts.length;
   const packetItemCount = linkedDocumentCount + generatedArtifactCount;
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
+  const folderById = new Map(userFolders.map((folder) => [packetFolderId(folder), folder]).filter(([folderId]) => folderId));
+  const childFoldersByParentId = new Map();
+  const topLevelUserFolders = [];
+  userFolders.forEach((folder) => {
+    const folderId = packetFolderId(folder);
+    if (!folderId) return;
+    const parentId = packetFolderParentId(folder);
+    if (parentId && folderById.has(parentId)) {
+      if (!childFoldersByParentId.has(parentId)) childFoldersByParentId.set(parentId, []);
+      childFoldersByParentId.get(parentId).push(folder);
+      return;
+    }
+    topLevelUserFolders.push(folder);
+  });
   const standardFolders = standardFoldersForRequirement(requirement);
-  const existingFolderLabels = new Set(userFolders.map((folder) => folderLabelKey(folder.label)));
+  const existingFolderLabels = new Set(topLevelUserFolders.map((folder) => folderLabelKey(folder.label)));
   const missingStandardFolders = standardFolders.filter((folder) => !existingFolderLabels.has(folderLabelKey(folder.label)));
   const linksByFolderId = new Map(userFolders.map((folder) => [packetFolderId(folder), []]).filter(([folderId]) => folderId));
   const artifactsByFolderId = new Map(userFolders.map((folder) => [packetFolderId(folder), []]).filter(([folderId]) => folderId));
@@ -1970,7 +2033,7 @@ function RequirementEditor({
       links: checklistLinks,
       artifacts: unfiledArtifacts,
     },
-    ...userFolders.map((folder) => ({
+    ...topLevelUserFolders.map((folder) => ({
       key: `folder:${packetFolderId(folder)}`,
       type: 'folder',
       folderId: packetFolderId(folder),
@@ -1979,6 +2042,7 @@ function RequirementEditor({
       folder,
       links: linksByFolderId.get(packetFolderId(folder)) || [],
       artifacts: artifactsByFolderId.get(packetFolderId(folder)) || [],
+      children: childFoldersByParentId.get(packetFolderId(folder)) || [],
     })),
     ...missingStandardFolders.map((folder) => ({
       key: `standard:${folderLabelKey(folder.label)}`,
@@ -1993,8 +2057,8 @@ function RequirementEditor({
   ];
   const moveFolderOptions = [
     { value: '', label: 'Checklist item only' },
-    ...userFolders
-      .map((folder) => ({ value: packetFolderId(folder), label: folder.label || 'Folder' }))
+    ...packetFolderOptionRows(userFolders)
+      .map((folder) => ({ value: folder.value, label: `${'— '.repeat(folder.depth)}${folder.label || 'Folder'}` }))
       .filter((folder) => folder.value),
   ];
   const templateGuidance = requirement.metadata_json?.upload_guidance;
@@ -2043,6 +2107,46 @@ function RequirementEditor({
     const folderId = await ensureFolderForCard(card);
     if (folderId === null) return;
     onOpenDocumentPicker(requirement, { folderId });
+  }
+
+  function openFolderForm(parentCard = null) {
+    setNewFolderParent(parentCard?.type === 'folder'
+      ? {
+        id: packetFolderId(parentCard.folder) || parentCard.folderId,
+        label: parentCard.label,
+      }
+      : null);
+    setNewFolderOpen(true);
+  }
+
+  function resetFolderForm() {
+    setNewFolderLabel('');
+    setNewFolderDescription('');
+    setNewFolderParent(null);
+    setNewFolderOpen(false);
+  }
+
+  function addSubfolderToFolder(card) {
+    if (!canContribute || !card || card.type !== 'folder') {
+      return;
+    }
+    const parentFolderId = packetFolderId(card.folder) || card.folderId;
+    if (!parentFolderId) {
+      return;
+    }
+    openFolderForm(card);
+  }
+
+  function toggleFolderCollapsed(key) {
+    setCollapsedFolderKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   }
 
   async function dropItemsOnFolder(event, card) {
@@ -2206,6 +2310,22 @@ function RequirementEditor({
     );
   }
 
+  function cardFromUserFolder(folder, depth = 0) {
+    const folderId = packetFolderId(folder);
+    return {
+      key: `folder:${folderId}`,
+      type: 'folder',
+      folderId,
+      label: folder.label || 'Folder',
+      description: folder.description || '',
+      folder,
+      depth,
+      links: linksByFolderId.get(folderId) || [],
+      artifacts: artifactsByFolderId.get(folderId) || [],
+      children: childFoldersByParentId.get(folderId) || [],
+    };
+  }
+
   function renderGeneratedArtifactCard(artifact, folderLabel = null) {
     const artifactId = artifactRecordId(artifact);
     const title = artifactTitle(artifact);
@@ -2268,13 +2388,21 @@ function RequirementEditor({
     const isDragTarget = dragOverFolderId === card.key;
     const cardLinks = Array.isArray(card.links) ? card.links : [];
     const cardArtifacts = Array.isArray(card.artifacts) ? card.artifacts : [];
+    const childFolders = Array.isArray(card.children) ? card.children : [];
+    const childFolderCards = childFolders.map((folder) => cardFromUserFolder(folder, (card.depth || 0) + 1));
     const groupedLinks = groupedLinksForFolder(cardLinks, card);
+    const childItemCount = childFolderCards.reduce((total, childCard) => total + childCard.links.length + childCard.artifacts.length, 0);
     const cardItemCount = cardLinks.length + cardArtifacts.length;
-    const folderCountLabel = isSuggested ? 'Add when needed' : (cardItemCount ? `${cardItemCount} item${cardItemCount === 1 ? '' : 's'}` : 'Empty');
+    const visibleItemCount = cardItemCount + childItemCount;
+    const folderCountLabel = isSuggested ? 'Add when needed' : (visibleItemCount ? `${visibleItemCount} item${visibleItemCount === 1 ? '' : 's'}` : 'Empty');
     const canEditFolder = canContribute && card.type === 'folder';
     const folderId = card.folderId || packetFolderId(card.folder);
     const actionBusy = folderAction?.endsWith(`:${folderId}`);
     const folderHasGeneratedArtifacts = cardArtifacts.length > 0;
+    const hasNestedContent = Boolean(cardItemCount || groupedLinks.childFolders.length || childFolderCards.length);
+    const collapsed = collapsedFolderKeys.has(card.key);
+    const depth = card.depth || 0;
+    const nestedIndentClass = depth ? 'ml-5 border-l border-[var(--lakai-border)] pl-3' : '';
     return (
       <div
         key={card.key}
@@ -2286,7 +2414,7 @@ function RequirementEditor({
         }}
         onDragLeave={() => setDragOverFolderId(null)}
         onDrop={(event) => dropItemsOnFolder(event, card)}
-        className={`border-b border-[var(--lakai-border)] py-3 transition ${
+        className={`${nestedIndentClass} border-b border-[var(--lakai-border)] py-3 transition ${
           isDragTarget
             ? 'bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
             : ''
@@ -2294,10 +2422,24 @@ function RequirementEditor({
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
+            {hasNestedContent ? (
+              <button
+                type="button"
+                onClick={() => toggleFolderCollapsed(card.key)}
+                className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-text)]"
+                title={collapsed ? 'Expand folder' : 'Collapse folder'}
+                aria-expanded={!collapsed}
+              >
+                <ChevronDown className={`transition ${collapsed ? '-rotate-90' : ''}`} size={14} aria-hidden="true" />
+                <span className="sr-only">{collapsed ? 'Expand' : 'Collapse'} {card.label}</span>
+              </button>
+            ) : (
+              <span className="mt-0.5 h-6 w-6 shrink-0" aria-hidden="true" />
+            )}
             <span className={`mt-0.5 inline-flex min-h-6 min-w-6 items-center justify-center ${
-              isChecklistOnly ? 'text-[var(--lakai-text-muted)]' : cardItemCount ? 'text-[var(--lakai-accent)]' : 'text-[var(--lakai-text-muted)]'
+              isChecklistOnly ? 'text-[var(--lakai-text-muted)]' : visibleItemCount ? 'text-[var(--lakai-accent)]' : 'text-[var(--lakai-text-muted)]'
             }`}>
-              <Folder size={19} fill={cardItemCount ? 'currentColor' : 'none'} aria-hidden="true" />
+              <Folder size={19} fill={visibleItemCount ? 'currentColor' : 'none'} aria-hidden="true" />
             </span>
             <div className="min-w-0">
               <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{card.label}</p>
@@ -2311,7 +2453,7 @@ function RequirementEditor({
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-              cardItemCount
+              visibleItemCount
                 ? 'bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
                 : 'bg-[var(--lakai-surface-muted)] text-[var(--lakai-text-muted)]'
             }`}>
@@ -2329,13 +2471,25 @@ function RequirementEditor({
                   {isSuggested ? <FolderPlus size={16} aria-hidden="true" /> : <FileUp size={16} aria-hidden="true" />}
                   <span className="sr-only">{isSuggested ? 'Create folder and add documents' : 'Add documents'}</span>
                 </button>
+                {card.type === 'folder' ? (
+                  <button
+                    type="button"
+                    onClick={() => addSubfolderToFolder(card)}
+                    disabled={Boolean(folderAction)}
+                    className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-[var(--lakai-text-muted)] transition hover:border-[var(--lakai-border)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                    title={`Add subfolder under ${card.label}`}
+                  >
+                    <FolderPlus size={14} aria-hidden="true" />
+                    <span className="sr-only">Add subfolder under {card.label}</span>
+                  </button>
+                ) : null}
                 {canEditFolder ? (
                   <button
                     type="button"
-                    disabled={Boolean(folderAction) || folderHasGeneratedArtifacts}
+                    disabled={Boolean(folderAction) || folderHasGeneratedArtifacts || childFolderCards.length > 0}
                     onClick={() => onDeleteFolder(requirement, card.folder, card.links)}
                     className="inline-flex min-h-9 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
-                    title={folderHasGeneratedArtifacts ? 'Remove generated artifacts from this folder before deleting it.' : 'Remove this packet folder. Case documents are not deleted.'}
+                    title={childFolderCards.length ? 'Remove child folders before deleting this folder.' : folderHasGeneratedArtifacts ? 'Remove generated artifacts from this folder before deleting it.' : 'Remove this packet folder. Case documents are not deleted.'}
                   >
                     {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : 'Remove'}
                   </button>
@@ -2344,11 +2498,12 @@ function RequirementEditor({
             ) : null}
           </div>
         </div>
-        {cardItemCount ? (
+        {hasNestedContent && !collapsed ? (
           <div className="mt-3 space-y-2">
             {groupedLinks.direct.map((link) => renderLinkedDocumentCard(link, isChecklistOnly ? null : card.label))}
             {groupedLinks.childFolders.map((group) => renderChildFolderGroup(group, card.label))}
             {cardArtifacts.map((artifact) => renderGeneratedArtifactCard(artifact, isChecklistOnly ? null : card.label))}
+            {childFolderCards.map((childCard) => renderFolderTile(childCard))}
           </div>
         ) : null}
       </div>
@@ -2402,7 +2557,13 @@ function RequirementEditor({
             </button>
             <button
               type="button"
-              onClick={() => setNewFolderOpen((current) => !current)}
+              onClick={() => {
+                if (newFolderOpen && !newFolderParent) {
+                  resetFolderForm();
+                } else {
+                  openFolderForm();
+                }
+              }}
               className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[var(--lakai-primary)] transition hover:bg-[var(--lakai-surface-muted)]"
               title="Add custom folder"
             >
@@ -2503,7 +2664,13 @@ function RequirementEditor({
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => setNewFolderOpen((current) => !current)}
+                  onClick={() => {
+                    if (newFolderOpen && !newFolderParent) {
+                      resetFolderForm();
+                    } else {
+                      openFolderForm();
+                    }
+                  }}
                   className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] text-[var(--lakai-text)] transition hover:bg-white dark:hover:bg-white/10"
                   title="Add custom folder"
                 >
@@ -2536,7 +2703,22 @@ function RequirementEditor({
           ) : null}
 
           {newFolderOpen ? (
-            <div className="mt-3 grid gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+            <div className="mt-3 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase text-[var(--lakai-text-muted)]">
+                  {newFolderParent?.label ? `Subfolder under ${newFolderParent.label}` : 'Custom folder'}
+                </p>
+                <button
+                  type="button"
+                  onClick={resetFolderForm}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-text)]"
+                  title="Close folder form"
+                >
+                  <X size={14} aria-hidden="true" />
+                  <span className="sr-only">Close folder form</span>
+                </button>
+              </div>
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
               <label className="block">
                 <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Folder name</span>
                 <input
@@ -2566,11 +2748,13 @@ function RequirementEditor({
                   const created = await onCreateFolder(requirement, {
                     label: newFolderLabel.trim(),
                     description: newFolderDescription.trim() || undefined,
+                    ...(newFolderParent?.id ? {
+                      parent_folder_id: newFolderParent.id,
+                      parent_folder_label: newFolderParent.label,
+                    } : {}),
                   });
                   if (created) {
-                    setNewFolderLabel('');
-                    setNewFolderDescription('');
-                    setNewFolderOpen(false);
+                    resetFolderForm();
                   }
                 }}
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-[var(--lakai-primary)] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[var(--lakai-primary-strong)] disabled:cursor-not-allowed disabled:opacity-60"
@@ -2578,6 +2762,7 @@ function RequirementEditor({
                 {folderAction === `create:${requirementId}` ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <FolderPlus size={14} aria-hidden="true" />}
                 Save folder
               </button>
+              </div>
             </div>
           ) : null}
 
