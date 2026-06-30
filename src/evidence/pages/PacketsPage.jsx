@@ -559,6 +559,22 @@ function childFolderPathForLink(link, document, parentFolderLabel, card = null) 
   return folderSegments.join(' / ');
 }
 
+function uploadFolderSegmentsForTarget(relativePath, fileName, parentFolderLabel = '') {
+  const normalized = normalizeBrowserRelativePath(relativePath, fileName);
+  if (!normalized || normalized === fileName) {
+    return [];
+  }
+  const segments = normalized.split('/').map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length <= 1) {
+    return [];
+  }
+  const folderSegments = segments.slice(0, -1);
+  if (folderSegments.length > 1 && firstPathSegmentLooksLikeFolder(folderSegments[0], parentFolderLabel)) {
+    folderSegments.shift();
+  }
+  return folderSegments;
+}
+
 function artifactPlacement(artifact) {
   if (artifact?.packet_placement && typeof artifact.packet_placement === 'object') return artifact.packet_placement;
   const metadataPlacement = artifact?.metadata_json?.packet_placement;
@@ -3623,10 +3639,57 @@ export default function PacketsPage() {
       return;
     }
     setDocumentPicker((current) => ({ ...current, localUploading: true }));
-    const uploadedFileIds = [];
+    const uploadedItems = [];
     let reusedExistingCount = 0;
     try {
       const token = await getAccessToken();
+      let workingPacket = selectedPacket;
+      const selectedFolderId = documentPicker.folderId || '';
+
+      const workingRequirement = () => (
+        (workingPacket?.requirements || []).find((item) => item.requirement_id === requirement.requirement_id) || requirement
+      );
+      const folderRows = () => (
+        Array.isArray(workingRequirement()?.user_folders) ? workingRequirement().user_folders : []
+      );
+      const folderById = (folderId) => folderRows().find((folder) => packetFolderId(folder) === folderId) || null;
+      const childFolderByLabel = (parentFolderId, label) => folderRows().find((folder) => (
+        folderLabelKey(folder.label) === folderLabelKey(label) &&
+        (packetFolderParentId(folder) || '') === (parentFolderId || '')
+      )) || null;
+      const ensurePacketFolderPath = async (relativePath, fileName) => {
+        let currentParentId = selectedFolderId;
+        const parentFolder = currentParentId ? folderById(currentParentId) : null;
+        const pathSegments = uploadFolderSegmentsForTarget(relativePath, fileName, parentFolder?.label || '');
+        if (!pathSegments.length) {
+          return currentParentId;
+        }
+        for (const segment of pathSegments) {
+          const existingFolder = childFolderByLabel(currentParentId, segment);
+          if (existingFolder) {
+            currentParentId = packetFolderId(existingFolder);
+            continue;
+          }
+          const parent = currentParentId ? folderById(currentParentId) : null;
+          const result = await evidenceApi.createPacketRequirementFolder(
+            caseId,
+            selectedPacket.packet_id,
+            requirement.requirement_id,
+            {
+              label: segment,
+              parent_folder_id: currentParentId || undefined,
+              parent_folder_label: parent?.label || undefined,
+            },
+            { token },
+          );
+          recordFingerprint(result, `Create packet upload folder: ${segment}`);
+          workingPacket = result.data?.packet || workingPacket;
+          const createdFolder = result.data?.folder || childFolderByLabel(currentParentId, segment);
+          currentParentId = packetFolderId(createdFolder) || currentParentId;
+        }
+        return currentParentId;
+      };
+
       for (const item of items) {
         const selectedFile = item.file;
         const relativePath = normalizeBrowserRelativePath(item.relativePath || selectedFile.webkitRelativePath, selectedFile.name);
@@ -3657,7 +3720,7 @@ export default function PacketsPage() {
             || presignResult.data?.document?.file_id
             || presignResult.data?.file_id;
           if (existingFileId) {
-            uploadedFileIds.push(existingFileId);
+            uploadedItems.push({ fileId: existingFileId, relativePath, fileName: selectedFile.name });
             reusedExistingCount += 1;
           }
           updateLocalUploadItem(item.id, {
@@ -3689,7 +3752,7 @@ export default function PacketsPage() {
         recordFingerprint(registerResult, `Packet register upload: ${selectedFile.name}`);
         const uploadId = registerResult.data?.upload?.upload_id || presignResult.data?.upload?.upload_id;
         if (uploadId) {
-          uploadedFileIds.push(uploadId);
+          uploadedItems.push({ fileId: uploadId, relativePath, fileName: selectedFile.name });
         }
         updateLocalUploadItem(item.id, {
           status: 'registered',
@@ -3698,36 +3761,53 @@ export default function PacketsPage() {
         });
       }
 
-      if (uploadedFileIds.length) {
-        const newUploadCount = uploadedFileIds.length - reusedExistingCount;
-        const linkResult = await evidenceApi.linkPacketRequirementDocuments(
-          caseId,
-          selectedPacket.packet_id,
-          requirement.requirement_id,
-          {
-            file_ids: uploadedFileIds,
-            ...(documentPicker.folderId ? { folder_id: documentPicker.folderId } : {}),
-          },
-          { token },
-        );
-        recordFingerprint(linkResult, 'Link packet uploads');
+      if (uploadedItems.length) {
+        const newUploadCount = uploadedItems.length - reusedExistingCount;
+        const groupedUploads = new Map();
+        for (const uploadedItem of uploadedItems) {
+          const targetFolderId = await ensurePacketFolderPath(uploadedItem.relativePath, uploadedItem.fileName);
+          const key = targetFolderId || '';
+          if (!groupedUploads.has(key)) {
+            groupedUploads.set(key, []);
+          }
+          groupedUploads.get(key).push(uploadedItem.fileId);
+        }
+
+        let latestLinkResult = null;
+        for (const [targetFolderId, fileIds] of groupedUploads.entries()) {
+          latestLinkResult = await evidenceApi.linkPacketRequirementDocuments(
+            caseId,
+            selectedPacket.packet_id,
+            requirement.requirement_id,
+            {
+              file_ids: fileIds,
+              ...(targetFolderId ? { folder_id: targetFolderId } : {}),
+            },
+            { token },
+          );
+          recordFingerprint(latestLinkResult, targetFolderId ? 'Link packet uploads to nested folder' : 'Link packet uploads');
+          workingPacket = latestLinkResult.data?.packet || workingPacket;
+        }
         const processingResult = newUploadCount > 0
           ? await startProcessingAfterPacketDocuments(token)
           : null;
         setState((current) => ({
           ...current,
-          packet: linkResult.data?.packet || current.packet,
+          packet: workingPacket || latestLinkResult?.data?.packet || current.packet,
           notice: [
             reusedExistingCount
               ? `${reusedExistingCount} file(s) were already in Documents, so Evidence AI linked the existing workspace copy.`
               : 'Uploaded files were added to Documents and linked to this packet item.',
+            groupedUploads.size > 1 || Array.from(groupedUploads.keys()).some(Boolean)
+              ? 'Folder upload structure was preserved inside this packet item.'
+              : null,
             newUploadCount > 0
               ? (processingResult?.job?.job_id || processingResult?.existing_job?.job_id
                 ? 'New uploads started processing automatically.'
                 : 'New uploads may continue processing in the background.')
               : null,
           ].filter(Boolean).join(' '),
-          fingerprint: linkResult.requestFingerprintId,
+          fingerprint: latestLinkResult?.requestFingerprintId,
         }));
         setDocumentPicker((current) => ({
           ...current,
