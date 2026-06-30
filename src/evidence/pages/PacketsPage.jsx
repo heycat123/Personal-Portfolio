@@ -557,20 +557,55 @@ async function sha256File(selectedFile) {
     .join('');
 }
 
-function uploadItemId(selectedFile, index) {
-  return `${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}-${index}`;
+function normalizeBrowserRelativePath(value, fallbackName = '') {
+  const raw = String(value || '').replace(/\\/g, '/').trim();
+  const parts = raw
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '.' && part !== '..');
+  if (parts.length) {
+    return parts.join('/');
+  }
+  return String(fallbackName || '').trim();
+}
+
+function fileFromLocalUploadInput(input) {
+  return input?.file instanceof File ? input.file : input;
+}
+
+function relativePathFromLocalUploadInput(input, file) {
+  return normalizeBrowserRelativePath(
+    input?.relativePath || input?.webkitRelativePath || file?.webkitRelativePath,
+    file?.name,
+  );
+}
+
+function uploadItemId(selectedFile, index, relativePath = '') {
+  return `${relativePath || selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}-${index}`;
 }
 
 function localUploadItemsFromFiles(files = []) {
-  return files.map((file, index) => ({
-    id: uploadItemId(file, index),
-    file,
-    name: file.name,
-    size: file.size,
-    status: 'ready',
-    progress: 0,
-    message: 'Ready to upload.',
-  }));
+  return files
+    .map((input, index) => {
+      const file = fileFromLocalUploadInput(input);
+      if (!(file instanceof File)) {
+        return null;
+      }
+      const relativePath = relativePathFromLocalUploadInput(input, file);
+      return {
+        id: uploadItemId(file, index, relativePath),
+        file,
+        name: file.name,
+        relativePath,
+        size: file.size,
+        status: 'ready',
+        progress: 0,
+        message: relativePath && relativePath !== file.name
+          ? `Ready to upload from ${relativePath}.`
+          : 'Ready to upload.',
+      };
+    })
+    .filter(Boolean);
 }
 
 function localUploadFooterText(items = [], localUploading = false) {
@@ -586,6 +621,75 @@ function localUploadFooterText(items = [], localUploading = false) {
     return `${count} file(s) uploading, registering, or linking. Readiness appears in Documents after processing.`;
   }
   return `${count} file(s) selected.`;
+}
+
+function fileEntryToFile(entry, folderPath = '') {
+  return new Promise((resolve, reject) => {
+    entry.file(
+      (file) => {
+        const relativePath = normalizeBrowserRelativePath(`${folderPath}/${file.name}`, file.name);
+        resolve({ file, relativePath });
+      },
+      reject,
+    );
+  });
+}
+
+function readDirectoryEntries(reader) {
+  return new Promise((resolve, reject) => {
+    reader.readEntries(resolve, reject);
+  });
+}
+
+async function collectDirectoryEntryFiles(entry, folderPath = '') {
+  if (!entry) {
+    return [];
+  }
+  if (entry.isFile) {
+    return [await fileEntryToFile(entry, folderPath)];
+  }
+  if (!entry.isDirectory) {
+    return [];
+  }
+  const nextFolderPath = normalizeBrowserRelativePath(`${folderPath}/${entry.name}`, entry.name);
+  const reader = entry.createReader();
+  const collected = [];
+  let batch = [];
+  do {
+    batch = await readDirectoryEntries(reader);
+    for (const child of batch) {
+      collected.push(...await collectDirectoryEntryFiles(child, nextFolderPath));
+    }
+  } while (batch.length > 0);
+  return collected;
+}
+
+async function collectFilesFromDataTransfer(dataTransfer) {
+  const items = Array.from(dataTransfer?.items || []);
+  const entries = items
+    .map((item) => (typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (entries.length) {
+    const collected = [];
+    for (const entry of entries) {
+      collected.push(...await collectDirectoryEntryFiles(entry));
+    }
+    return {
+      files: collected,
+      usedDirectoryTraversal: entries.some((entry) => entry.isDirectory),
+      unsupportedFolderDrop: false,
+    };
+  }
+  const files = Array.from(dataTransfer?.files || []).filter((file) => file instanceof File);
+  const mayContainFolder = items.some((item) => item.kind === 'file' && !item.type);
+  return {
+    files: files.map((file) => ({
+      file,
+      relativePath: normalizeBrowserRelativePath(file.webkitRelativePath, file.name),
+    })),
+    usedDirectoryTraversal: false,
+    unsupportedFolderDrop: mayContainFolder && files.length <= 1 && !files[0]?.type,
+  };
 }
 
 function uploadWithProgress(url, { method = 'PUT', headers = {}, file, onProgress }) {
@@ -776,6 +880,8 @@ function PacketDocumentPicker({
   selectedFolderId,
   onSelectedFolderChange,
   localUploadItems,
+  localUploadError,
+  localUploadNotice,
   localUploading,
   onLocalFilesChange,
   onUploadLocalFiles,
@@ -819,16 +925,31 @@ function PacketDocumentPicker({
   const allVisibleDriveFilesSelected = visibleDriveFiles.length > 0 && visibleDriveFiles.every((item) => driveSelectedIds.includes(item.id));
   const userFolders = Array.isArray(requirement.user_folders) ? requirement.user_folders : [];
 
-  function handleLocalDrop(event) {
+  async function handleLocalDrop(event) {
     event.preventDefault();
     event.stopPropagation();
     setLocalDropActive(false);
     if (!canContribute || localUploading) {
       return;
     }
-    const files = Array.from(event.dataTransfer?.files || []);
+    const collected = await collectFilesFromDataTransfer(event.dataTransfer);
+    if (collected.unsupportedFolderDrop) {
+      onLocalFilesChange([], {
+        error: 'This browser could not open that folder drop. Use Choose folder, or open the folder and drop the files inside it.',
+      });
+      return;
+    }
+    const files = collected.files;
     if (files.length) {
-      onLocalFilesChange(files);
+      onLocalFilesChange(files, {
+        notice: collected.usedDirectoryTraversal
+          ? 'Folder scanned. Only files will be uploaded; the folder path is preserved for organization.'
+          : null,
+      });
+    } else {
+      onLocalFilesChange([], {
+        error: 'No files were found in that drop. Folders are used for organization, but only files can be uploaded.',
+      });
     }
   }
 
@@ -1264,7 +1385,7 @@ function PacketDocumentPicker({
                 {localDropActive ? 'Drop files to add them here' : 'Choose or drop files from this computer'}
               </span>
               <span className="mt-1 block text-sm text-[var(--lakai-text-muted)]">
-                Files are uploaded to this case, registered for processing, and linked to {requirement.label}.
+                Drop files or folders. Folders are scanned for files only; subfolder names are preserved for organization.
               </span>
               <input
                 type="file"
@@ -1274,6 +1395,33 @@ function PacketDocumentPicker({
                 className="sr-only"
               />
             </label>
+            <div className="flex flex-col gap-2 rounded-lg border border-[var(--lakai-border)] bg-[var(--lakai-surface-muted)] p-3 text-sm text-[var(--lakai-text-muted)] sm:flex-row sm:items-center sm:justify-between">
+              <span>Folder upload preserves subfolder organization and uploads files only. Duplicate files are reused from Documents.</span>
+              <label className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-3 py-2 text-sm font-semibold text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)] ${!canContribute || localUploading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                <FolderOpen size={16} aria-hidden="true" />
+                Choose folder
+                <input
+                  type="file"
+                  multiple
+                  webkitdirectory="true"
+                  directory="true"
+                  disabled={!canContribute || localUploading}
+                  onChange={(event) => onLocalFilesChange(Array.from(event.target.files || []), {
+                    notice: 'Folder selected. Only files will be uploaded; the folder path is preserved for organization.',
+                  })}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+            {localUploadError || localUploadNotice ? (
+              <div className={`rounded-lg border p-3 text-sm ${
+                localUploadError
+                  ? 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
+                  : 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100'
+              }`}>
+                {localUploadError || localUploadNotice}
+              </div>
+            ) : null}
 
             <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
               {localUploadItems.length ? (
@@ -1285,6 +1433,9 @@ function PacketDocumentPicker({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{item.name}</p>
+                          {item.relativePath && item.relativePath !== item.name ? (
+                            <p className="mt-1 break-words text-xs text-[var(--lakai-text-muted)]">{item.relativePath}</p>
+                          ) : null}
                           <p className={`mt-1 text-xs ${failed ? 'text-red-700 dark:text-red-300' : 'text-[var(--lakai-text-muted)]'}`}>{formatBytes(item.size)} - {item.message || 'Ready to upload.'}</p>
                         </div>
                         {linkedOrReused ? <CheckCircle2 className="shrink-0 text-amber-600" size={18} aria-hidden="true" /> : null}
@@ -1848,7 +1999,8 @@ function RequirementEditor({
         // Fall through to file-drop handling.
       }
     }
-    const files = Array.from(event.dataTransfer?.files || []);
+    const collected = await collectFilesFromDataTransfer(event.dataTransfer);
+    const files = collected.files;
     if (files.length) {
       if (folderId === null) return;
       onDropFiles(requirement, folderId, files);
@@ -2661,6 +2813,8 @@ export default function PacketsPage() {
       folderId: options.folderId || '',
       localUploading: false,
       localUploadItems: files.length ? localUploadItemsFromFiles(files) : [],
+      localUploadError: null,
+      localUploadNotice: files.length ? 'Files selected. Only real files are uploaded and linked to this packet item.' : null,
       connectorsLoading: false,
       connectorAction: null,
       connectorError: null,
@@ -3155,10 +3309,12 @@ export default function PacketsPage() {
     }));
   }
 
-  function setLocalFiles(files) {
+  function setLocalFiles(files, options = {}) {
     setDocumentPicker((current) => ({
       ...current,
       localUploadItems: localUploadItemsFromFiles(files),
+      localUploadError: options.error || null,
+      localUploadNotice: options.notice || null,
     }));
   }
 
@@ -3175,6 +3331,7 @@ export default function PacketsPage() {
       const token = await getAccessToken();
       for (const item of items) {
         const selectedFile = item.file;
+        const relativePath = normalizeBrowserRelativePath(item.relativePath || selectedFile.webkitRelativePath, selectedFile.name);
         updateLocalUploadItem(item.id, { status: 'hashing', progress: 8, message: 'Creating file fingerprint.' });
         const contentHash = await sha256File(selectedFile);
 
@@ -3187,6 +3344,8 @@ export default function PacketsPage() {
             content_length: selectedFile.size,
             content_hash: contentHash || undefined,
             content_hash_algorithm: contentHash ? 'sha256' : undefined,
+            relative_path: relativePath && relativePath !== selectedFile.name ? relativePath : undefined,
+            webkitRelativePath: relativePath && relativePath !== selectedFile.name ? relativePath : undefined,
             source_of_truth_mode: 'web_upload',
             source_provider: 'web_upload',
           },
@@ -3535,6 +3694,8 @@ export default function PacketsPage() {
           selectedFolderId={documentPicker.folderId}
           onSelectedFolderChange={(folderId) => setDocumentPicker((current) => ({ ...current, folderId }))}
           localUploadItems={documentPicker.localUploadItems}
+          localUploadError={documentPicker.localUploadError}
+          localUploadNotice={documentPicker.localUploadNotice}
           localUploading={documentPicker.localUploading}
           onLocalFilesChange={setLocalFiles}
           onUploadLocalFiles={uploadLocalFiles}
