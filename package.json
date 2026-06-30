@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:evidence:prod-like": "node scripts/evidence-local-prod-like.mjs",
+    "dev:evidence:prod-data": "node scripts/evidence-local-prod-smoke.mjs",
+    "smoke:evidence:prod-api": "node scripts/evidence-local-prod-api-check.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
