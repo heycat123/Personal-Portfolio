@@ -419,6 +419,11 @@ function linkFolderId(link) {
   return link?.folder_id || link?.packet_folder_id || link?.user_folder_id || placement.folder_id || '';
 }
 
+function linkFolderLabel(link) {
+  const placement = linkPlacement(link);
+  return String(link?.folder_label || link?.packet_folder_label || placement.folder_label || '').trim();
+}
+
 function linkRecordId(link) {
   return link?.packet_requirement_link_id || link?.link_id || link?.packet_link_id || '';
 }
@@ -487,7 +492,11 @@ function firstPathSegmentLooksLikeFolder(segment, folderLabel) {
   return Boolean(segmentKey && labelKey && (labelKey.includes(segmentKey) || segmentKey.includes(labelKey)));
 }
 
-function childFolderPathForLink(link, document, parentFolderLabel) {
+function childFolderPathForLink(link, document, parentFolderLabel, card = null) {
+  const placedFolderLabel = linkFolderLabel(link);
+  if (card?.type === 'folder' && placedFolderLabel && folderLabelKey(placedFolderLabel) === folderLabelKey(parentFolderLabel)) {
+    return '';
+  }
   const relativePath = uploadRelativePathForLink(link, document);
   if (!relativePath || relativePath === documentDisplayName(document)) {
     return '';
@@ -2154,12 +2163,13 @@ function RequirementEditor({
     );
   }
 
-  function groupedLinksForFolder(cardLinks, folderLabel) {
+  function groupedLinksForFolder(cardLinks, card) {
     const direct = [];
     const childFolders = new Map();
+    const folderLabel = card?.label || '';
     cardLinks.forEach((link) => {
       const document = link.document || linkDocument(link, linkedDocuments);
-      const childPath = childFolderPathForLink(link, document, folderLabel);
+      const childPath = childFolderPathForLink(link, document, folderLabel, card);
       if (!childPath) {
         direct.push(link);
         return;
@@ -2258,7 +2268,7 @@ function RequirementEditor({
     const isDragTarget = dragOverFolderId === card.key;
     const cardLinks = Array.isArray(card.links) ? card.links : [];
     const cardArtifacts = Array.isArray(card.artifacts) ? card.artifacts : [];
-    const groupedLinks = groupedLinksForFolder(cardLinks, card.label);
+    const groupedLinks = groupedLinksForFolder(cardLinks, card);
     const cardItemCount = cardLinks.length + cardArtifacts.length;
     const folderCountLabel = isSuggested ? 'Add when needed' : (cardItemCount ? `${cardItemCount} item${cardItemCount === 1 ? '' : 's'}` : 'Empty');
     const canEditFolder = canContribute && card.type === 'folder';
