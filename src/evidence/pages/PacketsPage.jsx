@@ -19,7 +19,6 @@ import {
   RefreshCw,
   Save,
   Search,
-  Trash2,
   Upload,
   UploadCloud,
   X,
@@ -442,6 +441,66 @@ function linkDocument(link, linkedDocuments = []) {
   ));
   if (matched) return matched;
   return link?.snapshot_metadata_json || {};
+}
+
+function metadataObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function browserFolderUploadMetadata(link, document) {
+  const linkMetadata = metadataObject(link?.metadata_json);
+  const snapshotMetadata = metadataObject(link?.snapshot_metadata_json);
+  const documentMetadata = metadataObject(document?.metadata_json);
+  return metadataObject(
+    link?.browser_folder_upload ||
+    linkMetadata.browser_folder_upload ||
+    snapshotMetadata.browser_folder_upload ||
+    metadataObject(snapshotMetadata.metadata_json).browser_folder_upload ||
+    document?.browser_folder_upload ||
+    documentMetadata.browser_folder_upload,
+  );
+}
+
+function uploadRelativePathForLink(link, document) {
+  const folderMetadata = browserFolderUploadMetadata(link, document);
+  return normalizeBrowserRelativePath(
+    link?.relative_path ||
+    link?.webkitRelativePath ||
+    folderMetadata.relative_path ||
+    folderMetadata.webkitRelativePath ||
+    document?.relative_path ||
+    document?.webkitRelativePath,
+    documentDisplayName(document),
+  );
+}
+
+function folderLabelFingerprint(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function firstPathSegmentLooksLikeFolder(segment, folderLabel) {
+  const segmentKey = folderLabelFingerprint(segment);
+  const labelKey = folderLabelFingerprint(folderLabel);
+  return Boolean(segmentKey && labelKey && (labelKey.includes(segmentKey) || segmentKey.includes(labelKey)));
+}
+
+function childFolderPathForLink(link, document, parentFolderLabel) {
+  const relativePath = uploadRelativePathForLink(link, document);
+  if (!relativePath || relativePath === documentDisplayName(document)) {
+    return '';
+  }
+  const segments = relativePath.split('/').map((segment) => segment.trim()).filter(Boolean);
+  if (segments.length <= 1) {
+    return '';
+  }
+  const folderSegments = segments.slice(0, -1);
+  if (folderSegments.length > 1 && firstPathSegmentLooksLikeFolder(folderSegments[0], parentFolderLabel)) {
+    folderSegments.shift();
+  }
+  return folderSegments.join(' / ');
 }
 
 function artifactPlacement(artifact) {
@@ -2053,13 +2112,13 @@ function RequirementEditor({
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {linkId && canContribute ? (
-            <label className="block">
+            <label className="block opacity-70 transition hover:opacity-100 focus-within:opacity-100">
               <span className="sr-only">Move {documentName} to folder</span>
               <select
                 value={currentFolderId || ''}
                 onChange={(event) => onMoveDocumentLink(requirement, movePayload, event.target.value)}
                 disabled={moveBusy}
-                className="min-h-9 max-w-[11rem] rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 py-1 text-xs font-semibold text-[var(--lakai-text)] outline-none transition focus:border-[var(--lakai-primary)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-8 max-w-[8rem] rounded-md border border-transparent bg-transparent px-1 py-1 text-[11px] font-semibold text-[var(--lakai-text-muted)] outline-none transition hover:border-[var(--lakai-border)] hover:bg-[var(--lakai-surface)] focus:border-[var(--lakai-primary)] focus:bg-[var(--lakai-surface)] focus:ring-2 focus:ring-[var(--lakai-primary)]/20 disabled:cursor-not-allowed disabled:opacity-60"
                 title="Move to folder"
               >
                 {moveFolderOptions.map((option) => (
@@ -2072,24 +2131,66 @@ function RequirementEditor({
             type="button"
             onClick={() => onPreviewDocument(document, link)}
             disabled={!canPreview}
-            className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
+            aria-label={`Preview ${documentName}`}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
             title="Preview this document"
           >
-            <Eye size={14} aria-hidden="true" />
-            Preview
+            <Eye size={15} aria-hidden="true" />
           </button>
           {linkId ? (
             <button
               type="button"
               onClick={() => onUnlinkDocument(requirement, link)}
               disabled={!canContribute || unlinking === linkId || moveBusy}
-              className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-transparent px-2 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300 dark:hover:bg-red-950/30"
+              aria-label={`Remove ${documentName} from this packet item`}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:text-red-300 dark:hover:bg-red-950/30"
               title="Remove from this packet item"
             >
-              {unlinking === linkId || moveBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <Trash2 size={14} aria-hidden="true" />}
-              Remove
+              {unlinking === linkId || moveBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : <X size={15} aria-hidden="true" />}
             </button>
           ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function groupedLinksForFolder(cardLinks, folderLabel) {
+    const direct = [];
+    const childFolders = new Map();
+    cardLinks.forEach((link) => {
+      const document = link.document || linkDocument(link, linkedDocuments);
+      const childPath = childFolderPathForLink(link, document, folderLabel);
+      if (!childPath) {
+        direct.push(link);
+        return;
+      }
+      if (!childFolders.has(childPath)) {
+        childFolders.set(childPath, []);
+      }
+      childFolders.get(childPath).push(link);
+    });
+    return {
+      direct,
+      childFolders: Array.from(childFolders.entries()).map(([label, links]) => ({ label, links })),
+    };
+  }
+
+  function renderChildFolderGroup(group, parentLabel) {
+    return (
+      <div key={`child-folder:${parentLabel}:${group.label}`} className="ml-8 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)]/70 p-2">
+        <div className="mb-2 flex items-center justify-between gap-2 border-b border-[var(--lakai-border)] pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Folder size={15} className="shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+            <p className="min-w-0 truncate text-sm font-semibold text-[var(--lakai-text)]" title={group.label}>
+              {group.label}
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
+            {group.links.length} file{group.links.length === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="space-y-2">
+          {group.links.map((link) => renderLinkedDocumentCard(link, group.label))}
         </div>
       </div>
     );
@@ -2157,6 +2258,7 @@ function RequirementEditor({
     const isDragTarget = dragOverFolderId === card.key;
     const cardLinks = Array.isArray(card.links) ? card.links : [];
     const cardArtifacts = Array.isArray(card.artifacts) ? card.artifacts : [];
+    const groupedLinks = groupedLinksForFolder(cardLinks, card.label);
     const cardItemCount = cardLinks.length + cardArtifacts.length;
     const folderCountLabel = isSuggested ? 'Add when needed' : (cardItemCount ? `${cardItemCount} item${cardItemCount === 1 ? '' : 's'}` : 'Empty');
     const canEditFolder = canContribute && card.type === 'folder';
@@ -2234,7 +2336,8 @@ function RequirementEditor({
         </div>
         {cardItemCount ? (
           <div className="mt-3 space-y-2">
-            {cardLinks.map((link) => renderLinkedDocumentCard(link, isChecklistOnly ? null : card.label))}
+            {groupedLinks.direct.map((link) => renderLinkedDocumentCard(link, isChecklistOnly ? null : card.label))}
+            {groupedLinks.childFolders.map((group) => renderChildFolderGroup(group, card.label))}
             {cardArtifacts.map((artifact) => renderGeneratedArtifactCard(artifact, isChecklistOnly ? null : card.label))}
           </div>
         ) : null}
