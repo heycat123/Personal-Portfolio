@@ -2485,54 +2485,56 @@ function RequirementEditor({
     return (
       <div
         key={card.key}
-        draggable={Boolean(canEditFolder && folderDragPayload)}
-        onDragStart={(event) => {
-          if (!folderDragPayload) return;
-          event.stopPropagation();
-          const payload = JSON.stringify(folderDragPayload);
-          event.dataTransfer.effectAllowed = 'move';
-          event.dataTransfer.setData('application/x-packet-folder', payload);
-          event.dataTransfer.setData('text/plain', payload);
-          setDraggingFolder(folderDragPayload);
-        }}
-        onDragEnd={(event) => {
-          event.stopPropagation();
-          setDraggingFolder(null);
-          setDragOverFolderId(null);
-          setInvalidDropFolderId(null);
-        }}
-        onDragOver={(event) => {
-          if (!canContribute) return;
-          event.preventDefault();
-          event.stopPropagation();
-          const hasFolderDrag = dragHasPacketFolder(event);
-          const invalidTarget = hasFolderDrag && activeFolderDragInvalid;
-          event.dataTransfer.dropEffect = invalidTarget ? 'none' : (dragHasFiles(event) ? 'copy' : 'move');
-          setInvalidDropFolderId(invalidTarget ? card.key : null);
-          setDragOverFolderId(invalidTarget ? null : card.key);
-        }}
-        onDragEnter={(event) => {
-          if (!canContribute) return;
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onDragLeave={(event) => {
-          event.stopPropagation();
-          if (event.currentTarget.contains(event.relatedTarget)) return;
-          setDragOverFolderId((current) => (current === card.key ? null : current));
-          setInvalidDropFolderId((current) => (current === card.key ? null : current));
-        }}
-        onDrop={(event) => dropItemsOnFolder(event, card)}
         className={`${nestedIndentClass} border-b border-[var(--lakai-border)] py-3 transition`}
         title={canEditFolder ? 'Drag this folder to move it under another packet folder.' : undefined}
       >
-        <div className={`flex flex-col gap-3 rounded-md px-2 py-2 transition sm:flex-row sm:items-center sm:justify-between ${
+        <div
+          draggable={Boolean(canEditFolder && folderDragPayload)}
+          onDragStart={(event) => {
+            if (!folderDragPayload) return;
+            event.stopPropagation();
+            const payload = JSON.stringify(folderDragPayload);
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('application/x-packet-folder', payload);
+            event.dataTransfer.setData('text/plain', payload);
+            setDraggingFolder(folderDragPayload);
+          }}
+          onDragEnd={(event) => {
+            event.stopPropagation();
+            setDraggingFolder(null);
+            setDragOverFolderId(null);
+            setInvalidDropFolderId(null);
+          }}
+          onDragOver={(event) => {
+            if (!canContribute) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const hasFolderDrag = dragHasPacketFolder(event);
+            const invalidTarget = hasFolderDrag && activeFolderDragInvalid;
+            event.dataTransfer.dropEffect = invalidTarget ? 'none' : (dragHasFiles(event) ? 'copy' : 'move');
+            setInvalidDropFolderId(invalidTarget ? card.key : null);
+            setDragOverFolderId(invalidTarget ? null : card.key);
+          }}
+          onDragEnter={(event) => {
+            if (!canContribute) return;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onDragLeave={(event) => {
+            event.stopPropagation();
+            if (event.currentTarget.contains(event.relatedTarget)) return;
+            setDragOverFolderId((current) => (current === card.key ? null : current));
+            setInvalidDropFolderId((current) => (current === card.key ? null : current));
+          }}
+          onDrop={(event) => dropItemsOnFolder(event, card)}
+          className={`flex flex-col gap-3 rounded-md px-2 py-2 transition sm:flex-row sm:items-center sm:justify-between ${
           isDragTarget
             ? 'bg-sky-50 ring-2 ring-[var(--lakai-primary)] dark:bg-sky-950/30'
             : isInvalidDropTarget
               ? 'bg-red-50 ring-2 ring-red-300 dark:bg-red-950/30 dark:ring-red-800'
               : ''
-        }`}>
+        } ${canEditFolder ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        >
           <div className="flex min-w-0 items-start gap-3">
             {hasNestedContent ? (
               <button
