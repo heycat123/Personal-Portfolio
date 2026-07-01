@@ -13,17 +13,21 @@ import {
   Info,
   Link2,
   Loader2,
+  MoreVertical,
   PackageCheck,
   Paperclip,
+  Pencil,
   Plus,
   RefreshCw,
   Save,
   Search,
+  StickyNote,
+  Trash2,
   Upload,
   UploadCloud,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import DocumentPreviewPanel from '../components/DocumentPreviewPanel';
 import EmptyState from '../components/EmptyState';
@@ -1975,6 +1979,7 @@ function RequirementEditor({
   onSave,
   onCreateFolder,
   onDeleteFolder,
+  onUpdateFolder,
   onOpenDocumentPicker,
   onDropFiles,
   onUnlinkDocument,
@@ -1998,6 +2003,10 @@ function RequirementEditor({
   const [invalidDropFolderId, setInvalidDropFolderId] = useState(null);
   const [draggingFolder, setDraggingFolder] = useState(null);
   const [collapsedFolderKeys, setCollapsedFolderKeys] = useState(() => new Set());
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
+  const [openFolderMenuKey, setOpenFolderMenuKey] = useState(null);
+  const noteRef = useRef(null);
 
   const changed =
     status !== (requirement.status || 'needed') ||
@@ -2193,6 +2202,26 @@ function RequirementEditor({
     });
   }
 
+  function openSectionNote() {
+    setDetailsOpen(true);
+    setSectionMenuOpen(false);
+    window.setTimeout(() => noteRef.current?.focus(), 0);
+  }
+
+  async function renameFolder(card) {
+    if (!canContribute || !card || card.type !== 'folder' || typeof onUpdateFolder !== 'function') {
+      return;
+    }
+    const currentLabel = String(card.label || '').trim();
+    const nextLabel = window.prompt('Rename folder', currentLabel);
+    const trimmed = String(nextLabel || '').trim();
+    setOpenFolderMenuKey(null);
+    if (!trimmed || trimmed === currentLabel) {
+      return;
+    }
+    await onUpdateFolder(requirement, card.folder, { label: trimmed });
+  }
+
   async function dropItemsOnFolder(event, card) {
     event.preventDefault();
     event.stopPropagation();
@@ -2272,17 +2301,24 @@ function RequirementEditor({
         title={linkId && canContribute ? 'Drag to another packet folder to move this packet link.' : undefined}
       >
         <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="group/filename flex min-w-0 items-center gap-2">
             <FileText size={14} className="shrink-0 text-[var(--lakai-text-muted)]" aria-hidden="true" />
             <button
               type="button"
               onClick={() => onPreviewDocument(document, link)}
               disabled={!canPreview}
               className="min-w-0 truncate text-left text-sm font-semibold text-[var(--lakai-text)] transition hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:hover:text-[var(--lakai-text)]"
-              title={canPreview ? 'Preview this document' : undefined}
+              title={canPreview ? 'Click to preview' : undefined}
             >
               {documentName}
             </button>
+            {canPreview ? (
+              <Eye
+                size={14}
+                className="shrink-0 text-[var(--lakai-primary)] opacity-0 transition group-hover/filename:opacity-100 group-focus-within/filename:opacity-100"
+                aria-hidden="true"
+              />
+            ) : null}
           </div>
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-[var(--lakai-text-muted)]">
             <span>{document.source_label || document.source_provider || 'Linked from Documents'}</span>
@@ -2307,16 +2343,6 @@ function RequirementEditor({
               </select>
             </label>
           ) : null}
-          <button
-            type="button"
-            onClick={() => onPreviewDocument(document, link)}
-            disabled={!canPreview}
-            aria-label={`Preview ${documentName}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--lakai-border)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/10"
-            title="Preview this document"
-          >
-            <Eye size={15} aria-hidden="true" />
-          </button>
           {linkId ? (
             <button
               type="button"
@@ -2462,7 +2488,7 @@ function RequirementEditor({
     const childItemCount = childFolderCards.reduce((total, childCard) => total + childCard.links.length + childCard.artifacts.length, 0);
     const cardItemCount = cardLinks.length + cardArtifacts.length;
     const visibleItemCount = cardItemCount + childItemCount;
-    const folderCountLabel = isSuggested ? 'Add when needed' : (visibleItemCount ? `${visibleItemCount} item${visibleItemCount === 1 ? '' : 's'}` : 'Empty');
+    const folderCountLabel = isSuggested ? '' : (visibleItemCount ? `${visibleItemCount} item${visibleItemCount === 1 ? '' : 's'}` : 'Empty');
     const canEditFolder = canContribute && card.type === 'folder';
     const folderId = card.folderId || packetFolderId(card.folder);
     const actionBusy = folderAction?.endsWith(`:${folderId}`);
@@ -2556,7 +2582,18 @@ function RequirementEditor({
               <Folder size={19} fill={visibleItemCount ? 'currentColor' : 'none'} aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{card.label}</p>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <p className="break-words text-sm font-semibold text-[var(--lakai-text)]">{card.label}</p>
+                {folderCountLabel ? (
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    visibleItemCount
+                      ? 'bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
+                      : 'bg-[var(--lakai-surface-muted)] text-[var(--lakai-text-muted)]'
+                  }`}>
+                    {folderCountLabel}
+                  </span>
+                ) : null}
+              </div>
               {card.description ? <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">{card.description}</p> : null}
               {cardItemCount ? null : (
                 <p className="mt-1 text-xs text-[var(--lakai-text-muted)]">
@@ -2565,48 +2602,112 @@ function RequirementEditor({
               )}
             </div>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-              visibleItemCount
-                ? 'bg-amber-100 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
-                : 'bg-[var(--lakai-surface-muted)] text-[var(--lakai-text-muted)]'
-            }`}>
-              {folderCountLabel}
-            </span>
+          <div className="relative flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
             {canContribute ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => addDocumentsToFolder(card)}
-                  disabled={Boolean(folderAction)}
-                  className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] text-[var(--lakai-text)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
-                  title={isSuggested ? 'Create this folder and add documents' : 'Add documents to this folder'}
-                >
-                  {isSuggested ? <FolderPlus size={16} aria-hidden="true" /> : <FileUp size={16} aria-hidden="true" />}
-                  <span className="sr-only">{isSuggested ? 'Create folder and add documents' : 'Add documents'}</span>
-                </button>
-                {card.type === 'folder' ? (
+                {isSuggested ? (
                   <button
                     type="button"
-                    onClick={() => addSubfolderToFolder(card)}
+                    onClick={() => addDocumentsToFolder(card)}
                     disabled={Boolean(folderAction)}
-                    className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border border-transparent bg-transparent text-[var(--lakai-text-muted)] transition hover:border-[var(--lakai-border)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:opacity-60"
-                    title={`Add subfolder under ${card.label}`}
+                    className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md border border-dashed border-[var(--lakai-border)] bg-transparent text-[var(--lakai-text-muted)] transition hover:border-[var(--lakai-primary)] hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-primary)] disabled:cursor-not-allowed disabled:opacity-60"
+                    title="Add this folder template"
                   >
-                    <FolderPlus size={14} aria-hidden="true" />
-                    <span className="sr-only">Add subfolder under {card.label}</span>
+                    <FolderPlus size={16} aria-hidden="true" />
+                    <span className="sr-only">Add folder template: {card.label}</span>
                   </button>
                 ) : null}
                 {canEditFolder ? (
-                  <button
-                    type="button"
-                    disabled={Boolean(folderAction) || folderHasGeneratedArtifacts || childFolderCards.length > 0}
-                    onClick={() => onDeleteFolder(requirement, card.folder, card.links)}
-                    className="inline-flex min-h-9 items-center justify-center rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] px-2 text-xs font-semibold text-[var(--lakai-text-muted)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/10"
-                    title={childFolderCards.length ? 'Remove child folders before deleting this folder.' : folderHasGeneratedArtifacts ? 'Remove generated artifacts from this folder before deleting it.' : 'Remove this packet folder. Case documents are not deleted.'}
-                  >
-                    {actionBusy ? <Loader2 className="animate-spin" size={14} aria-hidden="true" /> : 'Remove'}
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      draggable={false}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenFolderMenuKey((current) => (current === card.key ? null : card.key));
+                      }}
+                      className="relative inline-flex min-h-9 min-w-9 items-center justify-center rounded-md border border-transparent bg-transparent text-[var(--lakai-text-muted)] transition hover:border-[var(--lakai-border)] hover:bg-[var(--lakai-surface)] hover:text-[var(--lakai-primary)]"
+                      title={`Folder options for ${card.label}`}
+                      aria-expanded={openFolderMenuKey === card.key}
+                      aria-haspopup="menu"
+                    >
+                      <Folder size={17} aria-hidden="true" />
+                      <MoreVertical className="absolute -right-0.5 -top-0.5 rounded-full bg-[var(--lakai-surface)]" size={13} aria-hidden="true" />
+                      <span className="sr-only">Folder options for {card.label}</span>
+                    </button>
+                    {openFolderMenuKey === card.key ? (
+                      <div
+                        className="absolute right-0 z-30 mt-2 w-52 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-1 text-sm shadow-lg"
+                        role="menu"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                          onClick={() => {
+                            setOpenFolderMenuKey(null);
+                            const nextDescription = window.prompt('Folder note', card.description || '');
+                            if (nextDescription !== null) {
+                              onUpdateFolder?.(requirement, card.folder, { description: String(nextDescription).trim() });
+                            }
+                          }}
+                          role="menuitem"
+                        >
+                          <StickyNote size={15} aria-hidden="true" />
+                          Add note
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                          onClick={() => {
+                            setOpenFolderMenuKey(null);
+                            addSubfolderToFolder(card);
+                          }}
+                          role="menuitem"
+                        >
+                          <FolderPlus size={15} aria-hidden="true" />
+                          Add subfolder
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                          onClick={() => {
+                            setOpenFolderMenuKey(null);
+                            addDocumentsToFolder(card);
+                          }}
+                          role="menuitem"
+                        >
+                          <FileUp size={15} aria-hidden="true" />
+                          Add documents
+                        </button>
+                        <button
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                          onClick={() => renameFolder(card)}
+                          role="menuitem"
+                        >
+                          <Pencil size={15} aria-hidden="true" />
+                          Rename folder
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(folderAction) || folderHasGeneratedArtifacts || childFolderCards.length > 0}
+                          className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                          onClick={() => {
+                            setOpenFolderMenuKey(null);
+                            onDeleteFolder(requirement, card.folder, card.links);
+                          }}
+                          title={childFolderCards.length ? 'Remove child folders before deleting this folder.' : folderHasGeneratedArtifacts ? 'Remove generated artifacts from this folder before deleting it.' : 'Remove this packet folder. Case documents are not deleted.'}
+                          role="menuitem"
+                        >
+                          {actionBusy ? <Loader2 className="animate-spin" size={15} aria-hidden="true" /> : <Trash2 size={15} aria-hidden="true" />}
+                          Remove folder
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </>
             ) : null}
@@ -2659,31 +2760,57 @@ function RequirementEditor({
           {requirement.description ? <p className="mt-2 text-sm text-[var(--lakai-text-muted)]">{requirement.description}</p> : null}
         </div>
         {canContribute ? (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="relative flex shrink-0 items-center gap-2">
             <button
               type="button"
-              onClick={() => onOpenDocumentPicker(requirement, { folderId: '' })}
-              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[var(--lakai-primary)] transition hover:bg-[var(--lakai-surface-muted)]"
-              title="Add documents"
+              onClick={() => setSectionMenuOpen((current) => !current)}
+              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[var(--lakai-text-muted)] transition hover:bg-[var(--lakai-surface-muted)] hover:text-[var(--lakai-primary)]"
+              title="Section options"
+              aria-haspopup="menu"
+              aria-expanded={sectionMenuOpen}
             >
-              <FileUp size={18} aria-hidden="true" />
-              <span className="sr-only">Add documents</span>
+              <MoreVertical size={20} aria-hidden="true" />
+              <span className="sr-only">Section options</span>
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (newFolderOpen && !newFolderParent) {
-                  resetFolderForm();
-                } else {
-                  openFolderForm();
-                }
-              }}
-              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-[var(--lakai-primary)] transition hover:bg-[var(--lakai-surface-muted)]"
-              title="Add custom folder"
-            >
-              <FolderPlus size={18} aria-hidden="true" />
-              <span className="sr-only">Add custom folder</span>
-            </button>
+            {sectionMenuOpen ? (
+              <div className="absolute right-0 top-full z-30 mt-2 w-52 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)] p-1 text-sm shadow-lg" role="menu">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                  onClick={openSectionNote}
+                  role="menuitem"
+                >
+                  <StickyNote size={15} aria-hidden="true" />
+                  Add note
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-[var(--lakai-text)] transition hover:bg-[var(--lakai-surface-muted)]"
+                  onClick={() => {
+                    setSectionMenuOpen(false);
+                    if (newFolderOpen && !newFolderParent) {
+                      resetFolderForm();
+                    } else {
+                      openFolderForm();
+                    }
+                  }}
+                  role="menuitem"
+                >
+                  <FolderPlus size={15} aria-hidden="true" />
+                  Add folder
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  className="flex w-full cursor-not-allowed items-center gap-2 rounded px-3 py-2 text-left text-red-700 opacity-50 dark:text-red-300"
+                  title="Packet template sections cannot be removed yet."
+                  role="menuitem"
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                  Remove section
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -2700,7 +2827,11 @@ function RequirementEditor({
         </section>
       ) : null}
 
-      <details className="mt-4 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)]">
+      <details
+        open={detailsOpen}
+        onToggle={(event) => setDetailsOpen(event.currentTarget.open)}
+        className="mt-4 rounded-md border border-[var(--lakai-border)] bg-[var(--lakai-surface)]"
+      >
         <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[var(--lakai-text)]">
           Notes and item details
         </summary>
@@ -2724,6 +2855,7 @@ function RequirementEditor({
           <label className="block">
             <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">Note</span>
             <textarea
+              ref={noteRef}
               value={note}
               onChange={(event) => setNote(event.target.value)}
               rows={3}
@@ -3666,6 +3798,38 @@ export default function PacketsPage() {
     }
   }
 
+  async function updateRequirementFolder(requirement, folder, payload) {
+    const folderId = packetFolderId(folder);
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folderId) {
+      return false;
+    }
+    setFolderAction(`update:${folderId}`);
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updatePacketRequirementFolder(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        folderId,
+        payload,
+        { token },
+      );
+      recordFingerprint(result, 'Update packet folder');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: result.data?.message || 'Packet folder updated.',
+        fingerprint: result.requestFingerprintId,
+      }));
+      return result.data?.folder || true;
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+      return false;
+    } finally {
+      setFolderAction(null);
+    }
+  }
+
   async function deleteRequirementFolder(requirement, folder, folderLinks = []) {
     const folderId = packetFolderId(folder);
     if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folderId) {
@@ -4295,6 +4459,7 @@ export default function PacketsPage() {
                     onSave={saveRequirement}
                     onCreateFolder={createRequirementFolder}
                     onDeleteFolder={deleteRequirementFolder}
+                    onUpdateFolder={updateRequirementFolder}
                     onOpenDocumentPicker={openDocumentPicker}
                     onDropFiles={dropFilesOnPacketFolder}
                     onUnlinkDocument={unlinkDocument}
