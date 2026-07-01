@@ -575,6 +575,18 @@ function uploadFolderSegmentsForTarget(relativePath, fileName, parentFolderLabel
   return folderSegments;
 }
 
+function dragContainsType(event, typeName) {
+  return Array.from(event?.dataTransfer?.types || []).includes(typeName);
+}
+
+function dragHasFiles(event) {
+  return dragContainsType(event, 'Files');
+}
+
+function dragHasPacketFolder(event) {
+  return dragContainsType(event, 'application/x-packet-folder');
+}
+
 function artifactPlacement(artifact) {
   if (artifact?.packet_placement && typeof artifact.packet_placement === 'object') return artifact.packet_placement;
   const metadataPlacement = artifact?.metadata_json?.packet_placement;
@@ -1971,6 +1983,7 @@ function RequirementEditor({
   onExportArtifact,
   exportingArtifactId,
   onMoveDocumentLink,
+  onMoveFolder,
   movingLink,
   onStatusDraftChange,
 }) {
@@ -1982,6 +1995,8 @@ function RequirementEditor({
   const [newFolderDescription, setNewFolderDescription] = useState('');
   const [newFolderParent, setNewFolderParent] = useState(null);
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
+  const [invalidDropFolderId, setInvalidDropFolderId] = useState(null);
+  const [draggingFolder, setDraggingFolder] = useState(null);
   const [collapsedFolderKeys, setCollapsedFolderKeys] = useState(() => new Set());
 
   const changed =
@@ -2077,6 +2092,19 @@ function RequirementEditor({
       .map((folder) => ({ value: folder.value, label: `${'— '.repeat(folder.depth)}${folder.label || 'Folder'}` }))
       .filter((folder) => folder.value),
   ];
+  const descendantFolderIds = (folderId) => {
+    const descendants = new Set();
+    const collect = (parentId) => {
+      (childFoldersByParentId.get(parentId) || []).forEach((child) => {
+        const childId = packetFolderId(child);
+        if (!childId || descendants.has(childId)) return;
+        descendants.add(childId);
+        collect(childId);
+      });
+    };
+    collect(folderId);
+    return descendants;
+  };
   const templateGuidance = requirement.metadata_json?.upload_guidance;
   const uploadGuidance = Array.isArray(templateGuidance) && templateGuidance.length
     ? templateGuidance
@@ -2169,10 +2197,29 @@ function RequirementEditor({
     event.preventDefault();
     event.stopPropagation();
     setDragOverFolderId(null);
+    setInvalidDropFolderId(null);
     if (!canContribute || typeof onDropFiles !== 'function') {
       return;
     }
     const folderId = await ensureFolderForCard(card);
+    const folderPayload = event.dataTransfer?.getData('application/x-packet-folder');
+    if (folderPayload && typeof onMoveFolder === 'function') {
+      try {
+        const parsed = JSON.parse(folderPayload);
+        if (parsed?.folderId) {
+          if (folderId === null) return;
+          const invalidTarget = parsed.folderId === folderId || descendantFolderIds(parsed.folderId).has(folderId);
+          if (invalidTarget) {
+            setInvalidDropFolderId(card.key);
+            return;
+          }
+          onMoveFolder(requirement, parsed, folderId);
+          return;
+        }
+      } catch {
+        // Fall through to file-drop handling.
+      }
+    }
     const linkPayload = event.dataTransfer?.getData('application/x-packet-link') ||
       event.dataTransfer?.getData('text/plain');
     if (linkPayload && typeof onMoveDocumentLink === 'function') {
@@ -2402,6 +2449,7 @@ function RequirementEditor({
     const isChecklistOnly = card.type === 'base';
     const isSuggested = card.type === 'suggested';
     const isDragTarget = dragOverFolderId === card.key;
+    const isInvalidDropTarget = invalidDropFolderId === card.key;
     const cardLinks = Array.isArray(card.links) ? card.links : [];
     const cardArtifacts = Array.isArray(card.artifacts) ? card.artifacts : [];
     const childFolders = Array.isArray(card.children) ? card.children : [];
@@ -2419,22 +2467,64 @@ function RequirementEditor({
     const collapsed = collapsedFolderKeys.has(card.key);
     const depth = card.depth || 0;
     const nestedIndentClass = depth ? 'ml-5 border-l border-[var(--lakai-border)] pl-3' : '';
+    const folderDragPayload = folderId
+      ? {
+        folderId,
+        fromParentFolderId: packetFolderParentId(card.folder) || '',
+        folderLabel: card.label,
+      }
+      : null;
+    const activeFolderDragInvalid = draggingFolder?.folderId && (
+      draggingFolder.folderId === folderId ||
+      descendantFolderIds(draggingFolder.folderId).has(folderId)
+    );
     return (
       <div
         key={card.key}
+        draggable={Boolean(canEditFolder && folderDragPayload)}
+        onDragStart={(event) => {
+          if (!folderDragPayload) return;
+          const payload = JSON.stringify(folderDragPayload);
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('application/x-packet-folder', payload);
+          event.dataTransfer.setData('text/plain', payload);
+          setDraggingFolder(folderDragPayload);
+        }}
+        onDragEnd={() => {
+          setDraggingFolder(null);
+          setDragOverFolderId(null);
+          setInvalidDropFolderId(null);
+        }}
         onDragOver={(event) => {
           if (!canContribute) return;
           event.preventDefault();
-          event.dataTransfer.dropEffect = event.dataTransfer?.files?.length ? 'copy' : 'move';
-          setDragOverFolderId(card.key);
+          event.stopPropagation();
+          const hasFolderDrag = dragHasPacketFolder(event);
+          const invalidTarget = hasFolderDrag && activeFolderDragInvalid;
+          event.dataTransfer.dropEffect = invalidTarget ? 'none' : (dragHasFiles(event) ? 'copy' : 'move');
+          setInvalidDropFolderId(invalidTarget ? card.key : null);
+          setDragOverFolderId(invalidTarget ? null : card.key);
         }}
-        onDragLeave={() => setDragOverFolderId(null)}
+        onDragEnter={(event) => {
+          if (!canContribute) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onDragLeave={(event) => {
+          event.stopPropagation();
+          if (event.currentTarget.contains(event.relatedTarget)) return;
+          setDragOverFolderId((current) => (current === card.key ? null : current));
+          setInvalidDropFolderId((current) => (current === card.key ? null : current));
+        }}
         onDrop={(event) => dropItemsOnFolder(event, card)}
         className={`${nestedIndentClass} border-b border-[var(--lakai-border)] py-3 transition ${
           isDragTarget
-            ? 'bg-sky-50 ring-2 ring-[var(--lakai-primary)]/20 dark:bg-sky-950/30'
+            ? 'rounded-md bg-sky-50 ring-2 ring-[var(--lakai-primary)] dark:bg-sky-950/30'
+            : isInvalidDropTarget
+              ? 'rounded-md bg-red-50 ring-2 ring-red-300 dark:bg-red-950/30 dark:ring-red-800'
             : ''
         }`}
+        title={canEditFolder ? 'Drag this folder to move it under another packet folder.' : undefined}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
@@ -3354,6 +3444,41 @@ export default function PacketsPage() {
     }
   }
 
+  async function movePacketFolder(requirement, folderPayload, targetFolderId) {
+    const folderId = folderPayload?.folderId || '';
+    const nextParentFolderId = targetFolderId || null;
+    if (!canContribute || !selectedPacket?.packet_id || !requirement?.requirement_id || !folderId) {
+      return;
+    }
+    if ((folderPayload.fromParentFolderId || '') === (targetFolderId || '')) {
+      return;
+    }
+    setFolderAction(`move:${folderId}`);
+    setState((current) => ({ ...current, error: null, notice: null }));
+    try {
+      const token = await getAccessToken();
+      const result = await evidenceApi.updatePacketRequirementFolder(
+        caseId,
+        selectedPacket.packet_id,
+        requirement.requirement_id,
+        folderId,
+        { parent_folder_id: nextParentFolderId },
+        { token },
+      );
+      recordFingerprint(result, 'Move packet folder');
+      setState((current) => ({
+        ...current,
+        packet: result.data?.packet || current.packet,
+        notice: `${folderPayload.folderLabel || 'Packet folder'} moved. Linked documents stayed in this packet and in Documents.`,
+        fingerprint: result.requestFingerprintId,
+      }));
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
+    } finally {
+      setFolderAction(null);
+    }
+  }
+
   async function startProcessingAfterPacketDocuments(token) {
     if (!canContribute) {
       return null;
@@ -4170,6 +4295,7 @@ export default function PacketsPage() {
                     onExportArtifact={exportPacketArtifact}
                     exportingArtifactId={exportingArtifactId}
                     onMoveDocumentLink={movePacketDocumentLink}
+                    onMoveFolder={movePacketFolder}
                     movingLink={movingLink}
                     onStatusDraftChange={handleRequirementStatusDraftChange}
                   />
