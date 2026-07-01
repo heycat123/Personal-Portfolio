@@ -2257,10 +2257,14 @@ function RequirementEditor({
         draggable={Boolean(canContribute && linkId)}
         onDragStart={(event) => {
           if (!linkId) return;
+          event.stopPropagation();
           const payload = JSON.stringify(movePayload);
           event.dataTransfer.effectAllowed = 'move';
           event.dataTransfer.setData('application/x-packet-link', payload);
           event.dataTransfer.setData('text/plain', payload);
+        }}
+        onDragEnd={(event) => {
+          event.stopPropagation();
         }}
         className={`ml-8 flex flex-col gap-2 rounded-sm bg-[var(--lakai-surface-muted)] px-3 py-2 transition sm:flex-row sm:items-center sm:justify-between ${
           linkId && canContribute ? 'cursor-grab active:cursor-grabbing' : ''
@@ -2484,13 +2488,15 @@ function RequirementEditor({
         draggable={Boolean(canEditFolder && folderDragPayload)}
         onDragStart={(event) => {
           if (!folderDragPayload) return;
+          event.stopPropagation();
           const payload = JSON.stringify(folderDragPayload);
           event.dataTransfer.effectAllowed = 'move';
           event.dataTransfer.setData('application/x-packet-folder', payload);
           event.dataTransfer.setData('text/plain', payload);
           setDraggingFolder(folderDragPayload);
         }}
-        onDragEnd={() => {
+        onDragEnd={(event) => {
+          event.stopPropagation();
           setDraggingFolder(null);
           setDragOverFolderId(null);
           setInvalidDropFolderId(null);
@@ -2517,16 +2523,16 @@ function RequirementEditor({
           setInvalidDropFolderId((current) => (current === card.key ? null : current));
         }}
         onDrop={(event) => dropItemsOnFolder(event, card)}
-        className={`${nestedIndentClass} border-b border-[var(--lakai-border)] py-3 transition ${
-          isDragTarget
-            ? 'rounded-md bg-sky-50 ring-2 ring-[var(--lakai-primary)] dark:bg-sky-950/30'
-            : isInvalidDropTarget
-              ? 'rounded-md bg-red-50 ring-2 ring-red-300 dark:bg-red-950/30 dark:ring-red-800'
-            : ''
-        }`}
+        className={`${nestedIndentClass} border-b border-[var(--lakai-border)] py-3 transition`}
         title={canEditFolder ? 'Drag this folder to move it under another packet folder.' : undefined}
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className={`flex flex-col gap-3 rounded-md px-2 py-2 transition sm:flex-row sm:items-center sm:justify-between ${
+          isDragTarget
+            ? 'bg-sky-50 ring-2 ring-[var(--lakai-primary)] dark:bg-sky-950/30'
+            : isInvalidDropTarget
+              ? 'bg-red-50 ring-2 ring-red-300 dark:bg-red-950/30 dark:ring-red-800'
+              : ''
+        }`}>
           <div className="flex min-w-0 items-start gap-3">
             {hasNestedContent ? (
               <button
